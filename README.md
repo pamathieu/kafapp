@@ -27,16 +27,13 @@ Admin → API Gateway → Lambda → DynamoDB
 
 # Phase 1 — Requirements & Architecture Definition
 
-## Objective
-Define system scope, data fields, and high-level architecture.
-
 ## Key Requirements
 
 ### Company Information (Static)
 - Company Name
 - Registration Number
 - Logo
-- Address (Siège Social)
+- Address
 - Phone
 - Email
 - Website
@@ -54,61 +51,47 @@ Define system scope, data fields, and high-level architecture.
 - WhatsApp Phone Number (Required)
 
 ### Certificate Requirements
-- Inject dynamic data into official certificate template
+- Inject dynamic data into official template
 - Preserve formatting
 - Auto-insert issue date
-- Generate:
-  - PDF (official version)
-  - JPEG (preview version)
-
-### Delivery Requirement
-- Send certificate via WhatsApp
-- Attach PDF or secure S3 link
-- Update delivery status
+- Generate PDF + JPEG
 
 ---
 
 # Phase 2 — Infrastructure Setup (Terraform)
 
-## Objective
-Provision all required AWS resources using Terraform.
+## AWS Components
 
-## Infrastructure Components
+### DynamoDB
+- Companies table
+- Members table (includes certificate object)
 
-### AWS DynamoDB
-- Store companies
-- Store members
-- Store certificate metadata
+### S3
+- Store PDF certificates
+- Store JPEG certificates
+- Private bucket
 
-### AWS S3
-- Store generated PDF certificates
-- Store generated JPEG versions
-- Private bucket by default
-
-### AWS Lambda
-- Generate certificates
+### Lambda
+- Certificate generation
 - Upload to S3
-- Update DynamoDB
+- Update member certificate object
 - Trigger WhatsApp delivery
 
-### AWS API Gateway
-- Securely expose backend endpoints
-- Invoke Lambda function
+### API Gateway
+- Secure REST endpoint
+- Invokes Lambda
 
-### IAM Roles (Least Privilege)
-- Lambda access to DynamoDB
-- Lambda access to S3
-- API Gateway permission to invoke Lambda
-
-> Note: CloudWatch logging is intentionally excluded from this phase.
+### IAM (Least Privilege)
+- Lambda → DynamoDB
+- Lambda → S3
+- API Gateway → Lambda
 
 ---
 
 # Phase 3 — Database Design
 
-## DynamoDB Tables
+## Companies Table
 
-### Companies Table
 - company_id (PK)
 - company_name
 - registration_number
@@ -118,7 +101,10 @@ Provision all required AWS resources using Terraform.
 - website
 - logo_s3_url
 
-### Members Table
+---
+
+## Members Table
+
 - member_id (PK)
 - company_id
 - full_name
@@ -130,68 +116,95 @@ Provision all required AWS resources using Terraform.
 - join_date
 - whatsapp_number
 
-### Certificates Table
-- certificate_id (PK)
-- member_id
-- company_id
-- issued_date
-- pdf_s3_url
-- jpeg_s3_url
-- whatsapp_sent (boolean)
-- timestamp
+### Nested Certificate Object
+
+Each member contains a `certificate` map attribute.
+
+Structure:
+
+certificate: {
+certificate_id,
+issued_date,
+pdf_s3_url,
+jpeg_s3_url,
+whatsapp_sent,
+timestamp
+}
 
 ---
+
+## Example DynamoDB Member Item
+
+```json
+{
+  "memberId":       { "S": "MBR-001" },
+  "companyId":      { "S": "KAFA-001" },
+  "certificate": {
+    "M": {
+      "certificate_id":  { "S": "CERT-001" },
+      "issued_date":     { "S": "2025-01-01" },
+      "pdf_s3_url":      { "S": "s3://kopera-certificate/certificates/MBR-001.pdf" },
+      "jpeg_s3_url":     { "S": "s3://kopera-certificate/certificates/MBR-001.jpeg" },
+      "whatsapp_sent":   { "BOOL": false },
+      "timestamp":       { "S": "2025-01-01T00:00:00Z" }
+    }
+  }
+}
 
 # Phase 4 — Certificate Generation Engine
 
-## Objective
-Build backend logic that generates official certificates.
+## Workflow
 
-## Process Flow
-
-1. Retrieve member data from DynamoDB
-2. Retrieve company data from DynamoDB
-3. Inject data into certificate template
+1. Retrieve member data from DynamoDB  
+2. Retrieve company data from DynamoDB  
+3. Inject values into certificate template  
 4. Generate:
-   - PDF version
-   - JPEG version
-5. Upload files to S3
-6. Save certificate metadata in DynamoDB
-
-## Suggested Tools
-- Python
-- reportlab (PDF generation)
-- PIL or Pillow (JPEG generation)
-- boto3 (AWS SDK)
+   - PDF (reportlab)
+   - JPEG (Pillow)
+5. Upload files to S3  
+6. Update nested `certificate` object in member record  
+7. Trigger WhatsApp delivery  
 
 ---
 
-# Phase 5 — WhatsApp (Meta API) Integration
+## Suggested Technologies
 
-## Objective
-Deliver generated certificates via WhatsApp.
+- Python  
+- boto3  
+- reportlab  
+- Pillow (PIL)  
 
-## Steps
+---
 
-1. Create Meta Developer Account
-2. Configure WhatsApp Cloud API
-3. Generate access token
-4. Register phone number
-5. Create message template
+# Phase 5 — WhatsApp Integration (Meta Cloud API)
 
-## Delivery Process
+## Setup Requirements
+
+- Meta Developer Account  
+- WhatsApp Business App  
+- Phone Number Registration  
+- Access Token Generation  
+- Approved Message Template  
+
+---
+
+## Delivery Logic
 
 After certificate generation:
 
-- Call Meta WhatsApp API
-- Send:
-  - PDF attachment OR
-  - Secure S3 download link
-- Update certificate status in DynamoDB
+1. Call Meta WhatsApp API  
+2. Send:
+   - PDF attachment **OR**
+   - Secure S3 link  
+3. Update `whatsapp_sent` flag inside certificate object  
+
+---
 
 ## Error Handling
-- Log failures
-- Implement retry mechanism
+
+- Capture API errors  
+- Update failure state  
+- Allow retry mechanism  
 
 ---
 
@@ -199,28 +212,31 @@ After certificate generation:
 
 ## Testing
 
-- Validate DynamoDB operations
-- Validate S3 uploads
-- Validate Lambda execution
-- Validate API Gateway invocation
-- Validate WhatsApp message delivery
-- Perform full end-to-end test
+- Validate DynamoDB reads/writes  
+- Validate S3 uploads  
+- Validate Lambda execution  
+- Validate API Gateway invocation  
+- Validate WhatsApp message delivery  
+- Perform full end-to-end test  
+
+---
 
 ## Deployment
 
-- Deploy Terraform infrastructure
-- Deploy Lambda code
-- Configure production environment variables
-- Verify complete workflow
+- Deploy infrastructure via Terraform  
+- Deploy Lambda code  
+- Configure production environment variables  
+- Validate end-to-end workflow  
 
 ---
 
 # Security Considerations
 
-- Least-privilege IAM policies
-- Private S3 bucket
-- Secure API Gateway configuration
-- Controlled access to Meta API tokens
+- IAM least-privilege policies  
+- Private S3 bucket  
+- Secure API Gateway configuration  
+- Protected Meta API tokens  
+- Input validation before certificate generation  
 
 ---
 
@@ -228,26 +244,27 @@ After certificate generation:
 
 The project is considered complete when:
 
-- Certificates are generated correctly (PDF + JPEG)
-- Certificates are stored in S3
-- Metadata is stored in DynamoDB
-- WhatsApp delivery is successful
-- Infrastructure is fully reproducible via Terraform
-- End-to-end system functions without manual intervention
+- Certificate PDF + JPEG are generated correctly  
+- Files are stored in S3  
+- Certificate object is saved inside member record  
+- WhatsApp delivery is successful  
+- Infrastructure is fully reproducible via Terraform  
+- End-to-end flow is fully automated  
 
 ---
 
 # Future Enhancements (Optional)
 
-- Admin dashboard
-- Delivery analytics
-- Automated certificate numbering
-- Multi-language certificate support
-- Audit trail logging
+- Multi-certificate support (change `certificate` → `certificates` list)  
+- Admin dashboard  
+- Delivery analytics  
+- Automated certificate numbering  
+- Multi-language certificate support  
+- Audit trail logging  
 
 ---
 
 # Status
 
-Current Phase: Phase 1–6 Structured and Defined  
-Deployment: Pending Infrastructure Implementation
+Phases 1–6 Fully Defined  
+Implementation: Pending Infrastructure Deployment  

@@ -1,18 +1,17 @@
+
+---
+
+# 📘 VERSION FRANÇAISE COMPLÈTE (MISE À JOUR)
+
+```markdown
 # Système Automatisé de Certificat WhatsApp KAFA
 
 ## Présentation du Projet
 
-Le Système Automatisé de Certificat WhatsApp KAFA est une solution cloud qui génère des certificats officiels d’adhésion et les envoie directement aux membres via WhatsApp.
+Solution cloud permettant de générer des certificats officiels d’adhésion et de les envoyer directement aux membres via WhatsApp.
 
-Le système :
-
-- Collecte les informations de l’entreprise et du membre
-- Génère un certificat officiel (PDF + JPEG)
-- Stocke les certificats de manière sécurisée sur AWS
-- Envoie le certificat au membre via l’API WhatsApp Cloud de Meta
-
-Il n’y a pas de système de connexion ni de portail utilisateur.  
-La livraison se fait exclusivement via WhatsApp.
+Aucun système de connexion.  
+Livraison exclusivement via WhatsApp.
 
 ---
 
@@ -26,96 +25,10 @@ Administrateur → API Gateway → Lambda → DynamoDB
 
 ---
 
-# Phase 1 — Définition des Exigences et de l’Architecture
-
-## Objectif
-
-Définir la portée du système, les champs de données et l’architecture générale.
-
-## Exigences Principales
-
-### Informations de l’Entreprise (Statique)
-
-- Nom de l’entreprise
-- Numéro d’enregistrement
-- Logo
-- Adresse (Siège Social)
-- Téléphone
-- Email
-- Site web
-- Signataires autorisés
-- Sceau officiel
-
-### Informations du Membre (Dynamique)
-
-- Nom complet
-- Date de naissance
-- Numéro d’identification
-- Type d’identification
-- Adresse
-- Numéro d’adhérent
-- Date d’adhésion
-- Numéro de téléphone WhatsApp (Obligatoire)
-
-### Exigences du Certificat
-
-- Injecter les données dynamiques dans le modèle officiel
-- Préserver la mise en page
-- Insérer automatiquement la date d’émission
-- Générer :
-  - Version PDF (officielle)
-  - Version JPEG (aperçu)
-
-### Exigence de Livraison
-
-- Envoyer le certificat via WhatsApp
-- Joindre le PDF ou un lien sécurisé S3
-- Mettre à jour le statut d’envoi
-
----
-
-# Phase 2 — Mise en Place de l’Infrastructure (Terraform)
-
-## Objectif
-
-Déployer toutes les ressources AWS nécessaires à l’aide de Terraform.
-
-## Composants d’Infrastructure
-
-### AWS DynamoDB
-- Stocker les entreprises
-- Stocker les membres
-- Stocker les métadonnées des certificats
-
-### AWS S3
-- Stocker les certificats PDF générés
-- Stocker les versions JPEG
-- Bucket privé par défaut
-
-### AWS Lambda
-- Générer les certificats
-- Télécharger les fichiers vers S3
-- Mettre à jour DynamoDB
-- Déclencher l’envoi WhatsApp
-
-### AWS API Gateway
-- Exposer les endpoints backend de manière sécurisée
-- Invoquer la fonction Lambda
-
-### Rôles IAM (Principe du Moindre Privilège)
-- Accès Lambda à DynamoDB
-- Accès Lambda à S3
-- Permission API Gateway pour invoquer Lambda
-
-> Remarque : La journalisation CloudWatch est volontairement exclue de cette phase.
-
----
-
 # Phase 3 — Conception de la Base de Données
 
-## Tables DynamoDB
+## Table Entreprises
 
-### Table Entreprises
 - company_id (PK)
 - company_name
 - registration_number
@@ -125,7 +38,10 @@ Déployer toutes les ressources AWS nécessaires à l’aide de Terraform.
 - website
 - logo_s3_url
 
-### Table Membres
+---
+
+## Table Membres
+
 - member_id (PK)
 - company_id
 - full_name
@@ -137,72 +53,86 @@ Déployer toutes les ressources AWS nécessaires à l’aide de Terraform.
 - join_date
 - whatsapp_number
 
-### Table Certificats
-- certificate_id (PK)
-- member_id
-- company_id
-- issued_date
-- pdf_s3_url
-- jpeg_s3_url
-- whatsapp_sent (booléen)
-- timestamp
+### Objet Certificat Imbriqué
+
+Chaque membre contient un attribut `certificate` de type Map.
+
+Structure :
 
 ---
+
+## Exemple d’Item DynamoDB
+
+```json
+{
+  "memberId":       { "S": "MBR-001" },
+  "companyId":      { "S": "KAFA-001" },
+  "certificate": {
+    "M": {
+      "certificate_id":  { "S": "CERT-001" },
+      "issued_date":     { "S": "2025-01-01" },
+      "pdf_s3_url":      { "S": "s3://kopera-certificate/certificates/MBR-001.pdf" },
+      "jpeg_s3_url":     { "S": "s3://kopera-certificate/certificates/MBR-001.jpeg" },
+      "whatsapp_sent":   { "BOOL": false },
+      "timestamp":       { "S": "2025-01-01T00:00:00Z" }
+    }
+  }
+}
 
 # Phase 4 — Moteur de Génération de Certificats
 
-## Objectif
+## Flux de Travail
 
-Développer la logique backend qui génère les certificats officiels.
-
-## Processus
-
-1. Récupérer les données du membre depuis DynamoDB
-2. Récupérer les données de l’entreprise depuis DynamoDB
-3. Injecter les données dans le modèle de certificat
+1. Récupérer les données du membre depuis DynamoDB  
+2. Récupérer les données de l’entreprise depuis DynamoDB  
+3. Injecter les valeurs dans le modèle de certificat  
 4. Générer :
-   - Version PDF
-   - Version JPEG
-5. Télécharger les fichiers vers S3
-6. Enregistrer les métadonnées dans DynamoDB
-
-## Outils Suggérés
-
-- Python
-- reportlab (génération PDF)
-- PIL / Pillow (génération JPEG)
-- boto3 (SDK AWS)
+   - PDF (reportlab)
+   - JPEG (Pillow)  
+5. Télécharger les fichiers vers Amazon S3  
+6. Mettre à jour l’objet `certificate` imbriqué dans l’enregistrement du membre  
+7. Déclencher l’envoi via WhatsApp  
 
 ---
 
-# Phase 5 — Intégration WhatsApp (API Meta)
+## Technologies Suggérées
 
-## Objectif
+- Python  
+- boto3  
+- reportlab  
+- Pillow (PIL)  
 
-Envoyer les certificats générés via WhatsApp.
+---
 
-## Étapes
+# Phase 5 — Intégration WhatsApp (API Cloud Meta)
 
-1. Créer un compte développeur Meta
-2. Configurer WhatsApp Cloud API
-3. Générer un token d’accès
-4. Enregistrer le numéro de téléphone
-5. Créer un modèle de message
+## Exigences de Configuration
 
-## Processus d’Envoi
+- Compte Développeur Meta  
+- Application WhatsApp Business  
+- Enregistrement du Numéro de Téléphone  
+- Génération du Token d’Accès  
+- Modèle de Message Approuvé  
 
-Après génération du certificat :
+---
 
-- Appeler l’API WhatsApp de Meta
-- Envoyer :
-  - Le PDF en pièce jointe OU
-  - Un lien sécurisé S3
-- Mettre à jour le statut d’envoi dans DynamoDB
+## Logique de Livraison
+
+Après la génération du certificat :
+
+1. Appeler l’API WhatsApp de Meta  
+2. Envoyer :
+   - Le PDF en pièce jointe **OU**
+   - Un lien sécurisé S3  
+3. Mettre à jour le champ `whatsapp_sent` dans l’objet certificat  
+
+---
 
 ## Gestion des Erreurs
 
-- Journaliser les échecs
-- Implémenter un mécanisme de nouvelle tentative
+- Capturer les erreurs de l’API  
+- Mettre à jour l’état d’échec  
+- Autoriser un mécanisme de nouvelle tentative  
 
 ---
 
@@ -210,28 +140,31 @@ Après génération du certificat :
 
 ## Tests
 
-- Validation des opérations DynamoDB
-- Validation des téléchargements S3
-- Validation de l’exécution Lambda
-- Validation de l’invocation API Gateway
-- Validation de l’envoi WhatsApp
-- Test complet de bout en bout
+- Validation des lectures/écritures DynamoDB  
+- Validation des téléchargements S3  
+- Validation de l’exécution Lambda  
+- Validation de l’invocation API Gateway  
+- Validation de l’envoi WhatsApp  
+- Test complet de bout en bout  
+
+---
 
 ## Déploiement
 
-- Déployer l’infrastructure via Terraform
-- Déployer le code Lambda
-- Configurer les variables d’environnement production
-- Vérifier le fonctionnement complet
+- Déployer l’infrastructure via Terraform  
+- Déployer le code Lambda  
+- Configurer les variables d’environnement en production  
+- Valider le flux complet de bout en bout  
 
 ---
 
 # Considérations de Sécurité
 
-- Politiques IAM à privilèges minimaux
-- Bucket S3 privé
-- Configuration sécurisée d’API Gateway
-- Protection des tokens Meta API
+- Politiques IAM à privilèges minimaux  
+- Bucket S3 privé  
+- Configuration sécurisée d’API Gateway  
+- Protection des tokens d’accès Meta  
+- Validation des entrées avant génération du certificat  
 
 ---
 
@@ -239,26 +172,27 @@ Après génération du certificat :
 
 Le projet est considéré comme terminé lorsque :
 
-- Les certificats sont générés correctement (PDF + JPEG)
-- Les certificats sont stockés dans S3
-- Les métadonnées sont enregistrées dans DynamoDB
-- L’envoi WhatsApp fonctionne correctement
-- L’infrastructure est reproductible via Terraform
-- Le système fonctionne de bout en bout sans intervention manuelle
+- Les certificats PDF + JPEG sont générés correctement  
+- Les fichiers sont stockés dans S3  
+- L’objet certificat est enregistré dans le dossier du membre  
+- L’envoi WhatsApp est réussi  
+- L’infrastructure est entièrement reproductible via Terraform  
+- Le flux complet fonctionne de manière automatisée  
 
 ---
 
 # Améliorations Futures (Optionnelles)
 
-- Tableau de bord administrateur
-- Statistiques de livraison
-- Numérotation automatique des certificats
-- Support multilingue
-- Journal d’audit
+- Support multi-certificats (remplacer `certificate` par une liste `certificates`)  
+- Tableau de bord administrateur  
+- Statistiques de livraison  
+- Numérotation automatique des certificats  
+- Support multilingue  
+- Journal d’audit  
 
 ---
 
 # Statut
 
-Phase actuelle : Phases 1–6 définies et structurées  
-Déploiement : En attente de mise en œuvre de l’infrastructure
+Phases 1–6 entièrement définies  
+Implémentation : En attente du déploiement de l’infrastructure  
