@@ -596,6 +596,32 @@ resource "aws_iam_role_policy_attachment" "lambda_cloudwatch" {
   policy_arn = aws_iam_policy.lambda_cloudwatch.arn
 }
 
+data "aws_iam_policy_document" "lambda_apigw" {
+  statement {
+    sid    = "InvokeAPIGateway"
+    effect = "Allow"
+
+    actions = ["execute-api:Invoke"]
+
+    resources = [
+      "${aws_api_gateway_rest_api.kopera-apigw.execution_arn}/${var.environment}/GET/members",
+      "${aws_api_gateway_rest_api.kopera-apigw.execution_arn}/${var.environment}/GET/companies",
+    ]
+  }
+}
+
+resource "aws_iam_policy" "lambda_apigw" {
+  name        = "${local.prefix}-lambda-apigw"
+  description = "Allow Lambda to invoke its own API Gateway GET endpoints"
+  policy      = data.aws_iam_policy_document.lambda_apigw.json
+  tags        = local.common_tags
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_apigw" {
+  role       = aws_iam_role.lambda_exec.name
+  policy_arn = aws_iam_policy.lambda_apigw.arn
+}
+
 ################################################################################
 # Lambda — Certificate Handler (no code deployed yet)
 ################################################################################
@@ -613,15 +639,16 @@ resource "aws_lambda_function" "certificate_handler" {
   timeout     = 60
   memory_size = 512
 
-  environment {
-    variables = {
-      COMPANIES_TABLE = aws_dynamodb_table.kopera-company.name
-      MEMBERS_TABLE   = aws_dynamodb_table.kopera-member.name
-      CERTS_BUCKET    = aws_s3_bucket.kopera-certificate.id
-      ASSETS_BUCKET   = aws_s3_bucket.kopera-asset.id
-      ENVIRONMENT     = var.environment
-    }
+environment {
+  variables = {
+    COMPANIES_TABLE = aws_dynamodb_table.kopera-company.name
+    MEMBERS_TABLE   = aws_dynamodb_table.kopera-member.name
+    CERTS_BUCKET    = aws_s3_bucket.kopera-certificate.id
+    ASSETS_BUCKET   = aws_s3_bucket.kopera-asset.id
+    ENVIRONMENT     = var.environment
+    API_BASE_URL    = "https://${aws_api_gateway_rest_api.kopera-apigw.id}.execute-api.${var.aws_region}.amazonaws.com/${var.environment}"
   }
+}
 
   depends_on = [
     aws_iam_role_policy_attachment.lambda_dynamodb,
