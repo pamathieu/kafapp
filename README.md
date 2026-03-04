@@ -150,6 +150,9 @@ timestamp
     }
   }
 }
+```
+
+---
 
 # Phase 4 — Certificate Generation Engine
 

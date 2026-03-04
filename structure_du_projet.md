@@ -78,6 +78,9 @@ Structure :
     }
   }
 }
+```
+
+---
 
 # Phase 4 — Moteur de Génération de Certificats
 
