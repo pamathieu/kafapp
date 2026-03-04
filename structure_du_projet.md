@@ -3,7 +3,6 @@
 
 # 📘 VERSION FRANÇAISE COMPLÈTE (MISE À JOUR)
 
-```markdown
 # Système Automatisé de Certificat WhatsApp KAFA
 
 ## Présentation du Projet
