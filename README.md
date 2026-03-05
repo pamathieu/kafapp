@@ -166,7 +166,7 @@ timestamp
    - JPEG (Pillow)
 5. Upload files to S3  
 6. Update nested `certificate` object in member record  
-7. Trigger WhatsApp delivery  
+7. Download documents for a given phone number (Unique User Identifier) 
 
 ---
 
