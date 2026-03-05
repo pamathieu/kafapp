@@ -221,145 +221,114 @@ resource "aws_iam_role" "lambda_exec" {
 
 # ── DynamoDB ──────────────────────────────────────────────────────────────────
 
-data "aws_iam_policy_document" "lambda_dynamodb" {
-  statement {
-    sid    = "DynamoDBAccess"
-    effect = "Allow"
-    actions = [
-      "dynamodb:GetItem",
-      "dynamodb:PutItem",
-      "dynamodb:UpdateItem",
-      "dynamodb:DeleteItem",
-      "dynamodb:Query",
-      "dynamodb:Scan",
+# ── DynamoDB inline policy ────────────────────────────────────────────────────
+
+resource "aws_iam_role_policy" "lambda_dynamodb" {
+  name = "dynamodb"
+  role = aws_iam_role.lambda_exec.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "DynamoDBAccess"
+      Effect = "Allow"
+      Action = [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+      ]
+      Resource = [
+        aws_dynamodb_table.kopera-company.arn,
+        aws_dynamodb_table.kopera-member.arn,
+        "${aws_dynamodb_table.kopera-company.arn}/index/*",
+        "${aws_dynamodb_table.kopera-member.arn}/index/*",
+      ]
+    }]
+  })
+}
+
+# ── S3 inline policy ──────────────────────────────────────────────────────────
+
+resource "aws_iam_role_policy" "lambda_s3" {
+  name = "s3"
+  role = aws_iam_role.lambda_exec.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "S3CertificateWrite"
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:HeadObject",
+          "s3:DeleteObject",
+          "s3:ListBucket",
+        ]
+        Resource = [
+          aws_s3_bucket.kopera-certificate.arn,
+          "${aws_s3_bucket.kopera-certificate.arn}/*",
+        ]
+      },
+      {
+        Sid    = "S3AssetRead"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:ListBucket",
+        ]
+        Resource = [
+          aws_s3_bucket.kopera-asset.arn,
+          "${aws_s3_bucket.kopera-asset.arn}/*",
+        ]
+      },
     ]
-    resources = [
-      aws_dynamodb_table.kopera-company.arn,
-      aws_dynamodb_table.kopera-member.arn,
-      "${aws_dynamodb_table.kopera-company.arn}/index/*",
-      "${aws_dynamodb_table.kopera-member.arn}/index/*",
-    ]
-  }
+  })
 }
 
-resource "aws_iam_policy" "lambda_dynamodb" {
-  name   = "${local.prefix}-lambda-dynamodb"
-  policy = data.aws_iam_policy_document.lambda_dynamodb.json
-  tags   = local.common_tags
+# ── CloudWatch Logs inline policy ─────────────────────────────────────────────
+
+resource "aws_iam_role_policy" "lambda_cloudwatch" {
+  name = "cloudwatch"
+  role = aws_iam_role.lambda_exec.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "CloudWatchLogs"
+      Effect = "Allow"
+      Action = [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+      ]
+      Resource = [
+        "arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${local.prefix}-*",
+        "arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${local.prefix}-*:*",
+      ]
+    }]
+  })
 }
 
-resource "aws_iam_role_policy_attachment" "lambda_dynamodb" {
-  role       = aws_iam_role.lambda_exec.name
-  policy_arn = aws_iam_policy.lambda_dynamodb.arn
-}
+# ── execute-api:Invoke inline policy ──────────────────────────────────────────
 
-# ── S3 ────────────────────────────────────────────────────────────────────────
+resource "aws_iam_role_policy" "lambda_apigw" {
+  name = "apigw"
+  role = aws_iam_role.lambda_exec.id
 
-data "aws_iam_policy_document" "lambda_s3" {
-  statement {
-    sid    = "S3CertificateWrite"
-    effect = "Allow"
-    actions = [
-      "s3:PutObject",
-      "s3:GetObject",
-      "s3:DeleteObject",
-      "s3:ListBucket",
-    ]
-    resources = [
-      aws_s3_bucket.kopera-certificate.arn,
-      "${aws_s3_bucket.kopera-certificate.arn}/*",
-    ]
-  }
-
-  statement {
-    sid    = "S3AssetRead"
-    effect = "Allow"
-    actions = [
-      "s3:GetObject",
-      "s3:ListBucket",
-    ]
-    resources = [
-      aws_s3_bucket.kopera-asset.arn,
-      "${aws_s3_bucket.kopera-asset.arn}/*",
-    ]
-  }
-}
-
-resource "aws_iam_policy" "lambda_s3" {
-  name   = "${local.prefix}-lambda-s3"
-  policy = data.aws_iam_policy_document.lambda_s3.json
-  tags   = local.common_tags
-}
-
-resource "aws_iam_role_policy_attachment" "lambda_s3" {
-  role       = aws_iam_role.lambda_exec.name
-  policy_arn = aws_iam_policy.lambda_s3.arn
-}
-
-# ── CloudWatch Logs ───────────────────────────────────────────────────────────
-
-data "aws_iam_policy_document" "lambda_cloudwatch" {
-  statement {
-    sid    = "CloudWatchLogs"
-    effect = "Allow"
-    actions = [
-      "logs:CreateLogGroup",
-      "logs:CreateLogStream",
-      "logs:PutLogEvents",
-      "logs:TagResource",
-    ]
-    resources = [
-      "arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${local.prefix}-*",
-      "arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${local.prefix}-*:*",
-    ]
-  }
-}
-
-resource "aws_iam_policy" "lambda_cloudwatch" {
-  name   = "${local.prefix}-lambda-cloudwatch"
-  policy = data.aws_iam_policy_document.lambda_cloudwatch.json
-  tags   = local.common_tags
-}
-
-resource "aws_iam_role_policy_attachment" "lambda_cloudwatch" {
-  role       = aws_iam_role.lambda_exec.name
-  policy_arn = aws_iam_policy.lambda_cloudwatch.arn
-}
-
-# ── execute-api:Invoke  (Lambda calls its own GET routes) ─────────────────────
-
-data "aws_iam_policy_document" "lambda_apigw" {
-  statement {
-    sid     = "InvokeOwnAPIGateway"
-    effect  = "Allow"
-    actions = ["execute-api:Invoke"]
-    # Wildcard covers all methods and routes Lambda calls on itself:
-    # GET /members, GET /companies, and any future internal calls
-    resources = [
-      "${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/*/*",
-    ]
-  }
-}
-
-resource "aws_iam_policy" "lambda_apigw" {
-  name   = "${local.prefix}-lambda-apigw"
-  policy = data.aws_iam_policy_document.lambda_apigw.json
-  tags   = local.common_tags
-}
-
-resource "aws_iam_role_policy_attachment" "lambda_apigw" {
-  role       = aws_iam_role.lambda_exec.name
-  policy_arn = aws_iam_policy.lambda_apigw.arn
-}
-
-################################################################################
-# CloudWatch — Lambda Log Group
-################################################################################
-
-resource "aws_cloudwatch_log_group" "certificate_handler" {
-  name              = "/aws/lambda/${local.prefix}-certificate-handler"
-  retention_in_days = 30
-  tags              = local.common_tags
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "InvokeOwnAPIGateway"
+      Effect   = "Allow"
+      Action   = ["execute-api:Invoke"]
+      Resource = ["${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/*/*"]
+    }]
+  })
 }
 
 ################################################################################
@@ -370,8 +339,8 @@ resource "aws_lambda_function" "certificate_handler" {
   function_name = "${local.prefix}-certificate-handler"
   description   = "Generates PDF/JPEG certificates, uploads to S3, updates DynamoDB"
 
-  s3_bucket         = aws_s3_bucket.kopera-asset.id
-  s3_key            = "lambda/certificate_handler.zip"
+  s3_bucket = aws_s3_bucket.kopera-asset.id
+  s3_key    = "lambda/certificate_handler.zip"
 
   runtime     = "python3.12"
   handler     = "handler.lambda_handler"
@@ -391,11 +360,10 @@ resource "aws_lambda_function" "certificate_handler" {
   }
 
   depends_on = [
-    aws_cloudwatch_log_group.certificate_handler,
-    aws_iam_role_policy_attachment.lambda_dynamodb,
-    aws_iam_role_policy_attachment.lambda_s3,
-    aws_iam_role_policy_attachment.lambda_cloudwatch,
-    aws_iam_role_policy_attachment.lambda_apigw,
+    aws_iam_role_policy.lambda_dynamodb,
+    aws_iam_role_policy.lambda_s3,
+    aws_iam_role_policy.lambda_cloudwatch,
+    aws_iam_role_policy.lambda_apigw,
   ]
 
   tags = local.common_tags
@@ -405,6 +373,159 @@ resource "aws_lambda_permission" "apigw_invoke" {
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.certificate_handler.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+}
+
+################################################################################
+# IAM — extra policies for retrieval Lambda
+################################################################################
+
+# DynamoDB Scan (needed to search by phone number across all members)
+resource "aws_iam_role_policy" "retrieval_dynamodb_scan" {
+  name = "dynamodb-scan"
+  role = aws_iam_role.lambda_retrieval_exec.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "DynamoDBScanAndGet"
+      Effect = "Allow"
+      Action = [
+        "dynamodb:Scan",
+        "dynamodb:GetItem",
+        "dynamodb:Query",
+      ]
+      Resource = [
+        aws_dynamodb_table.kopera-member.arn,
+        "${aws_dynamodb_table.kopera-member.arn}/index/*",
+      ]
+    }]
+  })
+}
+
+# S3 — read objects + generate pre-signed URLs from kopera-certificate
+resource "aws_iam_role_policy" "retrieval_s3" {
+  name = "s3-presign"
+  role = aws_iam_role.lambda_retrieval_exec.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "S3CertificateRead"
+      Effect = "Allow"
+      Action = [
+        "s3:GetObject",
+        "s3:ListBucket",
+      ]
+      Resource = [
+        aws_s3_bucket.kopera-certificate.arn,
+        "${aws_s3_bucket.kopera-certificate.arn}/*",
+      ]
+    }]
+  })
+}
+
+# CloudWatch Logs for retrieval Lambda
+resource "aws_iam_role_policy" "retrieval_cloudwatch" {
+  name = "cloudwatch"
+  role = aws_iam_role.lambda_retrieval_exec.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "CloudWatchLogs"
+      Effect = "Allow"
+      Action = [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+      ]
+      Resource = [
+        "arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${local.prefix}-*",
+        "arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${local.prefix}-*:*",
+      ]
+    }]
+  })
+}
+
+# execute-api:Invoke so retrieval Lambda can call GET /members on kopera-apigw
+resource "aws_iam_role_policy" "retrieval_apigw" {
+  name = "apigw"
+  role = aws_iam_role.lambda_retrieval_exec.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "InvokeAPIGateway"
+      Effect   = "Allow"
+      Action   = ["execute-api:Invoke"]
+      Resource = ["${aws_api_gateway_rest_api.main.execution_arn}/${var.environment}/*/*"]
+    }]
+  })
+}
+
+################################################################################
+# IAM — Retrieval Lambda execution role
+################################################################################
+
+resource "aws_iam_role" "lambda_retrieval_exec" {
+  name = "${local.prefix}-lambda-retrieval-exec"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "LambdaAssumeRole"
+      Effect    = "Allow"
+      Action    = "sts:AssumeRole"
+      Principal = { Service = "lambda.amazonaws.com" }
+    }]
+  })
+
+  tags = local.common_tags
+}
+
+################################################################################
+################################################################################
+# Lambda — Certificate Retrieval Handler
+################################################################################
+
+resource "aws_lambda_function" "certificate_retrieval" {
+  function_name = "${local.prefix}-certificate-retrieval"
+  description   = "Looks up a member by phone number and returns pre-signed certificate download URLs"
+
+  s3_bucket = aws_s3_bucket.kopera-asset.id
+  s3_key    = "lambda/certificate_retrieval.zip"
+
+  runtime     = "python3.12"
+  handler     = "certificate_retrieval_handler.lambda_handler"
+  role        = aws_iam_role.lambda_retrieval_exec.arn
+  timeout     = 30
+  memory_size = 256
+
+  environment {
+    variables = {
+      MEMBERS_TABLE = aws_dynamodb_table.kopera-member.name
+      CERTS_BUCKET  = aws_s3_bucket.kopera-certificate.id
+      ENVIRONMENT   = var.environment
+      API_BASE_URL  = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${var.environment}"
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy.retrieval_dynamodb_scan,
+    aws_iam_role_policy.retrieval_s3,
+    aws_iam_role_policy.retrieval_cloudwatch,
+    aws_iam_role_policy.retrieval_apigw,
+  ]
+
+  tags = local.common_tags
+}
+
+resource "aws_lambda_permission" "apigw_invoke_retrieval" {
+  statement_id  = "AllowAPIGatewayInvokeRetrieval"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.certificate_retrieval.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
 }
@@ -422,6 +543,46 @@ resource "aws_api_gateway_rest_api" "main" {
   }
 
   tags = local.common_tags
+}
+
+
+# ── /retrieve  GET → look up member by phone, return pre-signed cert URLs ────
+
+resource "aws_api_gateway_resource" "retrieve" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "retrieve"
+}
+
+resource "aws_api_gateway_method" "retrieve_get" {
+  rest_api_id        = aws_api_gateway_rest_api.main.id
+  resource_id        = aws_api_gateway_resource.retrieve.id
+  http_method        = "GET"
+  authorization      = "NONE"
+
+  request_parameters = {
+    "method.request.querystring.phone" = true
+  }
+}
+
+resource "aws_api_gateway_method_response" "retrieve_get_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.retrieve.id
+  http_method = aws_api_gateway_method.retrieve_get.http_method
+  status_code = "200"
+
+  response_models = {
+    "application/json" = "Empty"
+  }
+}
+
+resource "aws_api_gateway_integration" "retrieve_get" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.retrieve.id
+  http_method             = aws_api_gateway_method.retrieve_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.certificate_retrieval.invoke_arn
 }
 
 # ── /certificates  POST → generate certificate ────────────────────────────────
@@ -559,6 +720,8 @@ resource "aws_api_gateway_deployment" "main" {
 
   triggers = {
     redeployment = sha1(jsonencode([
+      aws_api_gateway_integration.retrieve_get.id,
+      aws_api_gateway_method_response.retrieve_get_200.id,
       aws_api_gateway_integration.certificates_post.id,
       aws_api_gateway_integration.certificate_item_get.id,
       aws_api_gateway_integration.companies_get.id,
@@ -569,6 +732,7 @@ resource "aws_api_gateway_deployment" "main" {
   }
 
   depends_on = [
+    aws_api_gateway_integration.retrieve_get,
     aws_api_gateway_integration.certificates_post,
     aws_api_gateway_integration.certificate_item_get,
     aws_api_gateway_integration.companies_get,
@@ -662,7 +826,17 @@ output "kopera_asset_bucket_arn" {
   value = aws_s3_bucket.kopera-asset.arn
 }
 
-output "lambda_log_group" {
-  description = "CloudWatch log group for the certificate handler Lambda"
-  value       = aws_cloudwatch_log_group.certificate_handler.name
+output "retrieval_lambda_function_name" {
+  description = "Certificate retrieval Lambda function name"
+  value       = aws_lambda_function.certificate_retrieval.function_name
+}
+
+output "retrieval_lambda_function_arn" {
+  description = "Certificate retrieval Lambda function ARN"
+  value       = aws_lambda_function.certificate_retrieval.arn
+}
+
+output "retrieve_endpoint" {
+  description = "GET endpoint — retrieve certificate by phone number"
+  value       = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${var.environment}/retrieve?phone=<phone_number>"
 }
