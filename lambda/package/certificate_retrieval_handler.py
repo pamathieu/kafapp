@@ -28,21 +28,25 @@ import requests
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-_session        = boto3.session.Session()
-dynamodb        = boto3.resource("dynamodb")
-s3_client       = boto3.client(
-    "s3",
-    region_name          = AWS_REGION,
-    config               = boto3.session.Config(signature_version="s3v4"),
-)
-
-MEMBERS_TABLE   = os.environ["MEMBERS_TABLE"]    # kopera-member
-CERTS_BUCKET    = os.environ["CERTS_BUCKET"]     # kopera-certificate
-API_BASE_URL    = os.environ["API_BASE_URL"]     # https://<id>.execute-api.<region>.amazonaws.com/<stage>
+MEMBERS_TABLE   = os.environ["MEMBERS_TABLE"]
+CERTS_BUCKET    = os.environ["CERTS_BUCKET"]
+API_BASE_URL    = os.environ["API_BASE_URL"]
 AWS_REGION      = os.environ.get("AWS_REGION", "us-east-1")
 
 # Pre-signed URL expiry — 24 hours
 PRESIGN_EXPIRY  = 86400
+
+_session        = boto3.session.Session()
+dynamodb        = boto3.resource("dynamodb")
+s3_client       = boto3.client(
+    "s3",
+    region_name  = AWS_REGION,
+    endpoint_url = f"https://s3.{AWS_REGION}.amazonaws.com",
+    config       = boto3.session.Config(
+        signature_version = "s3v4",
+        s3                = {"addressing_style": "path"},
+    ),
+)
 
 ################################################################################
 # Entry Point
