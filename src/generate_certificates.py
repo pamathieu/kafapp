@@ -129,17 +129,210 @@ def upload(data: bytes, key: str, content_type: str) -> str:
     )
     return f"s3://{CERTS_BUCKET}/{key}"
 
+
+def fetch_logo(s3_path: str) -> io.BytesIO | None:
+    """Download logo from S3 and return as BytesIO, or None if unavailable."""
+    if not s3_path or not s3_path.startswith("s3://"):
+        return None
+    try:
+        without_prefix = s3_path[len("s3://"):]
+        bucket, _, key = without_prefix.partition("/")
+        resp = s3.get_object(Bucket=bucket, Key=key)
+        return io.BytesIO(resp["Body"].read())
+    except Exception as exc:
+        log.warning("Could not fetch logo from %s: %s", s3_path, exc)
+        return None
+
 ################################################################################
 # PDF generation — exact KAFA certificate template
 ################################################################################
 
 def generate_pdf(member: dict, company: dict, certificate_id: str, issued_date: str) -> bytes:
+    from reportlab.platypus import Image as RLImage
+
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
-        leftMargin=2.8*cm, rightMargin=2.8*cm,
-        topMargin=2.2*cm,  bottomMargin=2.2*cm,
+        leftMargin=2.2*cm, rightMargin=2.2*cm,
+        topMargin=1.4*cm,  bottomMargin=1.4*cm,
     )
+
+    DARK   = colors.HexColor("#0d1b2a")
+    MID    = colors.HexColor("#1b3a5c")
+    ACCENT = colors.HexColor("#c8a96e")
+    GREY   = colors.HexColor("#5a6a7a")
+    RULE   = colors.HexColor("#d0d8e0")
+
+    def S(name, **kw):
+        base = dict(fontName="Helvetica", textColor=DARK, leading=12)
+        base.update(kw)
+        return ParagraphStyle(name, **base)
+
+    s = {
+        "org":     S("org",     fontSize=7,  textColor=GREY, alignment=TA_CENTER),
+        "sub":     S("sub",     fontSize=12, fontName="Helvetica-Bold", textColor=MID, alignment=TA_CENTER, spaceAfter=4),
+        "intro":   S("intro",   fontSize=9,  alignment=TA_JUSTIFY, spaceAfter=6, leading=13),
+        "label":   S("label",   fontSize=8,  fontName="Helvetica-Bold", textColor=MID, alignment=TA_LEFT),
+        "value":   S("value",   fontSize=10, alignment=TA_LEFT, spaceAfter=2, leading=12),
+        "sec":     S("sec",     fontSize=10, fontName="Helvetica-Bold", alignment=TA_CENTER, spaceBefore=4, spaceAfter=2),
+        "bbold":   S("bbold",   fontSize=9,  fontName="Helvetica-Bold", alignment=TA_JUSTIFY, spaceAfter=4, leading=13),
+        "bnorm":   S("bnorm",   fontSize=9,  alignment=TA_JUSTIFY, spaceAfter=4, leading=13),
+        "signame": S("signame", fontSize=9,  fontName="Helvetica-Bold", alignment=TA_CENTER),
+        "sigtit":  S("sigtit",  fontSize=8,  textColor=GREY, alignment=TA_CENTER),
+        "footer":  S("footer",  fontSize=7,  textColor=GREY, alignment=TA_CENTER),
+        "seal":    S("seal",    fontSize=7,  textColor=colors.HexColor("#aabbcc"), alignment=TA_CENTER),
+    }
+
+    def rule(thick=1, color=ACCENT, **kw):
+        return HRFlowable(width="100%", thickness=thick, color=color, **kw)
+
+    def field(label, value):
+        story.extend([
+            Paragraph(label, s["label"]),
+            Paragraph(value,  s["value"]),
+            rule(thick=0.5, color=RULE, spaceAfter=3),
+        ])
+
+    def fmt_date(raw: str) -> str:
+        if not raw:
+            return "____ / ____ / ______"
+        try:
+            return datetime.strptime(str(raw)[:10], "%Y-%m-%d").strftime("%d / %m / %Y")
+        except ValueError:
+            return str(raw)
+
+    # Company fields
+    co_name   = company.get("name",                "Koperativ Asirans Fòs Ayiti (KAFA)")
+    co_reg    = company.get("registration_number", "")
+    co_logo   = company.get("path_to_logo",        "")
+    co_siege  = company.get("siege_social",        "Léogâne, Haiti")
+    co_phone  = company.get("phone",               "")
+    co_email  = company.get("email",               "")
+    co_web    = company.get("website",             "")
+    co_city   = company.get("city",                "Leogane")
+    co_ctry   = company.get("country",             "Haiti")
+    sec_name  = company.get("secretary_name",      "Verlène REBECCA")
+    sec_title = company.get("secretary_title",     "Secretaire du Conseil d'Administration")
+    dir_name  = company.get("director_name",       "Jean René AMY")
+    dir_title = company.get("director_title",      "Directeur Exécutif")
+
+    # Member fields
+    m_name  = member.get("full_name",    "___________________________")
+    m_dob   = fmt_date(member.get("date_of_birth", ""))
+    m_id    = member.get("id_number",   "___________________________")
+    m_type  = member.get("id_type",     "_______________")
+    m_addr  = member.get("address",     "___________________________")
+    m_num   = member.get("memberId",    "___________________________")
+    m_dom   = fmt_date(member.get("issued_date", issued_date))
+
+    story = []
+
+    # ── Header: logo left + org info right ───────────────────────────────────
+    logo_data = fetch_logo(co_logo)
+
+    org_parts = [x for x in [
+        f"Siège Social : {co_siege}" if co_siege else "",
+        f"Tél : {co_phone}"          if co_phone else "",
+        f"Email : {co_email}"        if co_email else "",
+        f"Web : {co_web}"            if co_web   else "",
+    ] if x]
+    org_text = "  |  ".join(org_parts) if org_parts else ""
+
+    if logo_data:
+        logo_img = RLImage(logo_data, width=2.8*cm, height=2.2*cm)
+        header_table = Table(
+            [[logo_img, Paragraph(org_text, s["org"])]],
+            colWidths=[3.2*cm, None],
+        )
+        header_table.setStyle(TableStyle([
+            ("VALIGN",      (0,0), (-1,-1), "MIDDLE"),
+            ("ALIGN",       (1,0), (1,0),   "RIGHT"),
+            ("LEFTPADDING", (0,0), (-1,-1), 0),
+            ("RIGHTPADDING",(0,0), (-1,-1), 0),
+        ]))
+        story.append(header_table)
+    else:
+        if org_text:
+            story.append(Paragraph(org_text, s["org"]))
+
+    story.append(Spacer(1, 0.2*cm))
+
+    story += [
+        rule(thick=3, spaceAfter=4),
+        Paragraph("CERTIFICAT OFFICIEL D'ADHÉSION", s["sub"]),
+        rule(thick=3, spaceBefore=2, spaceAfter=8),
+        Paragraph(
+            f"La <b>{co_name}</b>, constituée conformément aux lois de la République d'Ayiti "
+            f"et régulièrement enregistrée sous le numéro "
+            f"<b>{co_reg if co_reg else '___________________'}</b>, certifie que :",
+            s["intro"],
+        ),
+    ]
+
+    field("Nom et Prénom :",         m_name)
+    field("Date de naissance :",     m_dob)
+    field("No Identification :",     f"{m_id}    Type : {m_type}")
+    field("Adresse :",               m_addr)
+    field("Numéro d'adhérent :",     m_num)
+    field("Date d'adhésion :",       m_dom)
+
+    story.append(Spacer(1, 0.2*cm))
+
+    story += [
+        rule(spaceAfter=4),
+        Paragraph("STATUT DU MEMBRE", s["sec"]),
+        rule(spaceAfter=6),
+        Paragraph(
+            "Le titulaire du présent certificat est reconnu comme "
+            "<b>Membre Fondateur (Actif)</b> de KAFA, et a ce titre, il/elle bénéficie des droits, "
+            "privilèges et garanties prévues par les statuts de la coopérative ainsi que par les "
+            "programmes offerts aux membres, conformément aux règlements internes en vigueur.",
+            s["bbold"],
+        ),
+        Paragraph(
+            "Le présent certificat constitue une preuve officielle d'adhésion et peut être présenté "
+            "à toute autorité, institution ou organisme pour confirmation de statut du membre "
+            "au sein de la coopérative.",
+            s["bnorm"],
+        ),
+        Spacer(1, 0.2*cm),
+        rule(spaceAfter=4),
+        Paragraph("SIGNATURES AUTORISÉES", s["sec"]),
+        Spacer(1, 0.15*cm),
+        Paragraph(f"Fait à {co_city}, {co_ctry}, le {issued_date}", s["intro"]),
+        Spacer(1, 0.5*cm),
+    ]
+
+    from reportlab.platypus import KeepTogether
+
+    sig_table = Table(
+        [
+            [Paragraph("_"*38, s["signame"]),               Paragraph("_"*38, s["signame"])],
+            [Paragraph(f"<b>{sec_name}</b>", s["signame"]), Paragraph(f"<b>{dir_name}</b>", s["signame"])],
+            [Paragraph(sec_title, s["sigtit"]),             Paragraph(dir_title, s["sigtit"])],
+        ],
+        colWidths=["50%", "50%"],
+    )
+    sig_table.setStyle(TableStyle([
+        ("ALIGN",         (0,0), (-1,-1), "CENTER"),
+        ("VALIGN",        (0,0), (-1,-1), "TOP"),
+        ("TOPPADDING",    (0,0), (-1,-1), 2),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 2),
+    ]))
+
+    story += [
+        KeepTogether([
+            sig_table,
+            Spacer(1, 0.3*cm),
+            Paragraph("[SCEAU OFFICIEL]", s["seal"]),
+            Spacer(1, 0.2*cm),
+            rule(thick=2, spaceAfter=3),
+            Paragraph(f"Certificat ID : {certificate_id}", s["footer"]),
+        ])
+    ]
+
+    doc.build(story)
+    return buf.getvalue()
 
     DARK   = colors.HexColor("#0d1b2a")
     MID    = colors.HexColor("#1b3a5c")
@@ -154,8 +347,7 @@ def generate_pdf(member: dict, company: dict, certificate_id: str, issued_date: 
 
     s = {
         "org":     S("org",     fontSize=7,  textColor=GREY, alignment=TA_CENTER),
-        "title":   S("title",   fontSize=20, fontName="Helvetica-Bold", alignment=TA_CENTER, spaceBefore=4, spaceAfter=2),
-        "sub":     S("sub",     fontSize=10, textColor=MID,  alignment=TA_CENTER, spaceAfter=6),
+        "sub":     S("sub",     fontSize=13, fontName="Helvetica-Bold", textColor=MID, alignment=TA_CENTER, spaceAfter=6),
         "intro":   S("intro",   fontSize=10, alignment=TA_JUSTIFY, spaceAfter=10),
         "label":   S("label",   fontSize=9,  fontName="Helvetica-Bold", textColor=MID, alignment=TA_LEFT),
         "value":   S("value",   fontSize=11, alignment=TA_LEFT, spaceAfter=4),
@@ -188,7 +380,8 @@ def generate_pdf(member: dict, company: dict, certificate_id: str, issued_date: 
 
     # Company fields
     co_name   = company.get("name",                "Koperativ Asirans Fòs Ayiti (KAFA)")
-    co_reg    = company.get("registration_number", "___________________")
+    co_reg    = company.get("registration_number", "")
+    co_logo   = company.get("path_to_logo",        "")
     co_siege  = company.get("siege_social",        "Léogâne, Haiti")
     co_phone  = company.get("phone",               "")
     co_email  = company.get("email",               "")
@@ -211,25 +404,44 @@ def generate_pdf(member: dict, company: dict, certificate_id: str, issued_date: 
 
     story = []
 
-    # Header
+    # ── Header: logo left + org info right ───────────────────────────────────
+    logo_data = fetch_logo(co_logo)
+
     org_parts = [x for x in [
         f"Siège Social : {co_siege}" if co_siege else "",
         f"Tél : {co_phone}"          if co_phone else "",
         f"Email : {co_email}"        if co_email else "",
         f"Web : {co_web}"            if co_web   else "",
     ] if x]
+    org_text = "  |  ".join(org_parts) if org_parts else ""
 
-    if org_parts:
-        story += [Paragraph("  |  ".join(org_parts), s["org"]), Spacer(1, 0.3*cm)]
+    if logo_data:
+        logo_img = RLImage(logo_data, width=3.5*cm, height=2.8*cm)
+        header_table = Table(
+            [[logo_img, Paragraph(org_text, s["org"])]],
+            colWidths=[4*cm, None],
+        )
+        header_table.setStyle(TableStyle([
+            ("VALIGN",     (0,0), (-1,-1), "MIDDLE"),
+            ("ALIGN",      (1,0), (1,0),   "RIGHT"),
+            ("LEFTPADDING",(0,0), (-1,-1), 0),
+            ("RIGHTPADDING",(0,0),(-1,-1), 0),
+        ]))
+        story.append(header_table)
+    else:
+        if org_text:
+            story.append(Paragraph(org_text, s["org"]))
+
+    story.append(Spacer(1, 0.3*cm))
 
     story += [
         rule(thick=3, spaceAfter=6),
-        Paragraph(co_name.upper(), s["title"]),
         Paragraph("CERTIFICAT OFFICIEL D'ADHÉSION", s["sub"]),
         rule(thick=3, spaceBefore=4, spaceAfter=12),
         Paragraph(
             f"La <b>{co_name}</b>, constituée conformément aux lois de la République d'Ayiti "
-            f"et régulièrement enregistrée sous le numéro <b>{co_reg}</b>, certifie que :",
+            f"et régulièrement enregistrée sous le numéro "
+            f"<b>{co_reg if co_reg else '___________________'}</b>, certifie que :",
             s["intro"],
         ),
     ]
@@ -317,6 +529,23 @@ def generate_jpeg(pdf_bytes: bytes) -> bytes:
 # Certificate pipeline for a single member
 ################################################################################
 
+def delete_old_certificates(member: dict) -> None:
+    """Delete existing PDF and JPEG from S3 if they exist."""
+    cert = member.get("certificate")
+    if not cert:
+        return
+    for url_key in ("pdf_s3_url", "jpeg_s3_url"):
+        s3_url = cert.get(url_key, "")
+        if s3_url and s3_url.startswith("s3://"):
+            without_prefix = s3_url[len("s3://"):]
+            bucket, _, key = without_prefix.partition("/")
+            try:
+                s3.delete_object(Bucket=bucket, Key=key)
+                log.info("  🗑  Deleted old file: %s", key)
+            except Exception as exc:
+                log.warning("  Could not delete %s: %s", s3_url, exc)
+
+
 def process_member(member: dict, company: dict, dry_run: bool) -> bool:
     member_id  = member["memberId"]
     company_id = member["companyId"]
@@ -336,6 +565,9 @@ def process_member(member: dict, company: dict, dry_run: bool) -> bool:
         return True
 
     try:
+        # Delete old files from S3 first
+        delete_old_certificates(member)
+
         # Generate files
         pdf_bytes  = generate_pdf(member, company, certificate_id, issued_date)
         jpeg_bytes = generate_jpeg(pdf_bytes)
