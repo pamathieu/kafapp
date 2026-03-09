@@ -1,27 +1,26 @@
-# KAFA Automated WhatsApp Certificate System
+# KAFA Member Management
 
 ## Project Overview
 
-The KAFA Automated WhatsApp Certificate System is a cloud-based solution that generates official membership certificates and delivers them directly to members via WhatsApp.
+The KAFA Member Management system is a Flutter-based admin application that connects directly to the KAFA Certificate Platform backend on AWS. It allows authorized administrators to view, search, edit, and manage the status of all cooperative members.
 
 The system:
 
-- Collects company and member information
-- Generates an official certificate (PDF + JPEG)
-- Stores certificate data securely in AWS
-- Sends the certificate to the member using the Meta WhatsApp Cloud API
+- Authenticates the admin with a username and password
+- Displays a searchable, filterable list of all members
+- Shows full member details pulled live from DynamoDB via API Gateway
+- Allows the admin to edit member data and confirm changes with an Update action
+- Allows the admin to activate or deactivate individual members
 
-There is no login system and no user portal. Delivery is exclusively via WhatsApp.
+There is no public-facing portal. Access is restricted to authenticated admins only.
 
 ---
 
 # System Architecture
 
-Admin → API Gateway → Lambda → DynamoDB  
-                     ↓  
-                     S3  
-                     ↓  
-                  Meta WhatsApp API → Member  
+Admin (Flutter App) → API Gateway → Lambda → DynamoDB
+
+All API calls are signed with AWS SigV4 and routed through the existing `certplatform-prod-certificate-handler` Lambda.
 
 ---
 
@@ -29,217 +28,284 @@ Admin → API Gateway → Lambda → DynamoDB
 
 ## Key Requirements
 
-### Company Information (Static)
-- Company Name
-- Registration Number
-- Logo
-- Address
-- Phone
-- Email
-- Website
-- Authorized Signatories
-- Official Seal
+### Admin Authentication
+- Username and password login screen
+- Session held in memory for the duration of the app session
+- All API calls signed with AWS credentials on behalf of the admin
 
-### Member Information (Dynamic)
-- Full Name
-- Date of Birth
-- Identification Number
-- Identification Type
-- Address
-- Member Number
-- Date of Membership
-- WhatsApp Phone Number (Required)
+### Member List View
+- Display all members for company KAFA-001
+- Show: full name, member ID, phone number, active/inactive status
+- Real-time search by name, ID, phone, email, or address
+- Filter chips: All / Active / Inactive
+- Stats banner: total, active, and inactive counts
 
-### Certificate Requirements
-- Inject dynamic data into official template
-- Preserve formatting
-- Auto-insert issue date
-- Generate PDF + JPEG
+### Member Detail View
+- Display all member fields from DynamoDB
+- Show linked certificate metadata if present
+
+### Edit & Update
+- Admin clicks **Edit** to enter edit mode
+- All fields become editable inline
+- Admin clicks **Update** to persist changes via API
+- Admin can cancel to discard changes
+
+### Activate / Deactivate
+- Toggle button in the app bar on the detail screen
+- Requires confirmation before applying
+- Updates the `status` boolean attribute in DynamoDB
 
 ---
 
-# Phase 2 — Infrastructure Setup (Terraform)
+# Phase 2 — Infrastructure (AWS Backend)
 
-## AWS Components
+The Flutter app consumes existing API Gateway endpoints. Two new routes and one new DynamoDB attribute were added to support this feature.
 
-### DynamoDB
-- Companies table
-- Members table (includes certificate object)
+## New API Gateway Routes
 
-### S3
-- Store PDF certificates
-- Store JPEG certificates
-- Private bucket
+### GET /members/list
+- Returns all members for a given `companyId`
+- Used to populate the member list screen
 
-### Lambda
-- Certificate generation
-- Upload to S3
-- Update member certificate object
-- Trigger WhatsApp delivery
+### POST /members/edit
+- Accepts `memberId` + `companyId`
+- Returns the full member record ready for editing
 
-### API Gateway
-- Secure REST endpoint
-- Invokes Lambda
+### POST /members/update
+- Accepts updated member fields including `status`
+- Persists changes to DynamoDB via `update_item`
+- Returns the updated member record
 
-### IAM (Least Privilege)
-- Lambda → DynamoDB
-- Lambda → S3
-- API Gateway → Lambda
+## New DynamoDB Attribute
+
+### status (Boolean)
+- Added to `kopera-member` table
+- `true` = member is active
+- `false` = member is inactive
+- Default: `true` for all existing members
+
+Run the one-time migration script to backfill this attribute:
+
+```
+python add_status_attribute.py
+```
+
+## CORS Configuration
+
+When the Flutter app runs in a browser (Chrome), the browser enforces CORS and will block API Gateway responses that do not include the correct headers. The following changes were made to support browser-based access:
+
+### Lambda (handler.py)
+- All responses now include `Access-Control-Allow-Origin: *`
+- All responses now include `Access-Control-Allow-Headers` and `Access-Control-Allow-Methods`
+- An `OPTIONS` preflight handler was added to the Lambda router
+
+### API Gateway (main.tf)
+- An `OPTIONS` method with a MOCK integration was added to each of the three new routes
+- Each OPTIONS method returns the required CORS response headers
+
+After updating `handler.py`, redeploy the Lambda:
+
+```
+cd ~/Projects/kafapp
+cp handler.py lambda/package/handler.py
+cd lambda/package && zip -r ../certificate_handler.zip . && cd ../..
+aws s3 cp lambda/certificate_handler.zip s3://kopera-asset/lambda/certificate_handler.zip
+aws lambda update-function-code \
+  --function-name certplatform-prod-certificate-handler \
+  --s3-bucket kopera-asset \
+  --s3-key lambda/certificate_handler.zip
+```
+
+## Terraform
+
+`main.tf` in `~/Projects/kafapp` was updated to include:
+- Three new API Gateway routes: `GET /members/list`, `POST /members/edit`, `POST /members/update`
+- Three OPTIONS CORS methods (one per new route)
+- Updated deployment triggers
+
+Run from `~/Projects/kafapp`:
+
+```
+terraform apply
+```
+
+Note: `main.tf` lives in `kafapp` only. The `member_management` Flutter project does not contain any Terraform files.
 
 ---
 
 # Phase 3 — Database Design
 
-## Companies Table
+## kopera-member Table (existing, extended)
 
-- company_id (PK)
-- company_name
-- registration_number
+- memberId (PK)
+- companyId (SK)
+- full_name
+- date_of_birth
 - address
 - phone
 - email
-- website
-- logo_s3_url
-
----
-
-## Members Table
-
-- member_id (PK)
-- company_id
-- full_name
-- dob
-- id_number
-- id_type
-- address
-- member_number
-- join_date
-- whatsapp_number
+- identification_number
+- identification_type
+- status ← **new Boolean attribute**
+- notes
+- issued_date
+- certificate (nested map)
 
 ### Nested Certificate Object
 
-Each member contains a `certificate` map attribute.
-
-Structure:
-
-certificate: {
-certificate_id,
-issued_date,
-pdf_s3_url,
-jpeg_s3_url,
-whatsapp_sent,
-timestamp
-}
-
----
-
-## Example DynamoDB Member Item
-
 ```json
 {
-  "memberId":       { "S": "MBR-001" },
-  "companyId":      { "S": "KAFA-001" },
   "certificate": {
-    "M": {
-      "certificate_id":  { "S": "CERT-001" },
-      "issued_date":     { "S": "2025-01-01" },
-      "pdf_s3_url":      { "S": "s3://kopera-certificate/certificates/MBR-001.pdf" },
-      "jpeg_s3_url":     { "S": "s3://kopera-certificate/certificates/MBR-001.jpeg" },
-      "whatsapp_sent":   { "BOOL": false },
-      "timestamp":       { "S": "2025-01-01T00:00:00Z" }
-    }
+    "certificate_id": "CERT-86146139",
+    "issued_date":    "07 / 03 / 2026",
+    "pdf_s3_url":     "s3://kopera-certificate/certificates/KAFA-001/MBR-004/CERT-86146139.pdf",
+    "jpeg_s3_url":    "s3://kopera-certificate/certificates/KAFA-001/MBR-004/CERT-86146139.jpeg",
+    "whatsapp_sent":  false,
+    "timestamp":      "2026-03-07T00:00:00Z"
   }
 }
 ```
 
 ---
 
-# Phase 4 — Certificate Generation Engine
+# Phase 4 — Flutter App Structure
+
+## Technology Stack
+
+- Flutter (Dart)
+- `http` — HTTP client for API calls
+- `aws_signature_v4` — SigV4 request signing for API Gateway
+- `provider` — State management for auth session
+
+## Project Structure
+
+```
+member_management/
+├── pubspec.yaml
+└── lib/
+    ├── main.dart                          # App entry point + theme
+    ├── models/
+    │   └── member.dart                    # Member data model
+    ├── providers/
+    │   └── auth_provider.dart             # Login state + ApiService wiring
+    ├── services/
+    │   └── api_service.dart               # SigV4-signed API Gateway calls
+    └── screens/
+        ├── login_screen.dart              # Admin login
+        ├── members_screen.dart            # Member list + search + filter
+        └── member_detail_screen.dart      # Detail view + Edit + Update
+```
+
+---
+
+# Phase 5 — Authentication
+
+## Admin Credentials (Default)
+
+- Username: `admin`
+- Password: `kafa2026`
+
+Credentials are defined in `lib/providers/auth_provider.dart`. For production, replace with AWS Cognito or a backend auth endpoint.
+
+## AWS Credentials
+
+The app uses AWS SigV4 signing for all API Gateway calls. Credentials are set in `auth_provider.dart`:
+
+```dart
+static const String _awsAccessKeyId     = 'YOUR_ACCESS_KEY_ID';
+static const String _awsSecretAccessKey = 'YOUR_SECRET_ACCESS_KEY';
+```
+
+For production, replace with Cognito Identity Pool temporary credentials or a secure secrets manager.
+
+---
+
+# Phase 6 — Member Edit & Update Flow
 
 ## Workflow
 
-1. Retrieve member data from DynamoDB  
-2. Retrieve company data from DynamoDB  
-3. Inject values into certificate template  
-4. Generate:
-   - PDF (reportlab)
-   - JPEG (Pillow)
-5. Upload files to S3  
-6. Update nested `certificate` object in member record  
-7. Download documents for a given phone number (Unique User Identifier) 
+1. Admin taps a member from the list
+2. Detail screen loads — all fields displayed in read-only mode
+3. Admin taps **Edit** — all fields become editable inline
+4. Admin modifies one or more fields
+5. Admin taps **Update** — app calls `POST /members/update`
+6. Lambda runs `update_item` on DynamoDB with allowed fields only
+7. Updated record is returned and displayed
+8. Success banner confirms the change
+
+## Activate / Deactivate Flow
+
+1. Admin opens any member's detail screen
+2. Taps the person icon in the app bar
+3. Confirmation dialog appears
+4. Admin confirms — app calls `POST /members/update` with `status: true/false`
+5. Status badge updates immediately on screen
+
+## Allowed Editable Fields
+
+- full_name
+- date_of_birth
+- address
+- phone
+- email
+- identification_number
+- identification_type
+- status
+- notes
 
 ---
 
-## Suggested Technologies
-
-- Python  
-- boto3  
-- reportlab  
-- Pillow (PIL)  
-
----
-
-# Phase 5 — WhatsApp Integration (Meta Cloud API)
-
-## Setup Requirements
-
-- Meta Developer Account  
-- WhatsApp Business App  
-- Phone Number Registration  
-- Access Token Generation  
-- Approved Message Template  
-
----
-
-## Delivery Logic
-
-After certificate generation:
-
-1. Call Meta WhatsApp API  
-2. Send:
-   - PDF attachment **OR**
-   - Secure S3 link  
-3. Update `whatsapp_sent` flag inside certificate object  
-
----
-
-## Error Handling
-
-- Capture API errors  
-- Update failure state  
-- Allow retry mechanism  
-
----
-
-# Phase 6 — Testing & Deployment
+# Phase 7 — Testing & Deployment
 
 ## Testing
 
-- Validate DynamoDB reads/writes  
-- Validate S3 uploads  
-- Validate Lambda execution  
-- Validate API Gateway invocation  
-- Validate WhatsApp message delivery  
-- Perform full end-to-end test  
-
----
+- Validate admin login accepts correct credentials and rejects incorrect ones
+- Validate member list loads all 52 members from DynamoDB
+- Validate search filters results correctly across all fields
+- Validate member detail screen displays all DynamoDB attributes
+- Validate Edit mode populates all fields correctly
+- Validate Update persists changes to DynamoDB
+- Validate Activate / Deactivate toggles status correctly
+- Validate cancel discards changes without saving
 
 ## Deployment
 
-- Deploy infrastructure via Terraform  
-- Deploy Lambda code  
-- Configure production environment variables  
-- Validate end-to-end workflow  
+### 1. Backfill DynamoDB status attribute
+
+```
+python add_status_attribute.py
+```
+
+### 2. Deploy new API Gateway routes
+
+```
+terraform apply
+```
+
+### 3. Install Flutter dependencies
+
+```
+cd member_management
+flutter pub get
+```
+
+### 4. Run the app
+
+```
+flutter run                  # development
+flutter build apk            # Android release
+flutter build ios            # iOS release (requires Mac + Xcode)
+```
 
 ---
 
 # Security Considerations
 
-- IAM least-privilege policies  
-- Private S3 bucket  
-- Secure API Gateway configuration  
-- Protected Meta API tokens  
-- Input validation before certificate generation  
+- All API Gateway routes (except `/retrieve`) require AWS_IAM authorization
+- API calls are signed with SigV4 — unsigned requests are rejected by API Gateway
+- Admin credentials should be moved to Cognito or a backend auth service before production
+- AWS credentials should be scoped to minimum required permissions
+- No member data is stored locally on the device — all reads are live from DynamoDB
 
 ---
 
@@ -247,27 +313,29 @@ After certificate generation:
 
 The project is considered complete when:
 
-- Certificate PDF + JPEG are generated correctly  
-- Files are stored in S3  
-- Certificate object is saved inside member record  
-- WhatsApp delivery is successful  
-- Infrastructure is fully reproducible via Terraform  
-- End-to-end flow is fully automated  
+- Admin can log in and view all 52 KAFA members
+- Search and filter work correctly across all fields
+- Member detail screen displays all DynamoDB data accurately
+- Edit and Update flow persists changes to DynamoDB
+- Activate and Deactivate correctly toggle the `status` attribute
+- Infrastructure changes are fully reproducible via Terraform
+- All 52 members have the `status` attribute backfilled
 
 ---
 
 # Future Enhancements (Optional)
 
-- Multi-certificate support (change `certificate` → `certificates` list)  
-- Admin dashboard  
-- Delivery analytics  
-- Automated certificate numbering  
-- Multi-language certificate support  
-- Audit trail logging  
+- Replace hardcoded credentials with AWS Cognito authentication
+- Add role-based access control (read-only vs. admin roles)
+- Add audit trail — log who changed what and when
+- Certificate regeneration button from within the detail screen
+- Bulk activate / deactivate from the list screen
+- Push notifications when a member's certificate is ready
+- Offline mode with local caching
 
 ---
 
 # Status
 
-Phases 1–6 Fully Defined  
-Implementation: Pending Infrastructure Deployment  
+Phases 1–7 Fully Defined
+Implementation: Complete
