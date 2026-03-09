@@ -122,6 +122,23 @@ resource "aws_dynamodb_table" "kopera-member" {
 }
 
 ################################################################################
+# DynamoDB — Admin Table
+################################################################################
+
+resource "aws_dynamodb_table" "kopera-admin" {
+  name         = "kopera-admin"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "username"
+
+  attribute {
+    name = "username"
+    type = "S"
+  }
+
+  tags = local.common_tags
+}
+
+################################################################################
 # S3 — Kopera Certificate Bucket
 ################################################################################
 
@@ -139,8 +156,9 @@ resource "aws_s3_bucket_versioning" "kopera-certificate" {
 resource "aws_s3_bucket_server_side_encryption_configuration" "kopera-certificate" {
   bucket = aws_s3_bucket.kopera-certificate.id
   rule {
-    apply_server_side_encryption_by_default { sse_algorithm = "aws:kms" }
-    bucket_key_enabled = true
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
   }
 }
 
@@ -243,6 +261,7 @@ resource "aws_iam_role_policy" "lambda_dynamodb" {
       Resource = [
         aws_dynamodb_table.kopera-company.arn,
         aws_dynamodb_table.kopera-member.arn,
+        aws_dynamodb_table.kopera-admin.arn,
         "${aws_dynamodb_table.kopera-company.arn}/index/*",
         "${aws_dynamodb_table.kopera-member.arn}/index/*",
       ]
@@ -356,6 +375,7 @@ resource "aws_lambda_function" "certificate_handler" {
       ASSETS_BUCKET   = aws_s3_bucket.kopera-asset.id
       ENVIRONMENT     = var.environment
       API_BASE_URL    = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${var.environment}"
+      ADMIN_TABLE     = aws_dynamodb_table.kopera-admin.name
     }
   }
 
@@ -505,10 +525,13 @@ resource "aws_lambda_function" "certificate_retrieval" {
 
   environment {
     variables = {
-      MEMBERS_TABLE = aws_dynamodb_table.kopera-member.name
-      CERTS_BUCKET  = aws_s3_bucket.kopera-certificate.id
-      ENVIRONMENT   = var.environment
-      API_BASE_URL  = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${var.environment}"
+      MEMBERS_TABLE        = aws_dynamodb_table.kopera-member.name
+      CERTS_BUCKET         = aws_s3_bucket.kopera-certificate.id
+      ENVIRONMENT          = var.environment
+      API_BASE_URL         = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${var.environment}"
+      TWILIO_ACCOUNT_SID   = "AC251485462ba1efded83ef97d638a2279"
+      TWILIO_AUTH_TOKEN    = "2c7fa3467194847e5ef2395a9bc5369c"
+      TWILIO_WHATSAPP_FROM = "whatsapp:+18665287758"
     }
   }
 
@@ -713,6 +736,287 @@ resource "aws_api_gateway_integration" "members_post" {
   uri                     = aws_lambda_function.certificate_handler.invoke_arn
 }
 
+# ── /members/list  GET → list all members for a company ──────────────────────
+
+resource "aws_api_gateway_resource" "members_list" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.members.id
+  path_part   = "list"
+}
+
+resource "aws_api_gateway_method" "members_list_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.members_list.id
+  http_method   = "GET"
+  authorization = "AWS_IAM"
+}
+
+resource "aws_api_gateway_integration" "members_list_get" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.members_list.id
+  http_method             = aws_api_gateway_method.members_list_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.certificate_handler.invoke_arn
+}
+
+# ── /members/edit  POST → fetch member ready for editing ─────────────────────
+
+resource "aws_api_gateway_resource" "members_edit" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.members.id
+  path_part   = "edit"
+}
+
+resource "aws_api_gateway_method" "members_edit_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.members_edit.id
+  http_method   = "POST"
+  authorization = "AWS_IAM"
+}
+
+resource "aws_api_gateway_integration" "members_edit_post" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.members_edit.id
+  http_method             = aws_api_gateway_method.members_edit_post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.certificate_handler.invoke_arn
+}
+
+# ── /members/update  POST → persist updated member fields ────────────────────
+
+resource "aws_api_gateway_resource" "members_update" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.members.id
+  path_part   = "update"
+}
+
+resource "aws_api_gateway_method" "members_update_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.members_update.id
+  http_method   = "POST"
+  authorization = "AWS_IAM"
+}
+
+resource "aws_api_gateway_integration" "members_update_post" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.members_update.id
+  http_method             = aws_api_gateway_method.members_update_post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.certificate_handler.invoke_arn
+}
+
+
+# ── /auth  parent resource ───────────────────────────────────────────────────
+
+resource "aws_api_gateway_resource" "auth" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "auth"
+}
+
+# ── /auth/login  POST → validate admin credentials ───────────────────────────
+
+resource "aws_api_gateway_resource" "auth_login" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.auth.id
+  path_part   = "login"
+}
+
+resource "aws_api_gateway_method" "auth_login_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.auth_login.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "auth_login_post" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.auth_login.id
+  http_method             = aws_api_gateway_method.auth_login_post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.certificate_handler.invoke_arn
+}
+
+# ── CORS OPTIONS for /auth/login ─────────────────────────────────────────────
+
+resource "aws_api_gateway_method" "auth_login_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.auth_login.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "auth_login_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.auth_login.id
+  http_method = aws_api_gateway_method.auth_login_options.http_method
+  type        = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "auth_login_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.auth_login.id
+  http_method = aws_api_gateway_method.auth_login_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "auth_login_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.auth_login.id
+  http_method = aws_api_gateway_method.auth_login_options.http_method
+  status_code = aws_api_gateway_method_response.auth_login_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.auth_login_options]
+}
+
+# ── CORS OPTIONS for /members/list ───────────────────────────────────────────
+
+resource "aws_api_gateway_method" "members_list_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.members_list.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "members_list_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.members_list.id
+  http_method = aws_api_gateway_method.members_list_options.http_method
+  type        = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "members_list_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.members_list.id
+  http_method = aws_api_gateway_method.members_list_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "members_list_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.members_list.id
+  http_method = aws_api_gateway_method.members_list_options.http_method
+  status_code = aws_api_gateway_method_response.members_list_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.members_list_options]
+}
+
+# ── CORS OPTIONS for /members/edit ────────────────────────────────────────────
+
+resource "aws_api_gateway_method" "members_edit_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.members_edit.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "members_edit_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.members_edit.id
+  http_method = aws_api_gateway_method.members_edit_options.http_method
+  type        = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "members_edit_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.members_edit.id
+  http_method = aws_api_gateway_method.members_edit_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "members_edit_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.members_edit.id
+  http_method = aws_api_gateway_method.members_edit_options.http_method
+  status_code = aws_api_gateway_method_response.members_edit_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.members_edit_options]
+}
+
+# ── CORS OPTIONS for /members/update ─────────────────────────────────────────
+
+resource "aws_api_gateway_method" "members_update_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.members_update.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "members_update_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.members_update.id
+  http_method = aws_api_gateway_method.members_update_options.http_method
+  type        = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "members_update_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.members_update.id
+  http_method = aws_api_gateway_method.members_update_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "members_update_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.members_update.id
+  http_method = aws_api_gateway_method.members_update_options.http_method
+  status_code = aws_api_gateway_method_response.members_update_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.members_update_options]
+}
+
 # ── Deployment & Stage ────────────────────────────────────────────────────────
 
 resource "aws_api_gateway_deployment" "main" {
@@ -728,6 +1032,12 @@ resource "aws_api_gateway_deployment" "main" {
       aws_api_gateway_integration.companies_post.id,
       aws_api_gateway_integration.members_get.id,
       aws_api_gateway_integration.members_post.id,
+      aws_api_gateway_integration.members_list_get.id,
+      aws_api_gateway_integration.members_edit_post.id,
+      aws_api_gateway_integration.members_update_post.id,
+      aws_api_gateway_integration.members_list_options.id,
+      aws_api_gateway_integration.members_edit_options.id,
+      aws_api_gateway_integration.members_update_options.id,
     ]))
   }
 
@@ -739,6 +1049,12 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_integration.companies_post,
     aws_api_gateway_integration.members_get,
     aws_api_gateway_integration.members_post,
+    aws_api_gateway_integration.members_list_get,
+    aws_api_gateway_integration.members_edit_post,
+    aws_api_gateway_integration.members_update_post,
+    aws_api_gateway_integration_response.members_list_options,
+    aws_api_gateway_integration_response.members_edit_options,
+    aws_api_gateway_integration_response.members_update_options,
   ]
 
   lifecycle {
