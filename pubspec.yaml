@@ -1,0 +1,35 @@
+name: member_management
+description: KAFA Member Management — Admin app for managing cooperative members.
+
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # HTTP client
+  http: ^1.2.0
+
+  # SigV4 signing (used by api_service.dart)
+  crypto: ^3.0.3
+
+  # State management
+  provider: ^6.1.2
+
+  # Icons
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+
+assets:
+  - assets/images/kafa_logo.png
