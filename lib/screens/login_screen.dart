@@ -64,13 +64,13 @@ class _LoginScreenState extends State<LoginScreen> {
               children: [
                 // KAFA Logo
                 Image.asset(
-                  'assets/images/kafa_logo.png',
-                  width: 120,
-                  height: 120,
+                  'images/kafa_logo.png',
+                  width: 150,
+                  height: 150,
                   fit: BoxFit.contain,
                   errorBuilder: (context, error, stackTrace) => Container(
-                    width: 120,
-                    height: 120,
+                    width: 150,
+                    height: 150,
                     decoration: BoxDecoration(
                       color: const Color(0xFFC8A96E),
                       borderRadius: BorderRadius.circular(16),
