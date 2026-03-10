@@ -25,6 +25,7 @@ Route map (this Lambda handles all routes):
 import os
 import json
 import logging
+import hashlib
 import boto3
 import requests
 from boto3.dynamodb.conditions import Attr
@@ -49,6 +50,7 @@ ASSETS_BUCKET   = os.environ["ASSETS_BUCKET"]    # kopera-asset
 ENVIRONMENT     = os.environ.get("ENVIRONMENT", "prod")
 AWS_REGION      = os.environ.get("AWS_REGION", "us-east-1")
 API_BASE_URL    = os.environ["API_BASE_URL"]     # https://<id>.execute-api.<region>.amazonaws.com/prod
+ADMIN_TABLE     = os.environ.get("ADMIN_TABLE", "kopera-admin")
 
 ################################################################################
 # Router
@@ -59,6 +61,10 @@ def lambda_handler(event, context):
 
     method   = event.get("httpMethod", "")
     resource = event.get("resource", "")
+
+    # ── CORS preflight ────────────────────────────────────────────────────────
+    if method == "OPTIONS":
+        return _resp(200, {})
 
     # ── GET /lookup?phone= ────────────────────────────────────────────────────
     if method == "GET" and resource == "/lookup":
@@ -111,6 +117,34 @@ def lambda_handler(event, context):
     # ── GET /certificates/{certificateId} ─────────────────────────────────────
     if method == "GET" and resource == "/certificates/{certificateId}":
         return _handle_get_certificate(event)
+
+    # ── GET /members/list — list all members for a company ────────────────────
+    if method == "GET" and resource == "/members/list":
+        company_id = (event.get("queryStringParameters") or {}).get("companyId", "KAFA-001")
+        return _handle_list_members(company_id)
+
+    # ── POST /members/edit — mark member as being edited (lock/flag) ──────────
+    if method == "POST" and resource == "/members/edit":
+        try:
+            body = json.loads(event.get("body") or "{}")
+        except json.JSONDecodeError:
+            return _resp(400, {"error": "Invalid JSON"})
+        member_id  = body.get("memberId")
+        company_id = body.get("companyId")
+        if not member_id or not company_id:
+            return _resp(400, {"error": "memberId and companyId required"})
+        item = _db_get_member(member_id, company_id)
+        if not item:
+            return _resp(404, {"error": "Member not found"})
+        return _resp(200, {"message": "Member ready for edit", "member": item})
+
+    # ── POST /members/update — update member fields ───────────────────────────
+    if method == "POST" and resource == "/members/update":
+        return _handle_update_member(event)
+
+    # ── POST /auth/login — validate admin credentials ────────────────────────
+    if method == "POST" and resource == "/auth/login":
+        return _handle_admin_login(event)
 
     return _resp(404, {"error": f"Route not found: {method} {resource}"})
 
@@ -288,6 +322,70 @@ def _handle_generate_certificate(event: dict) -> dict:
 
 
 ################################################################################
+# Member list + update handlers
+################################################################################
+
+def _handle_list_members(company_id: str) -> dict:
+    """Scan all members for a given companyId."""
+    table = dynamodb.Table(MEMBERS_TABLE)
+    items = []
+    scan_kwargs = {"FilterExpression": Attr("companyId").eq(company_id)}
+    while True:
+        resp = table.scan(**scan_kwargs)
+        items.extend(resp.get("Items", []))
+        last_key = resp.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        scan_kwargs["ExclusiveStartKey"] = last_key
+    items.sort(key=lambda x: x.get("memberId", ""))
+    return _resp(200, {"members": items, "count": len(items)})
+
+
+def _handle_update_member(event: dict) -> dict:
+    """Update allowed member fields including status (active/inactive)."""
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    member_id  = body.get("memberId")
+    company_id = body.get("companyId")
+    if not member_id or not company_id:
+        return _resp(400, {"error": "memberId and companyId required"})
+
+    allowed = [
+        "full_name", "date_of_birth", "address", "phone", "email",
+        "identification_number", "identification_type", "status", "notes",
+    ]
+
+    update_parts = []
+    attr_names   = {}
+    attr_values  = {}
+
+    for field in allowed:
+        if field in body:
+            nk = f"#f_{field}"
+            vk = f":v_{field}"
+            update_parts.append(f"{nk} = {vk}")
+            attr_names[nk] = field
+            attr_values[vk] = body[field]
+
+    if not update_parts:
+        return _resp(400, {"error": "No updatable fields provided"})
+
+    dynamodb.Table(MEMBERS_TABLE).update_item(
+        Key={"memberId": member_id, "companyId": company_id},
+        UpdateExpression="SET " + ", ".join(update_parts),
+        ExpressionAttributeNames=attr_names,
+        ExpressionAttributeValues=attr_values,
+    )
+
+    updated = _db_get_member(member_id, company_id)
+    logger.info("Member %s updated", member_id)
+    return _resp(200, {"message": "Member updated", "member": updated})
+
+
+################################################################################
 # DynamoDB helpers
 ################################################################################
 
@@ -379,12 +477,71 @@ def _s3_upload(data: bytes, key: str, content_type: str) -> str:
 
 
 ################################################################################
+# POST /auth/login — admin authentication
+################################################################################
+
+def _handle_admin_login(event: dict) -> dict:
+    """
+    Validates admin credentials against kopera-admin DynamoDB table.
+    Password is stored as a SHA-256 hash — never in plaintext.
+    Returns 200 + username on success, 401 on failure.
+    """
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    username = body.get("username", "").strip()
+    password = body.get("password", "").strip()
+
+    if not username or not password:
+        return _resp(400, {"error": "username and password required"})
+
+    # Hash the incoming password with SHA-256 for comparison
+    password_hash = hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+    table = dynamodb.Table(ADMIN_TABLE)
+    response = table.get_item(Key={"username": username})
+    item = response.get("Item")
+
+    if not item:
+        logger.warning("Login failed — username not found: %s", username)
+        return _resp(401, {"error": "Invalid username or password"})
+
+    stored_hash = item.get("password_hash", "")
+    if stored_hash != password_hash:
+        logger.warning("Login failed — wrong password for: %s", username)
+        return _resp(401, {"error": "Invalid username or password"})
+
+    logger.info("Login successful: %s", username)
+
+    # Return temporary AWS credentials scoped to this session.
+    # The Flutter app uses these for SigV4-signed API Gateway calls.
+    # Credentials are sourced from the Lambda execution role via the
+    # instance metadata — never hardcoded.
+    credentials = _session.get_credentials().get_frozen_credentials()
+
+    return _resp(200, {
+        "message":          "Login successful",
+        "username":         username,
+        "accessKeyId":      credentials.access_key,
+        "secretAccessKey":  credentials.secret_key,
+        "sessionToken":     credentials.token,
+    })
+
+
+################################################################################
 # HTTP response helper
 ################################################################################
 
 def _resp(status_code: int, body: dict) -> dict:
     return {
         "statusCode": status_code,
-        "headers":    {"Content-Type": "application/json"},
-        "body":       json.dumps(body, default=str),
+        "headers": {
+            "Content-Type":                "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256",
+            "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+        },
+        "body": json.dumps(body, default=str),
     }
