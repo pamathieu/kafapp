@@ -1,0 +1,1781 @@
+{
+  "version": 4,
+  "terraform_version": "1.14.3",
+  "serial": 48,
+  "lineage": "6cd117e4-bee7-23eb-8e27-06583e3776e6",
+  "outputs": {
+    "api_gateway_invoke_url": {
+      "value": "https://pi9cd3ncc3.execute-api.us-east-1.amazonaws.com/prod",
+      "type": "string"
+    },
+    "certificates_bucket_name": {
+      "value": "certplatform-prod-certificates-560232212166",
+      "type": "string"
+    },
+    "companies_table_name": {
+      "value": "certplatform-prod-companies",
+      "type": "string"
+    },
+    "lambda_exec_role_arn": {
+      "value": "arn:aws:iam::560232212166:role/certplatform-prod-lambda-exec",
+      "type": "string"
+    },
+    "lambda_function_name": {
+      "value": "certplatform-prod-certificate-handler",
+      "type": "string"
+    },
+    "members_table_name": {
+      "value": "certplatform-prod-members",
+      "type": "string"
+    },
+    "private_assets_bucket_name": {
+      "value": "certplatform-prod-private-assets-560232212166",
+      "type": "string"
+    }
+  },
+  "resources": [
+    {
+      "mode": "data",
+      "type": "aws_caller_identity",
+      "name": "current",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "account_id": "560232212166",
+            "arn": "arn:aws:iam::560232212166:user/awscli-user",
+            "id": "560232212166",
+            "user_id": "AIDAYE4DRE3DHO2A4FSNY"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0
+        }
+      ]
+    },
+    {
+      "mode": "data",
+      "type": "aws_iam_policy_document",
+      "name": "apigw_assume_role",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "3239301296",
+            "json": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Sid\": \"APIGatewayAssumeRole\",\n      \"Effect\": \"Allow\",\n      \"Action\": \"sts:AssumeRole\",\n      \"Principal\": {\n        \"Service\": \"apigateway.amazonaws.com\"\n      }\n    }\n  ]\n}",
+            "minified_json": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"APIGatewayAssumeRole\",\"Effect\":\"Allow\",\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"apigateway.amazonaws.com\"}}]}",
+            "override_json": null,
+            "override_policy_documents": null,
+            "policy_id": null,
+            "source_json": null,
+            "source_policy_documents": null,
+            "statement": [
+              {
+                "actions": [
+                  "sts:AssumeRole"
+                ],
+                "condition": [],
+                "effect": "Allow",
+                "not_actions": [],
+                "not_principals": [],
+                "not_resources": [],
+                "principals": [
+                  {
+                    "identifiers": [
+                      "apigateway.amazonaws.com"
+                    ],
+                    "type": "Service"
+                  }
+                ],
+                "resources": [],
+                "sid": "APIGatewayAssumeRole"
+              }
+            ],
+            "version": "2012-10-17"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0
+        }
+      ]
+    },
+    {
+      "mode": "data",
+      "type": "aws_iam_policy_document",
+      "name": "lambda_assume_role",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "666922913",
+            "json": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Sid\": \"LambdaAssumeRole\",\n      \"Effect\": \"Allow\",\n      \"Action\": \"sts:AssumeRole\",\n      \"Principal\": {\n        \"Service\": \"lambda.amazonaws.com\"\n      }\n    }\n  ]\n}",
+            "minified_json": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"LambdaAssumeRole\",\"Effect\":\"Allow\",\"Action\":\"sts:AssumeRole\",\"Principal\":{\"Service\":\"lambda.amazonaws.com\"}}]}",
+            "override_json": null,
+            "override_policy_documents": null,
+            "policy_id": null,
+            "source_json": null,
+            "source_policy_documents": null,
+            "statement": [
+              {
+                "actions": [
+                  "sts:AssumeRole"
+                ],
+                "condition": [],
+                "effect": "Allow",
+                "not_actions": [],
+                "not_principals": [],
+                "not_resources": [],
+                "principals": [
+                  {
+                    "identifiers": [
+                      "lambda.amazonaws.com"
+                    ],
+                    "type": "Service"
+                  }
+                ],
+                "resources": [],
+                "sid": "LambdaAssumeRole"
+              }
+            ],
+            "version": "2012-10-17"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0
+        }
+      ]
+    },
+    {
+      "mode": "data",
+      "type": "aws_iam_policy_document",
+      "name": "lambda_cloudwatch",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "2484949832",
+            "json": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Sid\": \"CloudWatchLogs\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"logs:TagResource\",\n        \"logs:PutLogEvents\",\n        \"logs:CreateLogStream\",\n        \"logs:CreateLogGroup\"\n      ],\n      \"Resource\": [\n        \"arn:aws:logs:us-east-1:560232212166:log-group:/aws/lambda/certplatform-prod-*:*\",\n        \"arn:aws:logs:us-east-1:560232212166:log-group:/aws/lambda/certplatform-prod-*\"\n      ]\n    }\n  ]\n}",
+            "minified_json": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"CloudWatchLogs\",\"Effect\":\"Allow\",\"Action\":[\"logs:TagResource\",\"logs:PutLogEvents\",\"logs:CreateLogStream\",\"logs:CreateLogGroup\"],\"Resource\":[\"arn:aws:logs:us-east-1:560232212166:log-group:/aws/lambda/certplatform-prod-*:*\",\"arn:aws:logs:us-east-1:560232212166:log-group:/aws/lambda/certplatform-prod-*\"]}]}",
+            "override_json": null,
+            "override_policy_documents": null,
+            "policy_id": null,
+            "source_json": null,
+            "source_policy_documents": null,
+            "statement": [
+              {
+                "actions": [
+                  "logs:CreateLogGroup",
+                  "logs:CreateLogStream",
+                  "logs:PutLogEvents",
+                  "logs:TagResource"
+                ],
+                "condition": [],
+                "effect": "Allow",
+                "not_actions": [],
+                "not_principals": [],
+                "not_resources": [],
+                "principals": [],
+                "resources": [
+                  "arn:aws:logs:us-east-1:560232212166:log-group:/aws/lambda/certplatform-prod-*",
+                  "arn:aws:logs:us-east-1:560232212166:log-group:/aws/lambda/certplatform-prod-*:*"
+                ],
+                "sid": "CloudWatchLogs"
+              }
+            ],
+            "version": "2012-10-17"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0
+        }
+      ]
+    },
+    {
+      "mode": "data",
+      "type": "aws_iam_policy_document",
+      "name": "lambda_dynamodb",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "519472061",
+            "json": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Sid\": \"DynamoDBTables\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"dynamodb:UpdateItem\",\n        \"dynamodb:Scan\",\n        \"dynamodb:Query\",\n        \"dynamodb:PutItem\",\n        \"dynamodb:GetItem\",\n        \"dynamodb:DeleteItem\",\n        \"dynamodb:BatchWriteItem\",\n        \"dynamodb:BatchGetItem\"\n      ],\n      \"Resource\": [\n        \"arn:aws:dynamodb:us-east-1:560232212166:table/certplatform-prod-members/index/*\",\n        \"arn:aws:dynamodb:us-east-1:560232212166:table/certplatform-prod-members\",\n        \"arn:aws:dynamodb:us-east-1:560232212166:table/certplatform-prod-companies/index/*\",\n        \"arn:aws:dynamodb:us-east-1:560232212166:table/certplatform-prod-companies\"\n      ]\n    }\n  ]\n}",
+            "minified_json": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"DynamoDBTables\",\"Effect\":\"Allow\",\"Action\":[\"dynamodb:UpdateItem\",\"dynamodb:Scan\",\"dynamodb:Query\",\"dynamodb:PutItem\",\"dynamodb:GetItem\",\"dynamodb:DeleteItem\",\"dynamodb:BatchWriteItem\",\"dynamodb:BatchGetItem\"],\"Resource\":[\"arn:aws:dynamodb:us-east-1:560232212166:table/certplatform-prod-members/index/*\",\"arn:aws:dynamodb:us-east-1:560232212166:table/certplatform-prod-members\",\"arn:aws:dynamodb:us-east-1:560232212166:table/certplatform-prod-companies/index/*\",\"arn:aws:dynamodb:us-east-1:560232212166:table/certplatform-prod-companies\"]}]}",
+            "override_json": null,
+            "override_policy_documents": null,
+            "policy_id": null,
+            "source_json": null,
+            "source_policy_documents": null,
+            "statement": [
+              {
+                "actions": [
+                  "dynamodb:BatchGetItem",
+                  "dynamodb:BatchWriteItem",
+                  "dynamodb:DeleteItem",
+                  "dynamodb:GetItem",
+                  "dynamodb:PutItem",
+                  "dynamodb:Query",
+                  "dynamodb:Scan",
+                  "dynamodb:UpdateItem"
+                ],
+                "condition": [],
+                "effect": "Allow",
+                "not_actions": [],
+                "not_principals": [],
+                "not_resources": [],
+                "principals": [],
+                "resources": [
+                  "arn:aws:dynamodb:us-east-1:560232212166:table/certplatform-prod-companies",
+                  "arn:aws:dynamodb:us-east-1:560232212166:table/certplatform-prod-companies/index/*",
+                  "arn:aws:dynamodb:us-east-1:560232212166:table/certplatform-prod-members",
+                  "arn:aws:dynamodb:us-east-1:560232212166:table/certplatform-prod-members/index/*"
+                ],
+                "sid": "DynamoDBTables"
+              }
+            ],
+            "version": "2012-10-17"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0
+        }
+      ]
+    },
+    {
+      "mode": "data",
+      "type": "aws_iam_policy_document",
+      "name": "lambda_s3",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "1553162308",
+            "json": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Sid\": \"S3CertificateBucket\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"s3:PutObject\",\n        \"s3:ListBucket\",\n        \"s3:GetObject\",\n        \"s3:DeleteObject\"\n      ],\n      \"Resource\": [\n        \"arn:aws:s3:::certplatform-prod-certificates-560232212166/*\",\n        \"arn:aws:s3:::certplatform-prod-certificates-560232212166\"\n      ]\n    },\n    {\n      \"Sid\": \"S3PrivateAssetsBucketRead\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"s3:ListBucket\",\n        \"s3:GetObject\"\n      ],\n      \"Resource\": [\n        \"arn:aws:s3:::certplatform-prod-private-assets-560232212166/*\",\n        \"arn:aws:s3:::certplatform-prod-private-assets-560232212166\"\n      ]\n    }\n  ]\n}",
+            "minified_json": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"S3CertificateBucket\",\"Effect\":\"Allow\",\"Action\":[\"s3:PutObject\",\"s3:ListBucket\",\"s3:GetObject\",\"s3:DeleteObject\"],\"Resource\":[\"arn:aws:s3:::certplatform-prod-certificates-560232212166/*\",\"arn:aws:s3:::certplatform-prod-certificates-560232212166\"]},{\"Sid\":\"S3PrivateAssetsBucketRead\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\",\"s3:GetObject\"],\"Resource\":[\"arn:aws:s3:::certplatform-prod-private-assets-560232212166/*\",\"arn:aws:s3:::certplatform-prod-private-assets-560232212166\"]}]}",
+            "override_json": null,
+            "override_policy_documents": null,
+            "policy_id": null,
+            "source_json": null,
+            "source_policy_documents": null,
+            "statement": [
+              {
+                "actions": [
+                  "s3:DeleteObject",
+                  "s3:GetObject",
+                  "s3:ListBucket",
+                  "s3:PutObject"
+                ],
+                "condition": [],
+                "effect": "Allow",
+                "not_actions": [],
+                "not_principals": [],
+                "not_resources": [],
+                "principals": [],
+                "resources": [
+                  "arn:aws:s3:::certplatform-prod-certificates-560232212166",
+                  "arn:aws:s3:::certplatform-prod-certificates-560232212166/*"
+                ],
+                "sid": "S3CertificateBucket"
+              },
+              {
+                "actions": [
+                  "s3:GetObject",
+                  "s3:ListBucket"
+                ],
+                "condition": [],
+                "effect": "Allow",
+                "not_actions": [],
+                "not_principals": [],
+                "not_resources": [],
+                "principals": [],
+                "resources": [
+                  "arn:aws:s3:::certplatform-prod-private-assets-560232212166",
+                  "arn:aws:s3:::certplatform-prod-private-assets-560232212166/*"
+                ],
+                "sid": "S3PrivateAssetsBucketRead"
+              }
+            ],
+            "version": "2012-10-17"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0
+        }
+      ]
+    },
+    {
+      "mode": "data",
+      "type": "aws_partition",
+      "name": "current",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "dns_suffix": "amazonaws.com",
+            "id": "aws",
+            "partition": "aws",
+            "reverse_dns_prefix": "com.amazonaws"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_api_gateway_account",
+      "name": "main",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "api_key_version": "4",
+            "cloudwatch_role_arn": "arn:aws:iam::560232212166:role/certplatform-prod-apigw-cloudwatch",
+            "features": [
+              "UsagePlans"
+            ],
+            "id": "api-gateway-account",
+            "reset_on_delete": null,
+            "throttle_settings": [
+              {
+                "burst_limit": 5000,
+                "rate_limit": 10000
+              }
+            ]
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "dependencies": [
+            "aws_iam_role.apigw_cloudwatch",
+            "data.aws_iam_policy_document.apigw_assume_role"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_api_gateway_method",
+      "name": "certificate_item_get",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "api_key_required": false,
+            "authorization": "AWS_IAM",
+            "authorization_scopes": [],
+            "authorizer_id": "",
+            "http_method": "GET",
+            "id": "agm-pi9cd3ncc3-ao123k-GET",
+            "operation_name": "",
+            "request_models": {},
+            "request_parameters": {},
+            "request_validator_id": "",
+            "resource_id": "ao123k",
+            "rest_api_id": "pi9cd3ncc3"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_api_gateway_resource.certificate_item",
+            "aws_api_gateway_resource.certificates",
+            "aws_api_gateway_rest_api.main"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_api_gateway_method",
+      "name": "certificates_get",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "api_key_required": false,
+            "authorization": "AWS_IAM",
+            "authorization_scopes": [],
+            "authorizer_id": "",
+            "http_method": "GET",
+            "id": "agm-pi9cd3ncc3-5r3avd-GET",
+            "operation_name": "",
+            "request_models": {},
+            "request_parameters": {},
+            "request_validator_id": "",
+            "resource_id": "5r3avd",
+            "rest_api_id": "pi9cd3ncc3"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_api_gateway_resource.certificates",
+            "aws_api_gateway_rest_api.main"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_api_gateway_method",
+      "name": "certificates_post",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "api_key_required": false,
+            "authorization": "AWS_IAM",
+            "authorization_scopes": [],
+            "authorizer_id": "",
+            "http_method": "POST",
+            "id": "agm-pi9cd3ncc3-5r3avd-POST",
+            "operation_name": "",
+            "request_models": {},
+            "request_parameters": {},
+            "request_validator_id": "",
+            "resource_id": "5r3avd",
+            "rest_api_id": "pi9cd3ncc3"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_api_gateway_resource.certificates",
+            "aws_api_gateway_rest_api.main"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_api_gateway_method",
+      "name": "companies_get",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "api_key_required": false,
+            "authorization": "AWS_IAM",
+            "authorization_scopes": [],
+            "authorizer_id": "",
+            "http_method": "GET",
+            "id": "agm-pi9cd3ncc3-12itxk-GET",
+            "operation_name": "",
+            "request_models": {},
+            "request_parameters": {},
+            "request_validator_id": "",
+            "resource_id": "12itxk",
+            "rest_api_id": "pi9cd3ncc3"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_api_gateway_resource.companies",
+            "aws_api_gateway_rest_api.main"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_api_gateway_method",
+      "name": "companies_post",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "api_key_required": false,
+            "authorization": "AWS_IAM",
+            "authorization_scopes": [],
+            "authorizer_id": "",
+            "http_method": "POST",
+            "id": "agm-pi9cd3ncc3-12itxk-POST",
+            "operation_name": "",
+            "request_models": {},
+            "request_parameters": {},
+            "request_validator_id": "",
+            "resource_id": "12itxk",
+            "rest_api_id": "pi9cd3ncc3"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_api_gateway_resource.companies",
+            "aws_api_gateway_rest_api.main"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_api_gateway_method",
+      "name": "members_get",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "api_key_required": false,
+            "authorization": "AWS_IAM",
+            "authorization_scopes": [],
+            "authorizer_id": "",
+            "http_method": "GET",
+            "id": "agm-pi9cd3ncc3-bsihcq-GET",
+            "operation_name": "",
+            "request_models": {},
+            "request_parameters": {},
+            "request_validator_id": "",
+            "resource_id": "bsihcq",
+            "rest_api_id": "pi9cd3ncc3"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_api_gateway_resource.members",
+            "aws_api_gateway_rest_api.main"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_api_gateway_method",
+      "name": "members_post",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "api_key_required": false,
+            "authorization": "AWS_IAM",
+            "authorization_scopes": [],
+            "authorizer_id": "",
+            "http_method": "POST",
+            "id": "agm-pi9cd3ncc3-bsihcq-POST",
+            "operation_name": "",
+            "request_models": {},
+            "request_parameters": {},
+            "request_validator_id": "",
+            "resource_id": "bsihcq",
+            "rest_api_id": "pi9cd3ncc3"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_api_gateway_resource.members",
+            "aws_api_gateway_rest_api.main"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_api_gateway_method",
+      "name": "whatsapp_deliver_post",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "api_key_required": false,
+            "authorization": "AWS_IAM",
+            "authorization_scopes": [],
+            "authorizer_id": "",
+            "http_method": "POST",
+            "id": "agm-pi9cd3ncc3-ikvngc-POST",
+            "operation_name": "",
+            "request_models": {},
+            "request_parameters": {},
+            "request_validator_id": "",
+            "resource_id": "ikvngc",
+            "rest_api_id": "pi9cd3ncc3"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_api_gateway_resource.whatsapp",
+            "aws_api_gateway_resource.whatsapp_deliver",
+            "aws_api_gateway_rest_api.main"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_api_gateway_resource",
+      "name": "certificate_item",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "ao123k",
+            "parent_id": "5r3avd",
+            "path": "/certificates/{certificateId}",
+            "path_part": "{certificateId}",
+            "rest_api_id": "pi9cd3ncc3"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_api_gateway_resource.certificates",
+            "aws_api_gateway_rest_api.main"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_api_gateway_resource",
+      "name": "certificates",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "5r3avd",
+            "parent_id": "lp11w88q9h",
+            "path": "/certificates",
+            "path_part": "certificates",
+            "rest_api_id": "pi9cd3ncc3"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_api_gateway_rest_api.main"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_api_gateway_resource",
+      "name": "companies",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "12itxk",
+            "parent_id": "lp11w88q9h",
+            "path": "/companies",
+            "path_part": "companies",
+            "rest_api_id": "pi9cd3ncc3"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_api_gateway_rest_api.main"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_api_gateway_resource",
+      "name": "members",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "bsihcq",
+            "parent_id": "lp11w88q9h",
+            "path": "/members",
+            "path_part": "members",
+            "rest_api_id": "pi9cd3ncc3"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_api_gateway_rest_api.main"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_api_gateway_resource",
+      "name": "whatsapp",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "z3973l",
+            "parent_id": "lp11w88q9h",
+            "path": "/whatsapp",
+            "path_part": "whatsapp",
+            "rest_api_id": "pi9cd3ncc3"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_api_gateway_rest_api.main"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_api_gateway_resource",
+      "name": "whatsapp_deliver",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "ikvngc",
+            "parent_id": "z3973l",
+            "path": "/whatsapp/deliver",
+            "path_part": "deliver",
+            "rest_api_id": "pi9cd3ncc3"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_api_gateway_resource.whatsapp",
+            "aws_api_gateway_rest_api.main"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_api_gateway_rest_api",
+      "name": "main",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "api_key_source": "HEADER",
+            "arn": "arn:aws:apigateway:us-east-1::/restapis/pi9cd3ncc3",
+            "binary_media_types": [],
+            "body": null,
+            "created_date": "2026-03-03T14:23:33Z",
+            "description": "Certificate platform backend API",
+            "disable_execute_api_endpoint": false,
+            "endpoint_configuration": [
+              {
+                "ip_address_type": "ipv4",
+                "types": [
+                  "REGIONAL"
+                ],
+                "vpc_endpoint_ids": []
+              }
+            ],
+            "execution_arn": "arn:aws:execute-api:us-east-1:560232212166:pi9cd3ncc3",
+            "fail_on_warnings": null,
+            "id": "pi9cd3ncc3",
+            "minimum_compression_size": "",
+            "name": "certplatform-prod-api",
+            "parameters": null,
+            "policy": "",
+            "put_rest_api_mode": null,
+            "root_resource_id": "lp11w88q9h",
+            "tags": {
+              "Environment": "prod",
+              "ManagedBy": "Terraform",
+              "Project": "certplatform"
+            },
+            "tags_all": {
+              "Environment": "prod",
+              "ManagedBy": "Terraform",
+              "Project": "certplatform"
+            }
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_cloudwatch_log_group",
+      "name": "api_gateway",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "status": "tainted",
+          "schema_version": 0,
+          "attributes": {
+            "arn": null,
+            "id": "/aws/apigateway/certplatform-prod",
+            "kms_key_id": null,
+            "log_group_class": null,
+            "name": "/aws/apigateway/certplatform-prod",
+            "name_prefix": null,
+            "retention_in_days": 30,
+            "skip_destroy": false,
+            "tags": null,
+            "tags_all": null
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA=="
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_dynamodb_table",
+      "name": "companies",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 1,
+          "attributes": {
+            "arn": "arn:aws:dynamodb:us-east-1:560232212166:table/certplatform-prod-companies",
+            "attribute": [
+              {
+                "name": "companyId",
+                "type": "S"
+              }
+            ],
+            "billing_mode": "PAY_PER_REQUEST",
+            "deletion_protection_enabled": false,
+            "global_secondary_index": [],
+            "hash_key": "companyId",
+            "id": "certplatform-prod-companies",
+            "import_table": [],
+            "local_secondary_index": [],
+            "name": "certplatform-prod-companies",
+            "on_demand_throughput": [],
+            "point_in_time_recovery": [
+              {
+                "enabled": true,
+                "recovery_period_in_days": 35
+              }
+            ],
+            "range_key": null,
+            "read_capacity": 0,
+            "replica": [],
+            "restore_date_time": null,
+            "restore_source_name": null,
+            "restore_source_table_arn": null,
+            "restore_to_latest_time": null,
+            "server_side_encryption": [
+              {
+                "enabled": true,
+                "kms_key_arn": ""
+              }
+            ],
+            "stream_arn": "",
+            "stream_enabled": false,
+            "stream_label": "",
+            "stream_view_type": "",
+            "table_class": "STANDARD",
+            "tags": {
+              "Environment": "prod",
+              "ManagedBy": "Terraform",
+              "Name": "certplatform-prod-companies",
+              "Project": "certplatform"
+            },
+            "tags_all": {
+              "Environment": "prod",
+              "ManagedBy": "Terraform",
+              "Name": "certplatform-prod-companies",
+              "Project": "certplatform"
+            },
+            "timeouts": null,
+            "ttl": [
+              {
+                "attribute_name": "",
+                "enabled": false
+              }
+            ],
+            "write_capacity": 0
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "eyJlMmJmYjczMC1lY2FhLTExZTYtOGY4OC0zNDM2M2JjN2M0YzAiOnsiY3JlYXRlIjoxODAwMDAwMDAwMDAwLCJkZWxldGUiOjYwMDAwMDAwMDAwMCwidXBkYXRlIjozNjAwMDAwMDAwMDAwfSwic2NoZW1hX3ZlcnNpb24iOiIxIn0=",
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_dynamodb_table",
+      "name": "members",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 1,
+          "attributes": {
+            "arn": "arn:aws:dynamodb:us-east-1:560232212166:table/certplatform-prod-members",
+            "attribute": [
+              {
+                "name": "companyId",
+                "type": "S"
+              },
+              {
+                "name": "memberId",
+                "type": "S"
+              }
+            ],
+            "billing_mode": "PAY_PER_REQUEST",
+            "deletion_protection_enabled": false,
+            "global_secondary_index": [
+              {
+                "hash_key": "companyId",
+                "name": "CompanyMembersIndex",
+                "non_key_attributes": [],
+                "on_demand_throughput": [],
+                "projection_type": "ALL",
+                "range_key": "",
+                "read_capacity": 0,
+                "write_capacity": 0
+              }
+            ],
+            "hash_key": "memberId",
+            "id": "certplatform-prod-members",
+            "import_table": [],
+            "local_secondary_index": [],
+            "name": "certplatform-prod-members",
+            "on_demand_throughput": [],
+            "point_in_time_recovery": [
+              {
+                "enabled": true,
+                "recovery_period_in_days": 35
+              }
+            ],
+            "range_key": "companyId",
+            "read_capacity": 0,
+            "replica": [],
+            "restore_date_time": null,
+            "restore_source_name": null,
+            "restore_source_table_arn": null,
+            "restore_to_latest_time": null,
+            "server_side_encryption": [
+              {
+                "enabled": true,
+                "kms_key_arn": ""
+              }
+            ],
+            "stream_arn": "",
+            "stream_enabled": false,
+            "stream_label": "",
+            "stream_view_type": "",
+            "table_class": "STANDARD",
+            "tags": {
+              "Environment": "prod",
+              "ManagedBy": "Terraform",
+              "Name": "certplatform-prod-members",
+              "Project": "certplatform"
+            },
+            "tags_all": {
+              "Environment": "prod",
+              "ManagedBy": "Terraform",
+              "Name": "certplatform-prod-members",
+              "Project": "certplatform"
+            },
+            "timeouts": null,
+            "ttl": [
+              {
+                "attribute_name": "",
+                "enabled": false
+              }
+            ],
+            "write_capacity": 0
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "eyJlMmJmYjczMC1lY2FhLTExZTYtOGY4OC0zNDM2M2JjN2M0YzAiOnsiY3JlYXRlIjoxODAwMDAwMDAwMDAwLCJkZWxldGUiOjYwMDAwMDAwMDAwMCwidXBkYXRlIjozNjAwMDAwMDAwMDAwfSwic2NoZW1hX3ZlcnNpb24iOiIxIn0=",
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_iam_policy",
+      "name": "lambda_cloudwatch",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "arn": "arn:aws:iam::560232212166:policy/certplatform-prod-lambda-cloudwatch",
+            "attachment_count": 0,
+            "description": "Allow Lambda to write CloudWatch logs including tagging",
+            "id": "arn:aws:iam::560232212166:policy/certplatform-prod-lambda-cloudwatch",
+            "name": "certplatform-prod-lambda-cloudwatch",
+            "name_prefix": "",
+            "path": "/",
+            "policy": "{\"Statement\":[{\"Action\":[\"logs:TagResource\",\"logs:PutLogEvents\",\"logs:CreateLogStream\",\"logs:CreateLogGroup\"],\"Effect\":\"Allow\",\"Resource\":[\"arn:aws:logs:us-east-1:560232212166:log-group:/aws/lambda/certplatform-prod-*:*\",\"arn:aws:logs:us-east-1:560232212166:log-group:/aws/lambda/certplatform-prod-*\"],\"Sid\":\"CloudWatchLogs\"}],\"Version\":\"2012-10-17\"}",
+            "policy_id": "ANPAYE4DRE3DK2ZABWTL7",
+            "tags": {
+              "Environment": "prod",
+              "ManagedBy": "Terraform",
+              "Project": "certplatform"
+            },
+            "tags_all": {
+              "Environment": "prod",
+              "ManagedBy": "Terraform",
+              "Project": "certplatform"
+            }
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "data.aws_caller_identity.current",
+            "data.aws_iam_policy_document.lambda_cloudwatch",
+            "data.aws_partition.current"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_iam_policy",
+      "name": "lambda_dynamodb",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "arn": "arn:aws:iam::560232212166:policy/certplatform-prod-lambda-dynamodb",
+            "attachment_count": 1,
+            "description": "Allow Lambda to read/write companies and members DynamoDB tables",
+            "id": "arn:aws:iam::560232212166:policy/certplatform-prod-lambda-dynamodb",
+            "name": "certplatform-prod-lambda-dynamodb",
+            "name_prefix": "",
+            "path": "/",
+            "policy": "{\"Statement\":[{\"Action\":[\"dynamodb:UpdateItem\",\"dynamodb:Scan\",\"dynamodb:Query\",\"dynamodb:PutItem\",\"dynamodb:GetItem\",\"dynamodb:DeleteItem\",\"dynamodb:BatchWriteItem\",\"dynamodb:BatchGetItem\"],\"Effect\":\"Allow\",\"Resource\":[\"arn:aws:dynamodb:us-east-1:560232212166:table/certplatform-prod-members/index/*\",\"arn:aws:dynamodb:us-east-1:560232212166:table/certplatform-prod-members\",\"arn:aws:dynamodb:us-east-1:560232212166:table/certplatform-prod-companies/index/*\",\"arn:aws:dynamodb:us-east-1:560232212166:table/certplatform-prod-companies\"],\"Sid\":\"DynamoDBTables\"}],\"Version\":\"2012-10-17\"}",
+            "policy_id": "ANPAYE4DRE3DLIXGN66IU",
+            "tags": {
+              "Environment": "prod",
+              "ManagedBy": "Terraform",
+              "Project": "certplatform"
+            },
+            "tags_all": {
+              "Environment": "prod",
+              "ManagedBy": "Terraform",
+              "Project": "certplatform"
+            }
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_dynamodb_table.companies",
+            "aws_dynamodb_table.members",
+            "data.aws_iam_policy_document.lambda_dynamodb"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_iam_policy",
+      "name": "lambda_s3",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "arn": "arn:aws:iam::560232212166:policy/certplatform-prod-lambda-s3",
+            "attachment_count": 1,
+            "description": "Allow Lambda to manage certificate S3 objects",
+            "id": "arn:aws:iam::560232212166:policy/certplatform-prod-lambda-s3",
+            "name": "certplatform-prod-lambda-s3",
+            "name_prefix": "",
+            "path": "/",
+            "policy": "{\"Statement\":[{\"Action\":[\"s3:PutObject\",\"s3:ListBucket\",\"s3:GetObject\",\"s3:DeleteObject\"],\"Effect\":\"Allow\",\"Resource\":[\"arn:aws:s3:::certplatform-prod-certificates-560232212166/*\",\"arn:aws:s3:::certplatform-prod-certificates-560232212166\"],\"Sid\":\"S3CertificateBucket\"},{\"Action\":[\"s3:ListBucket\",\"s3:GetObject\"],\"Effect\":\"Allow\",\"Resource\":[\"arn:aws:s3:::certplatform-prod-private-assets-560232212166/*\",\"arn:aws:s3:::certplatform-prod-private-assets-560232212166\"],\"Sid\":\"S3PrivateAssetsBucketRead\"}],\"Version\":\"2012-10-17\"}",
+            "policy_id": "ANPAYE4DRE3DJ2GCGSHND",
+            "tags": {
+              "Environment": "prod",
+              "ManagedBy": "Terraform",
+              "Project": "certplatform"
+            },
+            "tags_all": {
+              "Environment": "prod",
+              "ManagedBy": "Terraform",
+              "Project": "certplatform"
+            }
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_s3_bucket.certificates",
+            "aws_s3_bucket.private_assets",
+            "data.aws_caller_identity.current",
+            "data.aws_iam_policy_document.lambda_s3"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_iam_role",
+      "name": "apigw_cloudwatch",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "arn": "arn:aws:iam::560232212166:role/certplatform-prod-apigw-cloudwatch",
+            "assume_role_policy": "{\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"apigateway.amazonaws.com\"},\"Sid\":\"APIGatewayAssumeRole\"}],\"Version\":\"2012-10-17\"}",
+            "create_date": "2026-03-03T14:23:33Z",
+            "description": "",
+            "force_detach_policies": false,
+            "id": "certplatform-prod-apigw-cloudwatch",
+            "inline_policy": [],
+            "managed_policy_arns": [
+              "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+            ],
+            "max_session_duration": 3600,
+            "name": "certplatform-prod-apigw-cloudwatch",
+            "name_prefix": "",
+            "path": "/",
+            "permissions_boundary": "",
+            "tags": {
+              "Environment": "prod",
+              "ManagedBy": "Terraform",
+              "Project": "certplatform"
+            },
+            "tags_all": {
+              "Environment": "prod",
+              "ManagedBy": "Terraform",
+              "Project": "certplatform"
+            },
+            "unique_id": "AROAYE4DRE3DJIFFDZAVL"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "data.aws_iam_policy_document.apigw_assume_role"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_iam_role",
+      "name": "lambda_exec",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "arn": "arn:aws:iam::560232212166:role/certplatform-prod-lambda-exec",
+            "assume_role_policy": "{\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"lambda.amazonaws.com\"},\"Sid\":\"LambdaAssumeRole\"}],\"Version\":\"2012-10-17\"}",
+            "create_date": "2026-03-03T14:23:33Z",
+            "description": "",
+            "force_detach_policies": false,
+            "id": "certplatform-prod-lambda-exec",
+            "inline_policy": [],
+            "managed_policy_arns": [
+              "arn:aws:iam::560232212166:policy/certplatform-prod-lambda-dynamodb",
+              "arn:aws:iam::560232212166:policy/certplatform-prod-lambda-s3",
+              "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+            ],
+            "max_session_duration": 3600,
+            "name": "certplatform-prod-lambda-exec",
+            "name_prefix": "",
+            "path": "/",
+            "permissions_boundary": "",
+            "tags": {
+              "Environment": "prod",
+              "ManagedBy": "Terraform",
+              "Project": "certplatform"
+            },
+            "tags_all": {
+              "Environment": "prod",
+              "ManagedBy": "Terraform",
+              "Project": "certplatform"
+            },
+            "unique_id": "AROAYE4DRE3DDSYWP6HG6"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "data.aws_iam_policy_document.lambda_assume_role"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_iam_role_policy_attachment",
+      "name": "apigw_cloudwatch",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "certplatform-prod-apigw-cloudwatch-20260303142334008100000001",
+            "policy_arn": "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs",
+            "role": "certplatform-prod-apigw-cloudwatch"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_iam_role.apigw_cloudwatch",
+            "data.aws_iam_policy_document.apigw_assume_role",
+            "data.aws_partition.current"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_iam_role_policy_attachment",
+      "name": "lambda_cloudwatch",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "certplatform-prod-lambda-exec-20260303142853920000000001",
+            "policy_arn": "arn:aws:iam::560232212166:policy/certplatform-prod-lambda-cloudwatch",
+            "role": "certplatform-prod-lambda-exec"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_iam_policy.lambda_cloudwatch",
+            "aws_iam_role.lambda_exec",
+            "data.aws_caller_identity.current",
+            "data.aws_iam_policy_document.lambda_assume_role",
+            "data.aws_iam_policy_document.lambda_cloudwatch",
+            "data.aws_partition.current"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_iam_role_policy_attachment",
+      "name": "lambda_dynamodb",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "certplatform-prod-lambda-exec-20260303142358550800000004",
+            "policy_arn": "arn:aws:iam::560232212166:policy/certplatform-prod-lambda-dynamodb",
+            "role": "certplatform-prod-lambda-exec"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_dynamodb_table.companies",
+            "aws_dynamodb_table.members",
+            "aws_iam_policy.lambda_dynamodb",
+            "aws_iam_role.lambda_exec",
+            "data.aws_iam_policy_document.lambda_assume_role",
+            "data.aws_iam_policy_document.lambda_dynamodb"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_iam_role_policy_attachment",
+      "name": "lambda_s3",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "certplatform-prod-lambda-exec-20260303142335444500000003",
+            "policy_arn": "arn:aws:iam::560232212166:policy/certplatform-prod-lambda-s3",
+            "role": "certplatform-prod-lambda-exec"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_iam_policy.lambda_s3",
+            "aws_iam_role.lambda_exec",
+            "aws_s3_bucket.certificates",
+            "aws_s3_bucket.private_assets",
+            "data.aws_caller_identity.current",
+            "data.aws_iam_policy_document.lambda_assume_role",
+            "data.aws_iam_policy_document.lambda_s3"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "certificates",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "acceleration_status": "",
+            "acl": null,
+            "arn": "arn:aws:s3:::certplatform-prod-certificates-560232212166",
+            "bucket": "certplatform-prod-certificates-560232212166",
+            "bucket_domain_name": "certplatform-prod-certificates-560232212166.s3.amazonaws.com",
+            "bucket_prefix": "",
+            "bucket_regional_domain_name": "certplatform-prod-certificates-560232212166.s3.us-east-1.amazonaws.com",
+            "cors_rule": [],
+            "force_destroy": false,
+            "grant": [
+              {
+                "id": "bb038b9ebbf1766cd0461932855768cb357f7c68cd65e742c2fa712b6227f642",
+                "permissions": [
+                  "FULL_CONTROL"
+                ],
+                "type": "CanonicalUser",
+                "uri": ""
+              }
+            ],
+            "hosted_zone_id": "Z3AQBSTGFYJSTF",
+            "id": "certplatform-prod-certificates-560232212166",
+            "lifecycle_rule": [
+              {
+                "abort_incomplete_multipart_upload_days": 0,
+                "enabled": true,
+                "expiration": [],
+                "id": "transition-to-ia",
+                "noncurrent_version_expiration": [
+                  {
+                    "days": 365
+                  }
+                ],
+                "noncurrent_version_transition": [],
+                "prefix": "",
+                "tags": {},
+                "transition": [
+                  {
+                    "date": "",
+                    "days": 90,
+                    "storage_class": "STANDARD_IA"
+                  }
+                ]
+              }
+            ],
+            "logging": [],
+            "object_lock_configuration": [],
+            "object_lock_enabled": false,
+            "policy": "",
+            "region": "us-east-1",
+            "replication_configuration": [],
+            "request_payer": "BucketOwner",
+            "server_side_encryption_configuration": [
+              {
+                "rule": [
+                  {
+                    "apply_server_side_encryption_by_default": [
+                      {
+                        "kms_master_key_id": "",
+                        "sse_algorithm": "aws:kms"
+                      }
+                    ],
+                    "bucket_key_enabled": true
+                  }
+                ]
+              }
+            ],
+            "tags": {
+              "Environment": "prod",
+              "ManagedBy": "Terraform",
+              "Name": "certplatform-prod-certificates",
+              "Project": "certplatform"
+            },
+            "tags_all": {
+              "Environment": "prod",
+              "ManagedBy": "Terraform",
+              "Name": "certplatform-prod-certificates",
+              "Project": "certplatform"
+            },
+            "timeouts": null,
+            "versioning": [
+              {
+                "enabled": true,
+                "mfa_delete": false
+              }
+            ],
+            "website": [],
+            "website_domain": null,
+            "website_endpoint": null
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "eyJlMmJmYjczMC1lY2FhLTExZTYtOGY4OC0zNDM2M2JjN2M0YzAiOnsiY3JlYXRlIjoxMjAwMDAwMDAwMDAwLCJkZWxldGUiOjM2MDAwMDAwMDAwMDAsInJlYWQiOjEyMDAwMDAwMDAwMDAsInVwZGF0ZSI6MTIwMDAwMDAwMDAwMH19",
+          "dependencies": [
+            "data.aws_caller_identity.current"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_s3_bucket",
+      "name": "private_assets",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "acceleration_status": "",
+            "acl": null,
+            "arn": "arn:aws:s3:::certplatform-prod-private-assets-560232212166",
+            "bucket": "certplatform-prod-private-assets-560232212166",
+            "bucket_domain_name": "certplatform-prod-private-assets-560232212166.s3.amazonaws.com",
+            "bucket_prefix": "",
+            "bucket_regional_domain_name": "certplatform-prod-private-assets-560232212166.s3.us-east-1.amazonaws.com",
+            "cors_rule": [],
+            "force_destroy": false,
+            "grant": [
+              {
+                "id": "bb038b9ebbf1766cd0461932855768cb357f7c68cd65e742c2fa712b6227f642",
+                "permissions": [
+                  "FULL_CONTROL"
+                ],
+                "type": "CanonicalUser",
+                "uri": ""
+              }
+            ],
+            "hosted_zone_id": "Z3AQBSTGFYJSTF",
+            "id": "certplatform-prod-private-assets-560232212166",
+            "lifecycle_rule": [],
+            "logging": [],
+            "object_lock_configuration": [],
+            "object_lock_enabled": false,
+            "policy": "",
+            "region": "us-east-1",
+            "replication_configuration": [],
+            "request_payer": "BucketOwner",
+            "server_side_encryption_configuration": [
+              {
+                "rule": [
+                  {
+                    "apply_server_side_encryption_by_default": [
+                      {
+                        "kms_master_key_id": "",
+                        "sse_algorithm": "aws:kms"
+                      }
+                    ],
+                    "bucket_key_enabled": true
+                  }
+                ]
+              }
+            ],
+            "tags": {
+              "Environment": "prod",
+              "ManagedBy": "Terraform",
+              "Name": "certplatform-prod-private-assets",
+              "Project": "certplatform"
+            },
+            "tags_all": {
+              "Environment": "prod",
+              "ManagedBy": "Terraform",
+              "Name": "certplatform-prod-private-assets",
+              "Project": "certplatform"
+            },
+            "timeouts": null,
+            "versioning": [
+              {
+                "enabled": true,
+                "mfa_delete": false
+              }
+            ],
+            "website": [],
+            "website_domain": null,
+            "website_endpoint": null
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "eyJlMmJmYjczMC1lY2FhLTExZTYtOGY4OC0zNDM2M2JjN2M0YzAiOnsiY3JlYXRlIjoxMjAwMDAwMDAwMDAwLCJkZWxldGUiOjM2MDAwMDAwMDAwMDAsInJlYWQiOjEyMDAwMDAwMDAwMDAsInVwZGF0ZSI6MTIwMDAwMDAwMDAwMH19",
+          "dependencies": [
+            "data.aws_caller_identity.current"
+          ],
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_s3_bucket_lifecycle_configuration",
+      "name": "certificates",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 1,
+          "attributes": {
+            "bucket": "certplatform-prod-certificates-560232212166",
+            "expected_bucket_owner": "",
+            "id": "certplatform-prod-certificates-560232212166",
+            "rule": [
+              {
+                "abort_incomplete_multipart_upload": [],
+                "expiration": [],
+                "filter": [
+                  {
+                    "and": [],
+                    "object_size_greater_than": null,
+                    "object_size_less_than": null,
+                    "prefix": "",
+                    "tag": []
+                  }
+                ],
+                "id": "transition-to-ia",
+                "noncurrent_version_expiration": [
+                  {
+                    "newer_noncurrent_versions": null,
+                    "noncurrent_days": 365
+                  }
+                ],
+                "noncurrent_version_transition": [],
+                "prefix": "",
+                "status": "Enabled",
+                "transition": [
+                  {
+                    "date": null,
+                    "days": 90,
+                    "storage_class": "STANDARD_IA"
+                  }
+                ]
+              }
+            ],
+            "timeouts": null,
+            "transition_default_minimum_object_size": "all_storage_classes_128K"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "dependencies": [
+            "aws_s3_bucket.certificates",
+            "data.aws_caller_identity.current"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_s3_bucket_public_access_block",
+      "name": "certificates",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "block_public_acls": true,
+            "block_public_policy": true,
+            "bucket": "certplatform-prod-certificates-560232212166",
+            "id": "certplatform-prod-certificates-560232212166",
+            "ignore_public_acls": true,
+            "restrict_public_buckets": true
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_s3_bucket.certificates",
+            "data.aws_caller_identity.current"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_s3_bucket_public_access_block",
+      "name": "private_assets",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "block_public_acls": true,
+            "block_public_policy": true,
+            "bucket": "certplatform-prod-private-assets-560232212166",
+            "id": "certplatform-prod-private-assets-560232212166",
+            "ignore_public_acls": true,
+            "restrict_public_buckets": true
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_s3_bucket.private_assets",
+            "data.aws_caller_identity.current"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_s3_bucket_server_side_encryption_configuration",
+      "name": "certificates",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "bucket": "certplatform-prod-certificates-560232212166",
+            "expected_bucket_owner": "",
+            "id": "certplatform-prod-certificates-560232212166",
+            "rule": [
+              {
+                "apply_server_side_encryption_by_default": [
+                  {
+                    "kms_master_key_id": "",
+                    "sse_algorithm": "aws:kms"
+                  }
+                ],
+                "bucket_key_enabled": true
+              }
+            ]
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_s3_bucket.certificates",
+            "data.aws_caller_identity.current"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_s3_bucket_server_side_encryption_configuration",
+      "name": "private_assets",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "bucket": "certplatform-prod-private-assets-560232212166",
+            "expected_bucket_owner": "",
+            "id": "certplatform-prod-private-assets-560232212166",
+            "rule": [
+              {
+                "apply_server_side_encryption_by_default": [
+                  {
+                    "kms_master_key_id": "",
+                    "sse_algorithm": "aws:kms"
+                  }
+                ],
+                "bucket_key_enabled": true
+              }
+            ]
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_s3_bucket.private_assets",
+            "data.aws_caller_identity.current"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_s3_bucket_versioning",
+      "name": "certificates",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "bucket": "certplatform-prod-certificates-560232212166",
+            "expected_bucket_owner": "",
+            "id": "certplatform-prod-certificates-560232212166",
+            "mfa": null,
+            "versioning_configuration": [
+              {
+                "mfa_delete": "",
+                "status": "Enabled"
+              }
+            ]
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_s3_bucket.certificates",
+            "data.aws_caller_identity.current"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_s3_bucket_versioning",
+      "name": "private_assets",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "bucket": "certplatform-prod-private-assets-560232212166",
+            "expected_bucket_owner": "",
+            "id": "certplatform-prod-private-assets-560232212166",
+            "mfa": null,
+            "versioning_configuration": [
+              {
+                "mfa_delete": "",
+                "status": "Enabled"
+              }
+            ]
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_s3_bucket.private_assets",
+            "data.aws_caller_identity.current"
+          ]
+        }
+      ]
+    }
+  ],
+  "check_results": null
+}
