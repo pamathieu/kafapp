@@ -23,6 +23,7 @@ Requirements:
 """
 
 import argparse
+from typing import Optional
 import io
 import json
 import sys
@@ -96,12 +97,12 @@ def get_all_members(company_id: str) -> list[dict]:
     return items
 
 
-def get_member(member_id: str, company_id: str) -> dict | None:
+def get_member(member_id: str, company_id: str) -> Optional[dict]:
     resp = members_table.get_item(Key={"memberId": member_id, "companyId": company_id})
     return resp.get("Item")
 
 
-def get_company(company_id: str) -> dict | None:
+def get_company(company_id: str) -> Optional[dict]:
     resp = companies_table.get_item(Key={"companyId": company_id})
     return resp.get("Item")
 
@@ -130,7 +131,7 @@ def upload(data: bytes, key: str, content_type: str) -> str:
     return f"s3://{CERTS_BUCKET}/{key}"
 
 
-def fetch_logo(s3_path: str) -> io.BytesIO | None:
+def fetch_logo(s3_path: str) -> Optional[io.BytesIO]:
     """Download logo from S3 and return as BytesIO, or None if unavailable."""
     if not s3_path or not s3_path.startswith("s3://"):
         return None

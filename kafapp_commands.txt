@@ -1,0 +1,22 @@
+Run server: flutter run -d chrome
+
+Certificate script: '''python3 generate_certificates.py --member MBR-004 '''
+
+Certificate URL Command: ''' aws lambda invoke \
+  --function-name certplatform-prod-certificate-retrieval \
+  --payload '{"queryStringParameters": {"phone": "5613034161"}}' \
+  --cli-binary-format raw-in-base64-out \
+  /tmp/response.json && cat /tmp/response.json | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+body = json.loads(data['body'])
+print('PDF:', body['documents']['pdf']['download_url'])
+print()
+print('JPEG:', body['documents']['jpeg']['download_url'])
+print()
+cred = body['documents']['pdf']['download_url'].split('X-Amz-Credential=')[1].split('%2F')[0]
+print('Credential type:', 'PERMANENT (AKIA)' if cred.startswith('AKIA') else 'TEMPORARY (ASIA) - will expire!')
+"
+'''
+
+
