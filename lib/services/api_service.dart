@@ -90,20 +90,6 @@ class ApiService {
         'AWS4-HMAC-SHA256 Credential=$_accessKeyId/$credentialScope, '
         'SignedHeaders=$signedHeaders, Signature=$signature';
 
-    // DEBUG — print to browser console
-    print('=== SigV4 DEBUG ===');
-    print('Method: $method');
-    print('URI: $uri');
-    print('AMZ Date: $amzdate');
-    print('Body hash: $bodyHash');
-    print('Canonical headers:\n$canonicalHeaders');
-    print('Signed headers: $signedHeaders');
-    print('Canonical request:\n$canonicalRequest');
-    print('String to sign:\n$stringToSign');
-    print('Auth header: $authHeader');
-    print('Access key ID (first 8): ${_accessKeyId.substring(0, 8)}...');
-    print('===================');
-
     return {
       'Authorization':         authHeader,
       'x-amz-date':            amzdate,
@@ -114,6 +100,35 @@ class ApiService {
   }
 
   // ── API calls ────────────────────────────────────────────────────────────────
+
+  /// GET /retrieve?phone= — returns {pdf: url, jpeg: url} (no auth)
+  Future<Map<String, String>> getCertificateLinks(String phone) async {
+    final uri = Uri.parse(
+        '$_baseUrl/retrieve?phone=${Uri.encodeComponent(phone)}');
+    final response = await http.get(uri);
+    if (response.statusCode == 200) {
+      final body = json.decode(response.body);
+      final docs = body['documents'] ?? {};
+      return {
+        'pdf':  (docs['pdf']  ?? {})['download_url'] ?? '',
+        'jpeg': (docs['jpeg'] ?? {})['download_url'] ?? '',
+      };
+    }
+    throw Exception(
+        'Failed to retrieve certificate links: ${response.statusCode} ${response.body}');
+  }
+
+  /// GET /localities — list all communes
+  Future<List<Map<String, dynamic>>> listLocalities() async {
+    final uri      = Uri.parse('$_baseUrl/localities');
+    final headers  = _signRequest(method: 'GET', uri: uri, body: '');
+    final response = await http.get(uri, headers: headers);
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return List<Map<String, dynamic>>.from(data['localities'] ?? []);
+    }
+    throw Exception('Failed to load localities: ${response.statusCode}');
+  }
 
   Future<List<Member>> listMembers() async {
     final uri      = Uri.parse('$_baseUrl/members/list?companyId=$_companyId');
@@ -149,8 +164,37 @@ class ApiService {
     throw Exception('Failed to load member for editing');
   }
 
-  Future<Member> updateMember(Member member) async {
+  /// Update member — supports renaming memberId via oldMemberId field
+  Future<Member> updateMember(Member member, {String? oldMemberId}) async {
     final uri  = Uri.parse('$_baseUrl/members/update');
+    final body = json.encode({
+      'memberId':              member.memberId,
+      'oldMemberId':           oldMemberId ?? member.memberId,
+      'companyId':             _companyId,
+      'full_name':             member.fullName,
+      'date_of_birth':         member.dateOfBirth,
+      'address':               member.address,
+      'phone':                 member.phone,
+      'email':                 member.email,
+      'identification_number': member.identificationNumber,
+      'identification_type':   member.identificationType,
+      'status':                member.status,
+      'notes':                 member.notes,
+      if (member.locality != null) 'locality': member.locality,
+    });
+    final headers  = _signRequest(method: 'POST', uri: uri, body: body);
+    final response = await http.post(uri, headers: headers, body: body);
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return Member.fromJson(data['member'] ?? data);
+    }
+    final error = json.decode(response.body);
+    throw Exception(error['error'] ?? 'Failed to update member: ${response.statusCode}');
+  }
+
+  /// Create a new member
+  Future<Member> createMember(Member member) async {
+    final uri  = Uri.parse('$_baseUrl/members/create');
     final body = json.encode({
       'memberId':              member.memberId,
       'companyId':             _companyId,
@@ -163,13 +207,15 @@ class ApiService {
       'identification_type':   member.identificationType,
       'status':                member.status,
       'notes':                 member.notes,
+      if (member.locality != null) 'locality': member.locality,
     });
     final headers  = _signRequest(method: 'POST', uri: uri, body: body);
     final response = await http.post(uri, headers: headers, body: body);
-    if (response.statusCode == 200) {
+    if (response.statusCode == 201) {
       final data = json.decode(response.body);
       return Member.fromJson(data['member'] ?? data);
     }
-    throw Exception('Failed to update member: ${response.statusCode}');
+    final error = json.decode(response.body);
+    throw Exception(error['error'] ?? 'Failed to create member: ${response.statusCode}');
   }
 }

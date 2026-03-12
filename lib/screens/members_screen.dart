@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/member.dart';
 import 'member_detail_screen.dart';
+import 'create_member_screen.dart';
 import 'login_screen.dart';
 
 class MembersScreen extends StatefulWidget {
@@ -84,6 +85,16 @@ class _MembersScreenState extends State<MembersScreen> {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
     );
+  }
+
+  Future<void> _openCreateMember() async {
+    final created = await Navigator.of(context).push<Member>(
+      MaterialPageRoute(builder: (_) => const CreateMemberScreen()),
+    );
+    if (created != null) {
+      setState(() => _allMembers.add(created));
+      _filterMembers();
+    }
   }
 
   @override
@@ -212,11 +223,26 @@ class _MembersScreenState extends State<MembersScreen> {
           Expanded(child: _buildBody()),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _loadMembers,
-        backgroundColor: const Color(0xFFC8A96E),
-        tooltip: 'Refresh',
-        child: const Icon(Icons.refresh, color: Colors.white),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton.small(
+            heroTag: 'refresh',
+            onPressed: _loadMembers,
+            backgroundColor: const Color(0xFFC8A96E),
+            tooltip: 'Refresh',
+            child: const Icon(Icons.refresh, color: Colors.white),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
+            heroTag: 'create',
+            onPressed: _openCreateMember,
+            backgroundColor: const Color(0xFF1A5C2A),
+            icon: const Icon(Icons.person_add, color: Colors.white),
+            label: const Text('New Member',
+                style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
     );
   }
@@ -289,7 +315,7 @@ class _MembersScreenState extends State<MembersScreen> {
           onTap: () async {
             final updated = await Navigator.of(context).push<Member>(
               MaterialPageRoute(
-                builder: (_) => MemberDetailScreen(member: member),
+                builder: (_) => MemberDetailScreen(member: member, allMembers: _allMembers),
               ),
             );
             if (updated != null) {

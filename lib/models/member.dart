@@ -8,10 +8,11 @@ class Member {
   String email;
   String identificationNumber;
   String identificationType;
-  bool status; // true = active, false = inactive
+  bool status;
   String notes;
   Map<String, dynamic>? certificate;
   String? issuedDate;
+  Map<String, dynamic>? locality; // {commune, code}
 
   Member({
     required this.memberId,
@@ -27,6 +28,7 @@ class Member {
     this.notes = '',
     this.certificate,
     this.issuedDate,
+    this.locality,
   });
 
   factory Member.fromJson(Map<String, dynamic> json) {
@@ -44,11 +46,12 @@ class Member {
       notes: json['notes'] ?? '',
       certificate: json['certificate'] as Map<String, dynamic>?,
       issuedDate: json['issued_date'] ?? json['issuedDate'],
+      locality: json['locality'] as Map<String, dynamic>?,
     );
   }
 
   static bool _parseBool(dynamic value) {
-    if (value == null) return true; // default active
+    if (value == null) return true;
     if (value is bool) return value;
     if (value is String) return value.toLowerCase() == 'true';
     return true;
@@ -66,9 +69,11 @@ class Member {
         'identification_type': identificationType,
         'status': status,
         'notes': notes,
+        if (locality != null) 'locality': locality,
       };
 
   Member copyWith({
+    String? memberId,
     String? fullName,
     String? dateOfBirth,
     String? address,
@@ -78,9 +83,10 @@ class Member {
     String? identificationType,
     bool? status,
     String? notes,
+    Map<String, dynamic>? locality,
   }) {
     return Member(
-      memberId: memberId,
+      memberId: memberId ?? this.memberId,
       companyId: companyId,
       fullName: fullName ?? this.fullName,
       dateOfBirth: dateOfBirth ?? this.dateOfBirth,
@@ -93,6 +99,11 @@ class Member {
       notes: notes ?? this.notes,
       certificate: certificate,
       issuedDate: issuedDate,
+      locality: locality ?? this.locality,
     );
   }
+
+  /// Returns the commune name if locality is set
+  String get communeName => locality?['commune'] ?? '';
+  String get localityCode => locality?['code'] ?? '';
 }
