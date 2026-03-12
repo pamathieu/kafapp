@@ -18,6 +18,12 @@ provider "aws" {
   region = var.aws_region
 }
 
+# ACM certificates for CloudFront must always be in us-east-1
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+}
+
 ################################################################################
 # Variables
 ################################################################################
@@ -132,6 +138,23 @@ resource "aws_dynamodb_table" "kopera-admin" {
 
   attribute {
     name = "username"
+    type = "S"
+  }
+
+  tags = local.common_tags
+}
+
+################################################################################
+# DynamoDB — Localities Table
+################################################################################
+
+resource "aws_dynamodb_table" "kopera-localities" {
+  name         = "kopera-localities"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "code"
+
+  attribute {
+    name = "code"
     type = "S"
   }
 
@@ -262,6 +285,7 @@ resource "aws_iam_role_policy" "lambda_dynamodb" {
         aws_dynamodb_table.kopera-company.arn,
         aws_dynamodb_table.kopera-member.arn,
         aws_dynamodb_table.kopera-admin.arn,
+        aws_dynamodb_table.kopera-localities.arn,
         "${aws_dynamodb_table.kopera-company.arn}/index/*",
         "${aws_dynamodb_table.kopera-member.arn}/index/*",
       ]
@@ -376,6 +400,7 @@ resource "aws_lambda_function" "certificate_handler" {
       ENVIRONMENT     = var.environment
       API_BASE_URL    = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${var.environment}"
       ADMIN_TABLE     = aws_dynamodb_table.kopera-admin.name
+      LOCALITIES_TABLE = aws_dynamodb_table.kopera-localities.name
     }
   }
 
@@ -809,6 +834,50 @@ resource "aws_api_gateway_integration" "members_update_post" {
 }
 
 
+# ── CORS OPTIONS for /retrieve ───────────────────────────────────────────────
+
+resource "aws_api_gateway_method" "retrieve_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.retrieve.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "retrieve_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.retrieve.id
+  http_method = aws_api_gateway_method.retrieve_options.http_method
+  type        = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "retrieve_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.retrieve.id
+  http_method = aws_api_gateway_method.retrieve_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "retrieve_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.retrieve.id
+  http_method = aws_api_gateway_method.retrieve_options.http_method
+  status_code = aws_api_gateway_method_response.retrieve_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.retrieve_options]
+}
+
 # ── /auth  parent resource ───────────────────────────────────────────────────
 
 resource "aws_api_gateway_resource" "auth" {
@@ -1017,6 +1086,134 @@ resource "aws_api_gateway_integration_response" "members_update_options" {
   depends_on = [aws_api_gateway_integration.members_update_options]
 }
 
+# ── /localities ───────────────────────────────────────────────────────────────
+
+resource "aws_api_gateway_resource" "localities" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "localities"
+}
+
+resource "aws_api_gateway_method" "localities_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.localities.id
+  http_method   = "GET"
+  authorization = "AWS_IAM"
+}
+
+resource "aws_api_gateway_integration" "localities_get" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.localities.id
+  http_method             = aws_api_gateway_method.localities_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.certificate_handler.invoke_arn
+}
+
+resource "aws_api_gateway_method" "localities_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.localities.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "localities_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.localities.id
+  http_method = aws_api_gateway_method.localities_options.http_method
+  type        = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+
+resource "aws_api_gateway_method_response" "localities_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.localities.id
+  http_method = aws_api_gateway_method.localities_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "localities_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.localities.id
+  http_method = aws_api_gateway_method.localities_options.http_method
+  status_code = aws_api_gateway_method_response.localities_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.localities_options]
+}
+
+# ── /members/create ────────────────────────────────────────────────────────────
+
+resource "aws_api_gateway_resource" "members_create" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.members.id
+  path_part   = "create"
+}
+
+resource "aws_api_gateway_method" "members_create_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.members_create.id
+  http_method   = "POST"
+  authorization = "AWS_IAM"
+}
+
+resource "aws_api_gateway_integration" "members_create_post" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.members_create.id
+  http_method             = aws_api_gateway_method.members_create_post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.certificate_handler.invoke_arn
+}
+
+resource "aws_api_gateway_method" "members_create_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.members_create.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "members_create_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.members_create.id
+  http_method = aws_api_gateway_method.members_create_options.http_method
+  type        = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+
+resource "aws_api_gateway_method_response" "members_create_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.members_create.id
+  http_method = aws_api_gateway_method.members_create_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "members_create_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.members_create.id
+  http_method = aws_api_gateway_method.members_create_options.http_method
+  status_code = aws_api_gateway_method_response.members_create_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.members_create_options]
+}
+
 # ── Deployment & Stage ────────────────────────────────────────────────────────
 
 resource "aws_api_gateway_deployment" "main" {
@@ -1038,6 +1235,8 @@ resource "aws_api_gateway_deployment" "main" {
       aws_api_gateway_integration.members_list_options.id,
       aws_api_gateway_integration.members_edit_options.id,
       aws_api_gateway_integration.members_update_options.id,
+      aws_api_gateway_integration.localities_get.id,
+      aws_api_gateway_integration.members_create_post.id,
     ]))
   }
 
@@ -1055,6 +1254,8 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_integration_response.members_list_options,
     aws_api_gateway_integration_response.members_edit_options,
     aws_api_gateway_integration_response.members_update_options,
+    aws_api_gateway_integration.localities_get,
+    aws_api_gateway_integration.members_create_post,
   ]
 
   lifecycle {
@@ -1155,4 +1356,209 @@ output "retrieval_lambda_function_arn" {
 output "retrieve_endpoint" {
   description = "GET endpoint — retrieve certificate by phone number"
   value       = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${var.environment}/retrieve?phone=<phone_number>"
+}
+
+################################################################################
+# Route 53 — kafayiti.com hosted zone
+################################################################################
+
+data "aws_route53_zone" "kafayiti" {
+  name         = "kafayiti.com"
+  private_zone = false
+}
+
+################################################################################
+# ACM Certificate — admin.kafayiti.com
+# Must be in us-east-1 for CloudFront
+################################################################################
+
+resource "aws_acm_certificate" "member_management" {
+  provider          = aws.us_east_1
+  domain_name       = "admin.kafayiti.com"
+  validation_method = "DNS"
+  tags              = local.common_tags
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_route53_record" "member_management_cert_validation" {
+  for_each = {
+    for dvo in aws_acm_certificate.member_management.domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      record = dvo.resource_record_value
+      type   = dvo.resource_record_type
+    }
+  }
+
+  zone_id = data.aws_route53_zone.kafayiti.zone_id
+  name    = each.value.name
+  type    = each.value.type
+  ttl     = 60
+  records = [each.value.record]
+}
+
+resource "aws_acm_certificate_validation" "member_management" {
+  provider                = aws.us_east_1
+  certificate_arn         = aws_acm_certificate.member_management.arn
+  validation_record_fqdns = [for record in aws_route53_record.member_management_cert_validation : record.fqdn]
+}
+
+################################################################################
+# S3 — Member Management Flutter Web App
+################################################################################
+
+resource "aws_s3_bucket" "member_management" {
+  bucket        = "kafa-admin-kafayiti"
+  force_destroy = true
+  tags          = local.common_tags
+}
+
+resource "aws_s3_bucket_versioning" "member_management" {
+  bucket = aws_s3_bucket.member_management.id
+  versioning_configuration { status = "Enabled" }
+}
+
+resource "aws_s3_bucket_public_access_block" "member_management" {
+  bucket                  = aws_s3_bucket.member_management.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_website_configuration" "member_management" {
+  bucket = aws_s3_bucket.member_management.id
+
+  index_document { suffix = "index.html" }
+  error_document { key    = "index.html" }
+}
+
+################################################################################
+# CloudFront — HTTPS distribution for Member Management app
+################################################################################
+
+resource "aws_cloudfront_origin_access_control" "member_management" {
+  name                              = "kafa-admin-kafayiti-oac"
+  description                       = "OAC for KAFA Member Management S3 bucket"
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
+
+resource "aws_cloudfront_distribution" "member_management" {
+  enabled             = true
+  is_ipv6_enabled     = true
+  default_root_object = "index.html"
+  comment             = "KAFA Admin Flutter Web App"
+  tags                = local.common_tags
+
+  origin {
+    domain_name              = aws_s3_bucket.member_management.bucket_regional_domain_name
+    origin_id                = "S3-kafa-admin-kafayiti"
+    origin_access_control_id = aws_cloudfront_origin_access_control.member_management.id
+  }
+
+  default_cache_behavior {
+    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
+    cached_methods         = ["GET", "HEAD"]
+    target_origin_id       = "S3-kafa-admin-kafayiti"
+    viewer_protocol_policy = "redirect-to-https"
+    compress               = true
+
+    forwarded_values {
+      query_string = false
+      cookies { forward = "none" }
+    }
+
+    min_ttl     = 0
+    default_ttl = 3600
+    max_ttl     = 86400
+  }
+
+  # Return index.html for all routes — required for Flutter web SPA routing
+  custom_error_response {
+    error_code            = 403
+    response_code         = 200
+    response_page_path    = "/index.html"
+    error_caching_min_ttl = 0
+  }
+
+  custom_error_response {
+    error_code            = 404
+    response_code         = 200
+    response_page_path    = "/index.html"
+    error_caching_min_ttl = 0
+  }
+
+  restrictions {
+    geo_restriction { restriction_type = "none" }
+  }
+
+  aliases = ["admin.kafayiti.com"]
+
+  viewer_certificate {
+    acm_certificate_arn      = aws_acm_certificate_validation.member_management.certificate_arn
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
+  }
+}
+
+# Bucket policy — allow CloudFront OAC to read from S3
+resource "aws_s3_bucket_policy" "member_management" {
+  bucket = aws_s3_bucket.member_management.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "AllowCloudFrontOAC"
+      Effect = "Allow"
+      Principal = {
+        Service = "cloudfront.amazonaws.com"
+      }
+      Action   = "s3:GetObject"
+      Resource = "${aws_s3_bucket.member_management.arn}/*"
+      Condition = {
+        StringEquals = {
+          "AWS:SourceArn" = aws_cloudfront_distribution.member_management.arn
+        }
+      }
+    }]
+  })
+}
+
+################################################################################
+# Route 53 — admin.kafayiti.com → CloudFront
+################################################################################
+
+resource "aws_route53_record" "member_management" {
+  zone_id = data.aws_route53_zone.kafayiti.zone_id
+  name    = "admin.kafayiti.com"
+  type    = "A"
+
+  alias {
+    name                   = aws_cloudfront_distribution.member_management.domain_name
+    zone_id                = aws_cloudfront_distribution.member_management.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
+################################################################################
+# Outputs — Member Management hosting
+################################################################################
+
+output "member_management_bucket" {
+  description = "S3 bucket for Flutter web build artifacts"
+  value       = aws_s3_bucket.member_management.id
+}
+
+output "member_management_cloudfront_url" {
+  description = "HTTPS URL for the KAFA Member Management app"
+  value       = "https://admin.kafayiti.com"
+}
+
+output "member_management_cloudfront_id" {
+  description = "CloudFront distribution ID (needed to invalidate cache after deploy)"
+  value       = aws_cloudfront_distribution.member_management.id
 }
