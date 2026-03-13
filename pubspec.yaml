@@ -30,6 +30,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-
-assets:
-  - assets/images/kafa_logo.png
+  assets:
+    - assets/images/kafa_logo.png

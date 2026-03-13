@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/language_provider.dart';
+import '../misc/app_strings.dart';
 import '../models/member.dart';
 import 'member_detail_screen.dart';
 import 'create_member_screen.dart';
@@ -19,7 +21,7 @@ class _MembersScreenState extends State<MembersScreen> {
   bool _isLoading = true;
   String? _error;
   final _searchController = TextEditingController();
-  String _filterStatus = 'All'; // All, Active, Inactive
+  String _filterStatus = 'All'; // All, Active, Inactive (internal English keys)
 
   @override
   void initState() {
@@ -100,12 +102,22 @@ class _MembersScreenState extends State<MembersScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final locale = context.watch<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
+
     final activeCount = _allMembers.where((m) => m.status).length;
     final inactiveCount = _allMembers.where((m) => !m.status).length;
 
+    // Filter display labels (translated) mapped to internal keys
+    final filters = <String, String>{
+      'All': s('all'),
+      'Active': s('active'),
+      'Inactive': s('inactive'),
+    };
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('KAFA — Member Management'),
+        title: Text(s('appBarTitle')),
         actions: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -119,9 +131,20 @@ class _MembersScreenState extends State<MembersScreen> {
               ],
             ),
           ),
+          TextButton(
+            onPressed: () => context.read<LanguageProvider>().toggle(),
+            child: Text(
+              locale == 'fr' ? '🇺🇸 EN' : '🇫🇷 FR',
+              style: const TextStyle(
+                color: Colors.white70,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
-            tooltip: 'Logout',
+            tooltip: s('logout'),
             onPressed: _logout,
           ),
         ],
@@ -135,15 +158,15 @@ class _MembersScreenState extends State<MembersScreen> {
             child: Row(
               children: [
                 _StatChip(
-                    label: 'Total',
+                    label: s('total'),
                     value: _allMembers.length,
                     color: const Color(0xFFC8A96E)),
                 const SizedBox(width: 12),
                 _StatChip(
-                    label: 'Active', value: activeCount, color: Colors.green),
+                    label: s('active'), value: activeCount, color: Colors.green),
                 const SizedBox(width: 12),
                 _StatChip(
-                    label: 'Inactive',
+                    label: s('inactive'),
                     value: inactiveCount,
                     color: Colors.red.shade400),
               ],
@@ -159,7 +182,7 @@ class _MembersScreenState extends State<MembersScreen> {
                 TextField(
                   controller: _searchController,
                   decoration: InputDecoration(
-                    hintText: 'Search by name, ID, phone, email...',
+                    hintText: s('searchHint'),
                     prefixIcon: const Icon(Icons.search),
                     filled: true,
                     fillColor: Colors.white,
@@ -181,14 +204,14 @@ class _MembersScreenState extends State<MembersScreen> {
                 ),
                 const SizedBox(height: 8),
                 Row(
-                  children: ['All', 'Active', 'Inactive'].map((filter) {
-                    final isSelected = _filterStatus == filter;
+                  children: filters.entries.map((entry) {
+                    final isSelected = _filterStatus == entry.key;
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: FilterChip(
-                        label: Text(filter),
+                        label: Text(entry.value),
                         selected: isSelected,
-                        onSelected: (_) => _setFilter(filter),
+                        onSelected: (_) => _setFilter(entry.key),
                         selectedColor: const Color(0xFFC8A96E),
                         labelStyle: TextStyle(
                           color: isSelected ? Colors.white : Colors.black87,
@@ -212,7 +235,7 @@ class _MembersScreenState extends State<MembersScreen> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  '${_filteredMembers.length} member${_filteredMembers.length != 1 ? 's' : ''} found',
+                  '${_filteredMembers.length} ${s('membersFound')}',
                   style: TextStyle(
                       color: Colors.grey.shade600, fontSize: 13),
                 ),
@@ -220,7 +243,7 @@ class _MembersScreenState extends State<MembersScreen> {
             ),
 
           // Member list
-          Expanded(child: _buildBody()),
+          Expanded(child: _buildBody(s)),
         ],
       ),
       floatingActionButton: Column(
@@ -230,7 +253,7 @@ class _MembersScreenState extends State<MembersScreen> {
             heroTag: 'refresh',
             onPressed: _loadMembers,
             backgroundColor: const Color(0xFFC8A96E),
-            tooltip: 'Refresh',
+            tooltip: s('refresh'),
             child: const Icon(Icons.refresh, color: Colors.white),
           ),
           const SizedBox(height: 12),
@@ -239,23 +262,23 @@ class _MembersScreenState extends State<MembersScreen> {
             onPressed: _openCreateMember,
             backgroundColor: const Color(0xFF1A5C2A),
             icon: const Icon(Icons.person_add, color: Colors.white),
-            label: const Text('New Member',
-                style: TextStyle(color: Colors.white)),
+            label: Text(s('newMember'),
+                style: const TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(String Function(String) s) {
     if (_isLoading) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(color: Color(0xFFC8A96E)),
-            SizedBox(height: 16),
-            Text('Loading members...', style: TextStyle(color: Colors.grey)),
+            const CircularProgressIndicator(color: Color(0xFFC8A96E)),
+            const SizedBox(height: 16),
+            Text(s('loadingMembers'), style: const TextStyle(color: Colors.grey)),
           ],
         ),
       );
@@ -270,7 +293,7 @@ class _MembersScreenState extends State<MembersScreen> {
             children: [
               const Icon(Icons.error_outline, size: 48, color: Colors.red),
               const SizedBox(height: 16),
-              Text('Error loading members',
+              Text(s('errorLoadingMembers'),
                   style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               Text(_error!,
@@ -281,7 +304,7 @@ class _MembersScreenState extends State<MembersScreen> {
               ElevatedButton.icon(
                 onPressed: _loadMembers,
                 icon: const Icon(Icons.refresh),
-                label: const Text('Retry'),
+                label: Text(s('retry')),
               ),
             ],
           ),
@@ -296,7 +319,7 @@ class _MembersScreenState extends State<MembersScreen> {
           children: [
             Icon(Icons.people_outline, size: 64, color: Colors.grey.shade300),
             const SizedBox(height: 16),
-            Text('No members found',
+            Text(s('noMembersFound'),
                 style: TextStyle(
                     color: Colors.grey.shade500, fontSize: 16)),
           ],
@@ -343,6 +366,9 @@ class _MemberCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final locale = context.watch<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -427,7 +453,7 @@ class _MemberCard extends StatelessWidget {
                       ),
                     ),
                     child: Text(
-                      member.status ? 'Active' : 'Inactive',
+                      member.status ? s('active') : s('inactive'),
                       style: TextStyle(
                         color: member.status
                             ? Colors.green.shade700

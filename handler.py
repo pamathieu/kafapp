@@ -29,6 +29,7 @@ import hashlib
 import boto3
 import requests
 from boto3.dynamodb.conditions import Attr
+from decimal import Decimal
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 
@@ -50,7 +51,8 @@ ASSETS_BUCKET   = os.environ["ASSETS_BUCKET"]    # kopera-asset
 ENVIRONMENT     = os.environ.get("ENVIRONMENT", "prod")
 AWS_REGION      = os.environ.get("AWS_REGION", "us-east-1")
 API_BASE_URL    = os.environ["API_BASE_URL"]     # https://<id>.execute-api.<region>.amazonaws.com/prod
-ADMIN_TABLE     = os.environ.get("ADMIN_TABLE", "kopera-admin")
+ADMIN_TABLE      = os.environ.get("ADMIN_TABLE", "kopera-admin")
+LOCALITIES_TABLE = os.environ.get("LOCALITIES_TABLE", "kopera-localities")
 
 ################################################################################
 # Router
@@ -140,7 +142,15 @@ def lambda_handler(event, context):
 
     # ── POST /members/update — update member fields ───────────────────────────
     if method == "POST" and resource == "/members/update":
-        return _handle_update_member(event)
+        return _handle_update_member_v2(event)
+
+    # ── GET /localities — list all communes ──────────────────────────────────
+    if method == "GET" and resource == "/localities":
+        return _handle_list_localities()
+
+    # ── POST /members/create — create new member with uniqueness check ─────────
+    if method == "POST" and resource == "/members/create":
+        return _handle_create_member(event)
 
     # ── POST /auth/login — validate admin credentials ────────────────────────
     if method == "POST" and resource == "/auth/login":
@@ -529,6 +539,234 @@ def _handle_admin_login(event: dict) -> dict:
         "sessionToken":     credentials.token,
     })
 
+
+
+################################################################################
+################################################################################
+# Sequence helpers — kopera-company.sequence is the global MK counter
+################################################################################
+
+def _next_sequence(company_id: str) -> int:
+    """Atomically increment kopera-company.sequence and return the new value."""
+    result = dynamodb.Table(COMPANIES_TABLE).update_item(
+        Key={"companyId": company_id},
+        UpdateExpression="ADD #seq :inc",
+        ExpressionAttributeNames={"#seq": "sequence"},
+        ExpressionAttributeValues={":inc": Decimal("1")},
+        ReturnValues="UPDATED_NEW",
+    )
+    return int(result["Attributes"]["sequence"])
+
+
+def _mk_member_id(code: str, seq: int) -> str:
+    """Build a canonical MK member ID: MK + 3-digit commune code + 8-digit seq."""
+    return f"MK{str(code).zfill(3)}{str(seq).zfill(8)}"
+
+
+# GET /localities — list all communes
+################################################################################
+
+def _handle_list_localities() -> dict:
+    table = dynamodb.Table(LOCALITIES_TABLE)
+    items = []
+    resp = table.scan()
+    items.extend(resp.get("Items", []))
+    while "LastEvaluatedKey" in resp:
+        resp = table.scan(ExclusiveStartKey=resp["LastEvaluatedKey"])
+        items.extend(resp.get("Items", []))
+    items.sort(key=lambda x: x.get("commune", ""))
+    return _resp(200, {"localities": items, "count": len(items)})
+
+
+################################################################################
+# POST /members/create — create new member with uniqueness validation
+################################################################################
+
+def _handle_create_member(event: dict) -> dict:
+    """
+    Creates a new member.
+    - If locality is provided: atomically increments kopera-company.sequence
+      and auto-generates memberId = MK{code}{seq:08d}.
+    - If no locality: memberId must be supplied by the client.
+    """
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    company_id = body.get("companyId", "KAFA-001").strip()
+    phone      = body.get("phone", "").strip()
+    email      = body.get("email", "").strip()
+    locality   = body.get("locality")
+
+    # ── Determine member ID ───────────────────────────────────────────────────
+    if locality and locality.get("code"):
+        seq       = _next_sequence(company_id)
+        member_id = _mk_member_id(locality["code"], seq)
+        logger.info("Auto-generated member ID: %s (seq=%s)", member_id, seq)
+    else:
+        member_id = body.get("memberId", "").strip()
+        if not member_id:
+            return _resp(400, {"error": "memberId required when no locality provided"})
+
+    table = dynamodb.Table(MEMBERS_TABLE)
+
+    # ── Uniqueness checks ─────────────────────────────────────────────────────
+    existing = table.get_item(Key={"memberId": member_id, "companyId": company_id})
+    if existing.get("Item"):
+        return _resp(409, {"error": f"Member ID '{member_id}' already exists"})
+
+    if phone:
+        phone_check = table.scan(FilterExpression=Attr("phone").eq(phone))
+        if phone_check.get("Items"):
+            return _resp(409, {"error": f"Phone number '{phone}' is already registered to another member"})
+
+    if email:
+        email_check = table.scan(FilterExpression=Attr("email").eq(email))
+        if email_check.get("Items"):
+            return _resp(409, {"error": f"Email '{email}' is already registered to another member"})
+
+    # ── Build item ────────────────────────────────────────────────────────────
+    item = {
+        "memberId":              member_id,
+        "companyId":             company_id,
+        "full_name":             body.get("full_name", ""),
+        "date_of_birth":         body.get("date_of_birth", ""),
+        "address":               body.get("address", ""),
+        "phone":                 phone,
+        "email":                 email,
+        "identification_number": body.get("identification_number", ""),
+        "identification_type":   body.get("identification_type", ""),
+        "status":                body.get("status", True),
+        "notes":                 body.get("notes", ""),
+    }
+
+    if locality:
+        item["locality"] = {
+            "commune": locality.get("commune", ""),
+            "code":    locality.get("code", ""),
+        }
+
+    table.put_item(Item=item)
+    logger.info("Member created: %s", member_id)
+    return _resp(201, {"message": "Member created successfully", "member": item})
+
+
+################################################################################
+# Updated POST /members/update — add memberId rename + uniqueness validation
+################################################################################
+
+def _handle_update_member_v2(event: dict) -> dict:
+    """
+    Extended update supporting:
+    - MBR → MK conversion: when locality is set on a non-MK member,
+      atomically increments kopera-company.sequence and generates new MK ID.
+    - MK commune change: preserves existing sequence, updates commune prefix.
+    - Renaming memberId (old_member_id → new memberId) for manual cases.
+    - Uniqueness checks for memberId, phone, email.
+    """
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    old_member_id = body.get("oldMemberId") or body.get("memberId")
+    company_id    = body.get("companyId")
+    locality      = body.get("locality")
+
+    if not old_member_id or not company_id:
+        return _resp(400, {"error": "memberId and companyId required"})
+
+    # ── Server-side MK ID generation ─────────────────────────────────────────
+    if locality and locality.get("code"):
+        code = str(locality["code"]).zfill(3)
+        if not old_member_id.startswith("MK"):
+            # MBR → MK: assign new global sequence
+            seq           = _next_sequence(company_id)
+            new_member_id = _mk_member_id(code, seq)
+            logger.info("Converting %s → %s (seq=%s)", old_member_id, new_member_id, seq)
+        elif len(old_member_id) == 13:
+            # MK → MK with new commune: preserve existing sequence
+            existing_seq  = int(old_member_id[5:])
+            new_member_id = _mk_member_id(code, existing_seq)
+        else:
+            new_member_id = body.get("memberId", old_member_id).strip()
+    else:
+        new_member_id = body.get("memberId", old_member_id).strip()
+
+    table = dynamodb.Table(MEMBERS_TABLE)
+
+    # ── Uniqueness checks ─────────────────────────────────────────────────────
+    if new_member_id != old_member_id:
+        existing = table.get_item(Key={"memberId": new_member_id, "companyId": company_id})
+        if existing.get("Item"):
+            return _resp(409, {"error": f"Member ID '{new_member_id}' already exists"})
+
+    phone = body.get("phone", "").strip()
+    if phone:
+        phone_check = table.scan(FilterExpression=Attr("phone").eq(phone))
+        for item in phone_check.get("Items", []):
+            if item["memberId"] != old_member_id:
+                return _resp(409, {"error": f"Phone '{phone}' is already registered to another member"})
+
+    email = body.get("email", "").strip()
+    if email:
+        email_check = table.scan(FilterExpression=Attr("email").eq(email))
+        for item in email_check.get("Items", []):
+            if item["memberId"] != old_member_id:
+                return _resp(409, {"error": f"Email '{email}' is already registered to another member"})
+
+    allowed = [
+        "full_name", "date_of_birth", "address", "phone", "email",
+        "identification_number", "identification_type", "status", "notes",
+    ]
+
+    if new_member_id != old_member_id:
+        # Rename: delete old record, insert with new memberId
+        old_item = _db_get_member(old_member_id, company_id)
+        if not old_item:
+            return _resp(404, {"error": "Member not found"})
+        for field in allowed:
+            if field in body:
+                old_item[field] = body[field]
+        if locality:
+            old_item["locality"] = locality
+        old_item["memberId"] = new_member_id
+        table.delete_item(Key={"memberId": old_member_id, "companyId": company_id})
+        table.put_item(Item=old_item)
+        updated = old_item
+    else:
+        # Standard in-place update
+        update_parts = []
+        attr_names   = {}
+        attr_values  = {}
+
+        for field in allowed:
+            if field in body:
+                nk = f"#f_{field}"
+                vk = f":v_{field}"
+                update_parts.append(f"{nk} = {vk}")
+                attr_names[nk] = field
+                attr_values[vk] = body[field]
+
+        if locality:
+            update_parts.append("#f_locality = :v_locality")
+            attr_names["#f_locality"] = "locality"
+            attr_values[":v_locality"] = locality
+
+        if not update_parts:
+            return _resp(400, {"error": "No updatable fields provided"})
+
+        table.update_item(
+            Key={"memberId": old_member_id, "companyId": company_id},
+            UpdateExpression="SET " + ", ".join(update_parts),
+            ExpressionAttributeNames=attr_names,
+            ExpressionAttributeValues=attr_values,
+        )
+        updated = _db_get_member(new_member_id, company_id)
+
+    logger.info("Member %s updated (new ID: %s)", old_member_id, new_member_id)
+    return _resp(200, {"message": "Member updated", "member": updated})
 
 ################################################################################
 # HTTP response helper

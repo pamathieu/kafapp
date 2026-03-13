@@ -118,6 +118,18 @@ class ApiService {
         'Failed to retrieve certificate links: ${response.statusCode} ${response.body}');
   }
 
+  /// GET /companies — returns current sequence counter from kopera-company
+  Future<int> getCompanySequence() async {
+    final uri     = Uri.parse('$_baseUrl/companies?companyId=$_companyId');
+    final headers = _signRequest(method: 'GET', uri: uri, body: '');
+    final response = await http.get(uri, headers: headers);
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return (data['sequence'] as num?)?.toInt() ?? 0;
+    }
+    return 0;
+  }
+
   /// GET /localities — list all communes
   Future<List<Map<String, dynamic>>> listLocalities() async {
     final uri      = Uri.parse('$_baseUrl/localities');

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/language_provider.dart';
+import '../misc/app_strings.dart';
 import 'members_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -52,6 +54,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final langProvider = context.watch<LanguageProvider>();
+    final locale = langProvider.locale;
+    String s(String key) => AppStrings.get(key, locale);
+
     return Scaffold(
       backgroundColor: const Color(0xFF1A5C2A),
       body: Center(
@@ -62,6 +68,24 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                // Language toggle
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => context.read<LanguageProvider>().toggle(),
+                      child: Text(
+                        locale == 'fr' ? '🇺🇸 EN' : '🇫🇷 FR',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
                 // KAFA Logo
                 Image.asset(
                   'images/kafa_logo.png',
@@ -89,9 +113,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                const Text(
-                  'Member Management',
-                  style: TextStyle(color: Colors.white54, fontSize: 14),
+                Text(
+                  s('appSubtitle'),
+                  style: const TextStyle(color: Colors.white54, fontSize: 14),
                 ),
                 const SizedBox(height: 48),
 
@@ -105,9 +129,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Text(
-                          'Admin Login',
-                          style: TextStyle(
+                        Text(
+                          s('adminLogin'),
+                          style: const TextStyle(
                               fontSize: 20, fontWeight: FontWeight.bold),
                           textAlign: TextAlign.center,
                         ),
@@ -116,9 +140,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         // Username
                         TextField(
                           controller: _usernameController,
-                          decoration: const InputDecoration(
-                            labelText: 'Username',
-                            prefixIcon: Icon(Icons.person_outline),
+                          decoration: InputDecoration(
+                            labelText: s('username'),
+                            prefixIcon: const Icon(Icons.person_outline),
                           ),
                           onSubmitted: (_) => _login(),
                         ),
@@ -129,7 +153,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           controller: _passwordController,
                           obscureText: _obscurePassword,
                           decoration: InputDecoration(
-                            labelText: 'Password',
+                            labelText: s('password'),
                             prefixIcon: const Icon(Icons.lock_outline),
                             suffixIcon: IconButton(
                               icon: Icon(_obscurePassword
@@ -176,8 +200,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                   child: CircularProgressIndicator(
                                       strokeWidth: 2, color: Colors.white),
                                 )
-                              : const Text('Login',
-                                  style: TextStyle(fontSize: 16)),
+                              : Text(s('login'),
+                                  style: const TextStyle(fontSize: 16)),
                         ),
                       ],
                     ),

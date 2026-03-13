@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/language_provider.dart';
+import '../misc/app_strings.dart';
 import '../models/member.dart';
 
 class CreateMemberScreen extends StatefulWidget {
@@ -13,6 +15,7 @@ class CreateMemberScreen extends StatefulWidget {
 class _CreateMemberScreenState extends State<CreateMemberScreen> {
   bool _isSaving = false;
   bool _loadingLocalities = false;
+  bool _isLoadingSequence = false;
   String? _errorMessage;
 
   List<Map<String, dynamic>> _localities = [];
@@ -70,18 +73,29 @@ class _CreateMemberScreenState extends State<CreateMemberScreen> {
     } catch (_) {}
   }
 
-  void _onLocalitySelected(Map<String, dynamic>? locality) {
+
+  void _onLocalitySelected(Map<String, dynamic>? locality) async {
+    final locale = context.read<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
+
     setState(() {
       _selectedLocality = locality;
-      if (locality != null) {
-        final code = (locality['code'] as String).padLeft(3, '0');
-        final prefix = 'MK$code';
-        // Global sequence = total number of members + 1
-        final nextSeq = _allMembers.length + 1;
-        debugPrint('allMembers: ${_allMembers.length}, nextSeq: $nextSeq');
-        _memberIdCtrl.text = _buildMemberId(code, nextSeq);
-      }
+      if (locality == null) { _memberIdCtrl.text = ''; return; }
+      _isLoadingSequence = true;
+      _memberIdCtrl.text = s('generating');
     });
+    if (locality == null) return;
+    try {
+      final api  = context.read<AuthProvider>().apiService!;
+      final seq  = await api.getCompanySequence();
+      final code = (locality['code'] as String).padLeft(3, '0');
+      setState(() {
+        _memberIdCtrl.text = _buildMemberId(code, seq + 1);
+        _isLoadingSequence = false;
+      });
+    } catch (_) {
+      setState(() { _memberIdCtrl.text = ''; _isLoadingSequence = false; });
+    }
   }
 
   String _buildMemberId(String code, int seq) {
@@ -89,11 +103,17 @@ class _CreateMemberScreenState extends State<CreateMemberScreen> {
   }
 
   Future<void> _submit() async {
-    final memberId = _memberIdCtrl.text.trim();
-    final name     = _nameCtrl.text.trim();
+    final locale = context.read<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
 
-    if (memberId.isEmpty || name.isEmpty) {
-      setState(() => _errorMessage = 'Member ID and Full Name are required.');
+    final name = _nameCtrl.text.trim();
+
+    if (name.isEmpty) {
+      setState(() => _errorMessage = s('nameRequired'));
+      return;
+    }
+    if (_selectedLocality == null) {
+      setState(() => _errorMessage = s('selectCommune'));
       return;
     }
 
@@ -103,8 +123,10 @@ class _CreateMemberScreenState extends State<CreateMemberScreen> {
     });
 
     try {
+      // memberId is intentionally left empty — the server generates it
+      // from kopera-company.sequence when locality is provided.
       final newMember = Member(
-        memberId:             memberId,
+        memberId:             '',
         companyId:            'KAFA-001',
         fullName:             name,
         dateOfBirth:          _dobCtrl.text.trim(),
@@ -132,16 +154,34 @@ class _CreateMemberScreenState extends State<CreateMemberScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final locale = context.watch<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('New Member')),
+      appBar: AppBar(
+        title: Text(s('newMember')),
+        actions: [
+          TextButton(
+            onPressed: () => context.read<LanguageProvider>().toggle(),
+            child: Text(
+              locale == 'fr' ? '🇺🇸 EN' : '🇫🇷 FR',
+              style: const TextStyle(
+                color: Colors.white70,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ],
+      ),
       body: _isSaving
-          ? const Center(
+          ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  CircularProgressIndicator(color: Color(0xFFC8A96E)),
-                  SizedBox(height: 16),
-                  Text('Creating member...'),
+                  const CircularProgressIndicator(color: Color(0xFFC8A96E)),
+                  const SizedBox(height: 16),
+                  Text(s('creatingMember')),
                 ],
               ),
             )
@@ -182,15 +222,18 @@ class _CreateMemberScreenState extends State<CreateMemberScreen> {
                     ),
 
                   _buildCard(
-                    title: 'MEMBER INFO',
+                    title: s('sectionMemberInfo'),
                     children: [
-                      _buildCommuneDropdown(),
+                      _buildCommuneDropdown(s),
                       const SizedBox(height: 12),
-                      _field(_memberIdCtrl, 'Member ID *', Icons.badge,
-                          hint: 'e.g. MK08100000001'),
+                      _field(_memberIdCtrl, s('memberId'), Icons.badge,
+                          hint: s('selectCommuneToGenerate'),
+                          readOnly: true),
                       const SizedBox(height: 4),
                       Text(
-                        'Auto-filled by commune. Edit the last digits for the sequence number.',
+                        _isLoadingSequence
+                            ? s('fetchingSequence')
+                            : s('autoGenerated'),
                         style: TextStyle(
                             fontSize: 11, color: Colors.grey.shade500),
                       ),
@@ -199,48 +242,48 @@ class _CreateMemberScreenState extends State<CreateMemberScreen> {
                   const SizedBox(height: 12),
 
                   _buildCard(
-                    title: 'PERSONAL INFO',
+                    title: s('sectionPersonalInfo'),
                     children: [
-                      _field(_nameCtrl, 'Full Name *', Icons.person),
+                      _field(_nameCtrl, s('fullNameRequired'), Icons.person),
                       const SizedBox(height: 12),
-                      _field(_dobCtrl, 'Date of Birth', Icons.cake,
+                      _field(_dobCtrl, s('dateOfBirth'), Icons.cake,
                           hint: 'YYYY-MM-DD'),
                       const SizedBox(height: 12),
-                      _field(_addressCtrl, 'Address', Icons.home,
+                      _field(_addressCtrl, s('address'), Icons.home,
                           maxLines: 2),
                     ],
                   ),
                   const SizedBox(height: 12),
 
                   _buildCard(
-                    title: 'CONTACT',
+                    title: s('sectionContact'),
                     children: [
-                      _field(_phoneCtrl, 'Phone', Icons.phone,
+                      _field(_phoneCtrl, s('phone'), Icons.phone,
                           type: TextInputType.phone),
                       const SizedBox(height: 12),
-                      _field(_emailCtrl, 'Email', Icons.email,
+                      _field(_emailCtrl, s('email'), Icons.email,
                           type: TextInputType.emailAddress),
                     ],
                   ),
                   const SizedBox(height: 12),
 
                   _buildCard(
-                    title: 'IDENTIFICATION',
+                    title: s('sectionIdentification'),
                     children: [
-                      _field(_idNumberCtrl, 'ID Number', Icons.credit_card),
+                      _field(_idNumberCtrl, s('idNumber'), Icons.credit_card),
                       const SizedBox(height: 12),
-                      _field(_idTypeCtrl, 'ID Type', Icons.article),
+                      _field(_idTypeCtrl, s('idType'), Icons.article),
                     ],
                   ),
                   const SizedBox(height: 12),
 
                   _buildCard(
-                    title: 'STATUS',
+                    title: s('sectionStatus'),
                     children: [
                       SwitchListTile(
                         value: _status,
                         onChanged: (v) => setState(() => _status = v),
-                        title: Text(_status ? 'Active' : 'Inactive'),
+                        title: Text(_status ? s('active') : s('inactive')),
                         activeColor: const Color(0xFF1A5C2A),
                         contentPadding: EdgeInsets.zero,
                       ),
@@ -249,9 +292,9 @@ class _CreateMemberScreenState extends State<CreateMemberScreen> {
                   const SizedBox(height: 12),
 
                   _buildCard(
-                    title: 'NOTES',
+                    title: s('sectionNotes'),
                     children: [
-                      _field(_notesCtrl, 'Notes', Icons.notes, maxLines: 3),
+                      _field(_notesCtrl, s('notes'), Icons.notes, maxLines: 3),
                     ],
                   ),
 
@@ -279,8 +322,8 @@ class _CreateMemberScreenState extends State<CreateMemberScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   side: const BorderSide(color: Colors.grey),
                 ),
-                child: const Text('Cancel',
-                    style: TextStyle(color: Colors.grey)),
+                child: Text(s('cancel'),
+                    style: const TextStyle(color: Colors.grey)),
               ),
             ),
             const SizedBox(width: 12),
@@ -289,8 +332,8 @@ class _CreateMemberScreenState extends State<CreateMemberScreen> {
               child: ElevatedButton.icon(
                 onPressed: _isSaving ? null : _submit,
                 icon: const Icon(Icons.person_add),
-                label: const Text('Create Member',
-                    style: TextStyle(fontSize: 16)),
+                label: Text(s('createMember'),
+                    style: const TextStyle(fontSize: 16)),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   backgroundColor: const Color(0xFF1A5C2A),
@@ -332,19 +375,19 @@ class _CreateMemberScreenState extends State<CreateMemberScreen> {
     );
   }
 
-  Widget _buildCommuneDropdown() {
+  Widget _buildCommuneDropdown(String Function(String) s) {
     if (_loadingLocalities) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 8),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(
           children: [
-            SizedBox(
+            const SizedBox(
                 width: 16,
                 height: 16,
                 child: CircularProgressIndicator(
                     strokeWidth: 2, color: Color(0xFFC8A96E))),
-            SizedBox(width: 8),
-            Text('Loading communes...', style: TextStyle(fontSize: 13)),
+            const SizedBox(width: 8),
+            Text(s('loadingCommunes'), style: const TextStyle(fontSize: 13)),
           ],
         ),
       );
@@ -363,10 +406,10 @@ class _CreateMemberScreenState extends State<CreateMemberScreen> {
         return TextField(
           controller: controller,
           focusNode: focusNode,
-          decoration: const InputDecoration(
-            labelText: 'Commune',
-            prefixIcon: Icon(Icons.location_on),
-            suffixIcon: Icon(Icons.arrow_drop_down),
+          decoration: InputDecoration(
+            labelText: s('commune'),
+            prefixIcon: const Icon(Icons.location_on),
+            suffixIcon: const Icon(Icons.arrow_drop_down),
             isDense: true,
           ),
         );
@@ -391,7 +434,7 @@ class _CreateMemberScreenState extends State<CreateMemberScreen> {
                     leading: const Icon(Icons.location_on,
                         size: 16, color: Color(0xFF1A5C2A)),
                     title: Text(option['commune'] as String),
-                    subtitle: Text('Code: ${option['code']}',
+                    subtitle: Text('${s('codeLabel')}: ${option['code']}',
                         style: const TextStyle(fontSize: 11)),
                     onTap: () => onSelected(option),
                   );
@@ -411,16 +454,21 @@ class _CreateMemberScreenState extends State<CreateMemberScreen> {
     String? hint,
     int maxLines = 1,
     TextInputType? type,
+    bool readOnly = false,
   }) {
     return TextField(
       controller: ctrl,
       maxLines: maxLines,
       keyboardType: type,
+      readOnly: readOnly,
+      style: readOnly ? TextStyle(color: Colors.grey.shade600) : null,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
         prefixIcon: Icon(icon),
         isDense: true,
+        filled: readOnly,
+        fillColor: readOnly ? Colors.grey.shade100 : null,
       ),
     );
   }
