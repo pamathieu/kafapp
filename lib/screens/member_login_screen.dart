@@ -1,0 +1,233 @@
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
+import '../providers/language_provider.dart';
+import '../misc/app_strings.dart';
+import 'member_dashboard_screen.dart';
+
+class MemberLoginScreen extends StatefulWidget {
+  const MemberLoginScreen({super.key});
+
+  @override
+  State<MemberLoginScreen> createState() => _MemberLoginScreenState();
+}
+
+class _MemberLoginScreenState extends State<MemberLoginScreen> {
+  final _identifierCtrl = TextEditingController();
+  final _passwordCtrl   = TextEditingController();
+  bool _obscurePassword = true;
+  bool _isLoading       = false;
+  String? _errorMessage;
+
+  static const String _loginUrl =
+      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod/member/login';
+
+  Future<void> _login() async {
+    final locale = context.read<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
+
+    final identifier = _identifierCtrl.text.trim();
+    final password   = _passwordCtrl.text;
+
+    if (identifier.isEmpty || password.isEmpty) {
+      setState(() => _errorMessage = s('loginErrorEmpty'));
+      return;
+    }
+
+    setState(() { _isLoading = true; _errorMessage = null; });
+
+    try {
+      final response = await http.post(
+        Uri.parse(_loginUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'identifier': identifier, 'password': password}),
+      );
+
+      if (!mounted) return;
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (response.statusCode == 200) {
+        final member = data['member'] as Map<String, dynamic>;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+              builder: (_) => MemberDashboardScreen(member: member)),
+        );
+      } else {
+        setState(() {
+          _errorMessage = data['error'] ?? s('loginErrorInvalid');
+          _isLoading    = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = s('loginErrorConnection');
+        _isLoading    = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _identifierCtrl.dispose();
+    _passwordCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final locale = context.watch<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF1A5C2A),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => context.read<LanguageProvider>().toggle(),
+            child: Text(
+              locale == 'fr' ? '🇺🇸 EN' : '🇫🇷 FR',
+              style: const TextStyle(
+                color: Colors.white70,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ],
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(32),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Image.asset(
+                  'assets/images/kafa_logo.png',
+                  width: 100,
+                  height: 100,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFC8A96E),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(Icons.shield, color: Colors.white, size: 54),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text('KAFA',
+                    style: TextStyle(
+                        color: Color(0xFFC8A96E),
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 4)),
+                const SizedBox(height: 4),
+                Text(s('memberPortal'),
+                    style: const TextStyle(color: Colors.white60, fontSize: 13)),
+                const SizedBox(height: 40),
+
+                Card(
+                  elevation: 8,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(s('memberLogin'),
+                            style: const TextStyle(
+                                fontSize: 20, fontWeight: FontWeight.bold),
+                            textAlign: TextAlign.center),
+                        const SizedBox(height: 8),
+                        Text(s('memberLoginSubtitle'),
+                            style: const TextStyle(fontSize: 13, color: Colors.grey),
+                            textAlign: TextAlign.center),
+                        const SizedBox(height: 24),
+
+                        TextField(
+                          controller: _identifierCtrl,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: InputDecoration(
+                            labelText: s('emailOrPhone'),
+                            prefixIcon: const Icon(Icons.person_outline),
+                          ),
+                          onSubmitted: (_) => _login(),
+                        ),
+                        const SizedBox(height: 16),
+
+                        TextField(
+                          controller: _passwordCtrl,
+                          obscureText: _obscurePassword,
+                          decoration: InputDecoration(
+                            labelText: s('password'),
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              icon: Icon(_obscurePassword
+                                  ? Icons.visibility_off
+                                  : Icons.visibility),
+                              onPressed: () => setState(
+                                  () => _obscurePassword = !_obscurePassword),
+                            ),
+                          ),
+                          onSubmitted: (_) => _login(),
+                        ),
+
+                        if (_errorMessage != null) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.red.shade200),
+                            ),
+                            child: Row(children: [
+                              const Icon(Icons.error_outline,
+                                  color: Colors.red, size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(_errorMessage!,
+                                    style: const TextStyle(
+                                        color: Colors.red, fontSize: 13)),
+                              ),
+                            ]),
+                          ),
+                        ],
+
+                        const SizedBox(height: 24),
+                        ElevatedButton(
+                          onPressed: _isLoading ? null : _login,
+                          child: _isLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Colors.white))
+                              : Text(s('connect'),
+                                  style: const TextStyle(fontSize: 16)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
