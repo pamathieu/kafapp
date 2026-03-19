@@ -118,6 +118,32 @@ class ApiService {
         'Failed to retrieve certificate links: ${response.statusCode} ${response.body}');
   }
 
+  /// POST /member/login — member self-service (no SigV4, public endpoint)
+  Future<Map<String, dynamic>> memberLogin(String identifier, String password) async {
+    final uri      = Uri.parse('$_baseUrl/member/login');
+    final body     = json.encode({'identifier': identifier, 'password': password});
+    final response = await http.post(uri,
+        headers: {'Content-Type': 'application/json'}, body: body);
+    final data = json.decode(response.body);
+    if (response.statusCode == 200) return data;
+    throw Exception(data['error'] ?? 'Login failed');
+  }
+
+  /// POST /members/set-credentials — admin sets a member password (SigV4)
+  Future<void> setMemberCredentials(String memberId, String password) async {
+    final uri  = Uri.parse('$_baseUrl/members/set-credentials');
+    final body = json.encode({
+      'memberId':  memberId,
+      'companyId': _companyId,
+      'password':  password,
+    });
+    final headers  = _signRequest(method: 'POST', uri: uri, body: body);
+    final response = await http.post(uri, headers: headers, body: body);
+    if (response.statusCode == 200) return;
+    final error = json.decode(response.body);
+    throw Exception(error['error'] ?? 'Failed to set credentials');
+  }
+
   /// GET /companies — returns current sequence counter from kopera-company
   Future<int> getCompanySequence() async {
     final uri     = Uri.parse('$_baseUrl/companies?companyId=$_companyId');

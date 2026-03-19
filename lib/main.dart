@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/language_provider.dart';
-import 'screens/login_screen.dart';
+import 'screens/landing_screen.dart';
 
 void main() {
   runApp(
@@ -22,7 +22,7 @@ class KAFAMemberApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'KAFA',
+      title: 'KAFA Member Management',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -52,7 +52,7 @@ class KAFAMemberApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const LoginScreen(),
+      home: const LandingScreen(),
     );
   }
 }
