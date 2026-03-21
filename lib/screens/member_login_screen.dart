@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../providers/language_provider.dart';
 import '../misc/app_strings.dart';
+import '../services/session_service.dart';
 import 'member_dashboard_screen.dart';
 
 class MemberLoginScreen extends StatefulWidget {
@@ -17,21 +18,40 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
   final _identifierCtrl = TextEditingController();
   final _passwordCtrl   = TextEditingController();
   bool _obscurePassword = true;
-  bool _isLoading       = false;
+  bool _isLoading       = true; // true initially while checking saved session
   String? _errorMessage;
 
   static const String _loginUrl =
       'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod/member/login';
 
-  Future<void> _login() async {
-    final locale = context.read<LanguageProvider>().locale;
-    String s(String key) => AppStrings.get(key, locale);
+  @override
+  void initState() {
+    super.initState();
+    _checkSavedSession();
+  }
 
+  Future<void> _checkSavedSession() async {
+    try {
+      final saved = await SessionService.loadSession();
+      if (!mounted) return;
+      if (saved != null) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => MemberDashboardScreen(member: saved)),
+        );
+        return;
+      }
+    } catch (_) {
+      // If anything goes wrong reading storage, just show the login form
+    }
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+  Future<void> _login() async {
     final identifier = _identifierCtrl.text.trim();
     final password   = _passwordCtrl.text;
 
     if (identifier.isEmpty || password.isEmpty) {
-      setState(() => _errorMessage = s('loginErrorEmpty'));
+      setState(() => _errorMessage = 'Please enter your email or phone and password.');
       return;
     }
 
@@ -50,19 +70,22 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
 
       if (response.statusCode == 200) {
         final member = data['member'] as Map<String, dynamic>;
+        try { await SessionService.saveSession(member); } catch (_) {}
+        if (!mounted) return;
+        setState(() => _isLoading = false);
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
               builder: (_) => MemberDashboardScreen(member: member)),
         );
       } else {
         setState(() {
-          _errorMessage = data['error'] ?? s('loginErrorInvalid');
+          _errorMessage = data['error'] ?? 'Incorrect email/phone or password.';
           _isLoading    = false;
         });
       }
     } catch (e) {
       setState(() {
-        _errorMessage = s('loginErrorConnection');
+        _errorMessage = 'Connection error. Please try again.';
         _isLoading    = false;
       });
     }
@@ -77,12 +100,24 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final locale = context.watch<LanguageProvider>().locale;
+    // Show splash while checking for a saved session
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF1A5C2A),
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFFC8A96E)),
+        ),
+      );
+    }
+
+    final langProvider = context.watch<LanguageProvider>();
+    final locale = langProvider.locale;
     String s(String key) => AppStrings.get(key, locale);
 
+    final canPop = Navigator.of(context).canPop();
     return Scaffold(
       backgroundColor: const Color(0xFF1A5C2A),
-      appBar: AppBar(
+      appBar: canPop ? AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
@@ -94,11 +129,20 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
             onPressed: () => context.read<LanguageProvider>().toggle(),
             child: Text(
               locale == 'fr' ? '🇺🇸 EN' : '🇫🇷 FR',
-              style: const TextStyle(
-                color: Colors.white70,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-              ),
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+            ),
+          ),
+        ],
+      ) : AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        automaticallyImplyLeading: false,
+        actions: [
+          TextButton(
+            onPressed: () => context.read<LanguageProvider>().toggle(),
+            child: Text(
+              locale == 'fr' ? '🇺🇸 EN' : '🇫🇷 FR',
+              style: const TextStyle(color: Colors.white, fontSize: 13),
             ),
           ),
         ],

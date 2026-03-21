@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../misc/app_strings.dart';
 
@@ -28,14 +30,21 @@ class ChatbotWidget extends StatefulWidget {
 }
 
 class _ChatbotWidgetState extends State<ChatbotWidget> {
-  final _textCtrl = TextEditingController();
+  static const String _chatUrl =
+      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod/member/chat';
+
+  final _textCtrl   = TextEditingController();
   final _scrollCtrl = ScrollController();
+
+  // Full conversation history sent to Claude each turn
+  final List<Map<String, String>> _history = [];
+  // Display messages (includes bot greeting)
   final List<ChatMessage> _messages = [];
 
   late stt.SpeechToText _speech;
   bool _speechAvailable = false;
-  bool _isListening = false;
-  bool _isBotThinking = false;
+  bool _isListening    = false;
+  bool _isBotThinking  = false;
 
   String get _locale => widget.locale;
   String s(String key) => AppStrings.get(key, _locale);
@@ -48,7 +57,7 @@ class _ChatbotWidgetState extends State<ChatbotWidget> {
     super.initState();
     _speech = stt.SpeechToText();
     _initSpeech();
-    _sendBotGreeting();
+    _addBotGreeting();
   }
 
   Future<void> _initSpeech() async {
@@ -59,108 +68,77 @@ class _ChatbotWidgetState extends State<ChatbotWidget> {
           if (mounted) setState(() => _isListening = false);
         }
       },
-      onError: (error) {
+      onError: (_) {
         if (mounted) setState(() => _isListening = false);
       },
     );
     if (mounted) setState(() => _speechAvailable = available);
   }
 
-  void _sendBotGreeting() {
+  void _addBotGreeting() {
     final greeting = s('chatbotGreeting').replaceAll('{name}', _firstName);
-    _messages.add(
-      ChatMessage(text: greeting, isUser: false, timestamp: DateTime.now()),
-    );
-  }
-
-  /// Detects whether a message is in French or English.
-  /// Checks for French-specific characters and common French words.
-  String _detectMessageLocale(String text) {
-    final lower = text.toLowerCase();
-
-    // French diacritic characters are a strong signal
-    final hasFrenchChars = RegExp(r'[éèêëàâùûçîïôœæ]').hasMatch(lower);
-    if (hasFrenchChars) return 'fr';
-
-    // Common French words
-    const frenchWords = [
-      'bonjour', 'merci', 'comment', 'aide', 'statut', 'actif',
-      'identifiant', 'numéro', 'téléphone', 'adhésion', 'membre',
-      'mon', 'ma', 'mes', 'je', 'tu', 'est', 'sont', 'avec',
-      'pour', 'dans', 'sur', 'quel', 'quelle', 'quoi', 'qui',
-    ];
-    for (final word in frenchWords) {
-      if (lower.split(RegExp(r'\s+')).contains(word)) return 'fr';
-    }
-
-    return 'en';
-  }
-
-  void _sendUserMessage(String text) {
-    final trimmed = text.trim();
-    if (trimmed.isEmpty) return;
-
-    final messageLocale = _detectMessageLocale(trimmed);
-
     setState(() {
-      _messages.add(
-        ChatMessage(text: trimmed, isUser: true, timestamp: DateTime.now()),
-      );
+      _messages.add(ChatMessage(
+          text: greeting, isUser: false, timestamp: DateTime.now()));
+    });
+    // Don't add greeting to history — it's part of the system prompt context
+  }
+
+  Future<void> _sendUserMessage(String text) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty || _isBotThinking) return;
+
+    _textCtrl.clear();
+
+    // Add to display
+    setState(() {
+      _messages.add(ChatMessage(
+          text: trimmed, isUser: true, timestamp: DateTime.now()));
       _isBotThinking = true;
     });
-    _textCtrl.clear();
     _scrollToBottom();
 
-    Future.delayed(const Duration(milliseconds: 900), () {
+    // Add to conversation history
+    _history.add({'role': 'user', 'content': trimmed});
+
+    try {
+      final response = await http.post(
+        Uri.parse(_chatUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'messages': _history,
+          'member':   widget.member,
+          'locale':   _locale,
+        }),
+      ).timeout(const Duration(seconds: 35));
+
       if (!mounted) return;
-      final reply = _buildBotReply(trimmed.toLowerCase(), messageLocale);
+
+      final data  = jsonDecode(response.body) as Map<String, dynamic>;
+      final reply = data['reply'] as String? ??
+          data['error'] as String? ??
+          s('chatbotDefaultReply');
+
+      // Add assistant reply to history so Claude has full context next turn
+      _history.add({'role': 'assistant', 'content': reply});
+
       setState(() {
         _isBotThinking = false;
-        _messages.add(
-          ChatMessage(text: reply, isUser: false, timestamp: DateTime.now()),
-        );
+        _messages.add(ChatMessage(
+            text: reply, isUser: false, timestamp: DateTime.now()));
       });
-      _scrollToBottom();
-    });
-  }
-
-  String _r(String key, String locale) => AppStrings.get(key, locale);
-
-  String _buildBotReply(String lowerText, String replyLocale) {
-    final member = widget.member;
-    final phone = member['phone'] as String? ?? '';
-    final email = member['email'] as String? ?? '';
-    final memberId = member['memberId'] as String? ?? '';
-    final status = member['status'];
-    final isActive = status == true || status == 'true';
-    final statusLabel = isActive
-        ? _r('activeMember', replyLocale)
-        : _r('inactiveMember', replyLocale);
-
-    if (lowerText.contains('status') ||
-        lowerText.contains('actif') ||
-        lowerText.contains('statut') ||
-        lowerText.contains('active')) {
-      return _r('chatbotStatusReply', replyLocale)
-          .replaceAll('{status}', statusLabel);
+    } catch (e) {
+      if (!mounted) return;
+      final errMsg = s('chatbotDefaultReply');
+      _history.removeLast(); // remove the failed user message from history
+      setState(() {
+        _isBotThinking = false;
+        _messages.add(ChatMessage(
+            text: errMsg, isUser: false, timestamp: DateTime.now()));
+      });
     }
-    if (lowerText.contains('phone') ||
-        lowerText.contains('email') ||
-        lowerText.contains('contact') ||
-        lowerText.contains('telephone')) {
-      return _r('chatbotContactReply', replyLocale)
-          .replaceAll('{phone}', phone.isNotEmpty ? phone : '—')
-          .replaceAll('{email}', email.isNotEmpty ? email : '—');
-    }
-    if (lowerText.contains('id') ||
-        lowerText.contains('identifiant') ||
-        lowerText.contains('member') ||
-        lowerText.contains('numero') ||
-        lowerText.contains('number')) {
-      return _r('chatbotIdReply', replyLocale)
-          .replaceAll('{memberId}', memberId.isNotEmpty ? memberId : '—');
-    }
-    return _r('chatbotDefaultReply', replyLocale);
+
+    _scrollToBottom();
   }
 
   void _scrollToBottom() {
@@ -214,8 +192,8 @@ class _ChatbotWidgetState extends State<ChatbotWidget> {
         }
       },
       listenFor: const Duration(seconds: 30),
-      pauseFor: const Duration(seconds: 4),
-      localeId: _locale == 'fr' ? 'fr_FR' : 'en_US',
+      pauseFor:  const Duration(seconds: 4),
+      localeId:  _locale == 'fr' ? 'fr_FR' : 'en_US',
     );
   }
 
@@ -235,7 +213,8 @@ class _ChatbotWidgetState extends State<ChatbotWidget> {
         Expanded(
           child: ListView.builder(
             controller: _scrollCtrl,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             itemCount: _messages.length + (_isBotThinking ? 1 : 0),
             itemBuilder: (context, index) {
               if (_isBotThinking && index == _messages.length) {
@@ -293,6 +272,7 @@ class _ChatbotWidgetState extends State<ChatbotWidget> {
                     controller: _textCtrl,
                     textInputAction: TextInputAction.send,
                     onSubmitted: _sendUserMessage,
+                    enabled: !_isBotThinking,
                     decoration: InputDecoration(
                       hintText: _isListening
                           ? s('chatbotListening')
@@ -323,14 +303,18 @@ class _ChatbotWidgetState extends State<ChatbotWidget> {
 
                 // Send button
                 Container(
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Color(0xFFC8A96E),
+                    color: _isBotThinking
+                        ? Colors.grey.shade300
+                        : const Color(0xFFC8A96E),
                   ),
                   child: IconButton(
                     icon: const Icon(Icons.send_rounded, color: Colors.white),
                     tooltip: s('chatbotSend'),
-                    onPressed: () => _sendUserMessage(_textCtrl.text),
+                    onPressed: _isBotThinking
+                        ? null
+                        : () => _sendUserMessage(_textCtrl.text),
                   ),
                 ),
               ],
@@ -369,12 +353,10 @@ class _MessageBubble extends StatelessWidget {
           ],
           Flexible(
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: isUser
-                    ? const Color(0xFFC8A96E)
-                    : Colors.white,
+                color: isUser ? const Color(0xFFC8A96E) : Colors.white,
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(18),
                   topRight: const Radius.circular(18),
@@ -393,7 +375,8 @@ class _MessageBubble extends StatelessWidget {
                 message.text,
                 style: TextStyle(
                   fontSize: 14,
-                  color: isUser ? Colors.white : const Color(0xFF1A1A1A),
+                  color:
+                      isUser ? Colors.white : const Color(0xFF1A1A1A),
                   height: 1.4,
                 ),
               ),
@@ -403,7 +386,8 @@ class _MessageBubble extends StatelessWidget {
             const SizedBox(width: 8),
             CircleAvatar(
               radius: 16,
-              backgroundColor: const Color(0xFFC8A96E).withValues(alpha: 0.3),
+              backgroundColor:
+                  const Color(0xFFC8A96E).withValues(alpha: 0.3),
               child: const Icon(Icons.person,
                   color: Color(0xFFC8A96E), size: 16),
             ),
@@ -431,7 +415,8 @@ class _ThinkingBubbleState extends State<_ThinkingBubble>
   void initState() {
     super.initState();
     _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1200))
+        vsync: this,
+        duration: const Duration(milliseconds: 1200))
       ..repeat();
     _dot1 = _makeAnim(0.0);
     _dot2 = _makeAnim(0.2);
@@ -439,8 +424,10 @@ class _ThinkingBubbleState extends State<_ThinkingBubble>
   }
 
   Animation<double> _makeAnim(double begin) => TweenSequence([
-        TweenSequenceItem(tween: Tween(begin: 0.0, end: -6.0), weight: 30),
-        TweenSequenceItem(tween: Tween(begin: -6.0, end: 0.0), weight: 30),
+        TweenSequenceItem(
+            tween: Tween(begin: 0.0, end: -6.0), weight: 30),
+        TweenSequenceItem(
+            tween: Tween(begin: -6.0, end: 0.0), weight: 30),
         TweenSequenceItem(tween: ConstantTween(0.0), weight: 40),
       ]).animate(CurvedAnimation(
         parent: _ctrl,
@@ -462,12 +449,13 @@ class _ThinkingBubbleState extends State<_ThinkingBubble>
           const CircleAvatar(
             radius: 16,
             backgroundColor: Color(0xFF1A5C2A),
-            child:
-                Icon(Icons.support_agent, color: Colors.white, size: 16),
+            child: Icon(Icons.support_agent,
+                color: Colors.white, size: 16),
           ),
           const SizedBox(width: 8),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(
+                horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: const BorderRadius.only(

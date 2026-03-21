@@ -23,6 +23,9 @@ dependencies:
   # Icons
   cupertino_icons: ^1.0.6
 
+  # Persistent session storage
+  shared_preferences: ^2.5.4
+
   # Speech-to-text
   speech_to_text: ^6.6.2
 
@@ -33,5 +36,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
   assets:
-    - assets/images/kafa_logo.png
+    - assets/images/

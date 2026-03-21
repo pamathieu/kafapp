@@ -2,7 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/language_provider.dart';
-import 'screens/landing_screen.dart';
+import 'screens/login_screen.dart';
+import 'screens/member_login_screen.dart';
+
+// Determined at build time:
+//   Admin portal:  flutter build web --dart-define=PORTAL=admin
+//   Member portal: flutter build web --dart-define=PORTAL=member
+const _portal = String.fromEnvironment('PORTAL', defaultValue: 'admin');
 
 void main() {
   runApp(
@@ -22,7 +28,7 @@ class KAFAMemberApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'KAFA Member Management',
+      title: _portal == 'member' ? 'KAFA Member Portal' : 'KAFA Admin',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -52,7 +58,9 @@ class KAFAMemberApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const LandingScreen(),
+      home: _portal == 'member'
+          ? const MemberLoginScreen()
+          : const LoginScreen(),
     );
   }
 }

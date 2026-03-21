@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/language_provider.dart';
 import '../misc/app_strings.dart';
-import 'landing_screen.dart';
+import '../services/session_service.dart';
+import 'member_login_screen.dart';
 import 'chatbot_widget.dart';
 
 class MemberDashboardScreen extends StatefulWidget {
@@ -15,426 +16,414 @@ class MemberDashboardScreen extends StatefulWidget {
 
 class _MemberDashboardScreenState extends State<MemberDashboardScreen>
     with SingleTickerProviderStateMixin {
-  // Default to chatbot view on login
   bool _showChatbot = true;
-  late final AnimationController _toggleAnim;
-  late final Animation<double> _fadeAnim;
+  late final AnimationController _fadeCtrl;
+  late final Animation<double> _fade;
 
   @override
   void initState() {
     super.initState();
-    _toggleAnim = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 250),
-      value: 1.0,
-    );
-    _fadeAnim = CurvedAnimation(parent: _toggleAnim, curve: Curves.easeInOut);
+    _fadeCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 250));
+    _fade = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeInOut);
+    _fadeCtrl.forward();
   }
 
   @override
   void dispose() {
-    _toggleAnim.dispose();
+    _fadeCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _toggle() async {
-    await _toggleAnim.reverse();
-    setState(() => _showChatbot = !_showChatbot);
-    _toggleAnim.forward();
+  void _toggle() {
+    _fadeCtrl.reverse().then((_) {
+      setState(() => _showChatbot = !_showChatbot);
+      _fadeCtrl.forward();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final locale = context.watch<LanguageProvider>().locale;
+    final langProvider = context.watch<LanguageProvider>();
+    final locale = langProvider.locale;
     String s(String key) => AppStrings.get(key, locale);
 
-    final name = widget.member['full_name'] ?? '';
-    final status = widget.member['status'];
+    final member   = widget.member;
+    final name     = member['full_name']              as String? ?? '';
+    final memberId = member['memberId']               as String? ?? '';
+    final phone    = member['phone']                  as String? ?? '';
+    final email    = member['email']                  as String? ?? '';
+    final address  = member['address']                as String? ?? '';
+    final dob      = member['date_of_birth']          as String? ?? '';
+    final idNumber = member['identification_number']  as String? ?? '';
+    final idType   = member['identification_type']    as String? ?? '';
+    final notes    = member['notes']                  as String? ?? '';
+    final status   = member['status'];
     final isActive = status == true || status == 'true';
+    final locality = member['locality'] as Map<String, dynamic>?;
+    final commune  = locality?['commune'] as String? ?? '';
+    final firstName = name.split(' ').first;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
-      body: CustomScrollView(
-        slivers: [
-          // ── Header ────────────────────────────────────────────────────────
-          SliverAppBar(
-            expandedHeight: 72,
-            toolbarHeight: 72,
-            pinned: true,
-            automaticallyImplyLeading: false,
-            backgroundColor: const Color(0xFF1A5C2A),
-            flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0xFF1A5C2A), Color(0xFF2E7D45)],
-                  ),
-                ),
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        // ── Left: KAFA logo + wordmark ────────────────────────
-                        Image.asset(
-                          'assets/images/kafa_logo.png',
-                          width: 26,
-                          height: 26,
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => const Icon(
-                            Icons.shield,
-                            color: Color(0xFFC8A96E),
-                            size: 22,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        const Text(
-                          'KAFA',
-                          style: TextStyle(
-                            color: Color(0xFFC8A96E),
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 2.5,
-                          ),
-                        ),
-
-                        const Spacer(),
-
-                        // ── Right: Profile dropdown ───────────────────────────
-                        PopupMenuButton<String>(
-                          onSelected: (value) {
-                            if (value == 'profile') {
-                              _toggle();
-                            } else if (value == 'language') {
-                              context.read<LanguageProvider>().toggle();
-                            } else if (value == 'logout') {
-                              Navigator.of(context).pushAndRemoveUntil(
-                                MaterialPageRoute(
-                                    builder: (_) => const LandingScreen()),
-                                (_) => false,
-                              );
-                            }
-                          },
-                          color: Colors.white,
-                          elevation: 8,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                          offset: const Offset(0, 52),
-                          itemBuilder: (_) => [
-                            // ── Status (non-interactive) ──────────────────────
-                            PopupMenuItem<String>(
-                              enabled: false,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 10),
-                              child: Row(children: [
-                                Container(
-                                  width: 9,
-                                  height: 9,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: isActive
-                                        ? Colors.green.shade600
-                                        : Colors.grey.shade500,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Text(
-                                  isActive
-                                      ? s('activeMember')
-                                      : s('inactiveMember'),
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: isActive
-                                        ? Colors.green.shade700
-                                        : Colors.grey.shade600,
-                                  ),
-                                ),
-                              ]),
-                            ),
-                            const PopupMenuDivider(),
-                            // ── View profile / Open assistant ─────────────────
-                            PopupMenuItem<String>(
-                              value: 'profile',
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 10),
-                              child: Row(children: [
-                                Icon(
-                                  _showChatbot
-                                      ? Icons.dashboard_rounded
-                                      : Icons.chat_bubble_outline_rounded,
-                                  size: 18,
-                                  color: const Color(0xFF1A5C2A),
-                                ),
-                                const SizedBox(width: 10),
-                                Text(
-                                  _showChatbot
-                                      ? s('chatbotToggleDashboard')
-                                      : s('chatbotToggleChat'),
-                                  style: const TextStyle(
-                                      fontSize: 13,
-                                      color: Color(0xFF1A1A1A)),
-                                ),
-                              ]),
-                            ),
-                            // ── Language toggle ───────────────────────────────
-                            PopupMenuItem<String>(
-                              value: 'language',
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 10),
-                              child: Row(children: [
-                                Text(
-                                  locale == 'fr' ? '🇺🇸' : '🇫🇷',
-                                  style: const TextStyle(fontSize: 16),
-                                ),
-                                const SizedBox(width: 10),
-                                Text(
-                                  locale == 'fr' ? 'English' : 'Français',
-                                  style: const TextStyle(
-                                      fontSize: 13,
-                                      color: Color(0xFF1A1A1A)),
-                                ),
-                              ]),
-                            ),
-                            const PopupMenuDivider(),
-                            // ── Logout ────────────────────────────────────────
-                            PopupMenuItem<String>(
-                              value: 'logout',
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 10),
-                              child: Row(children: [
-                                Icon(Icons.logout,
-                                    size: 18, color: Colors.red.shade400),
-                                const SizedBox(width: 10),
-                                Text(
-                                  s('logout'),
-                                  style: TextStyle(
-                                      fontSize: 13,
-                                      color: Colors.red.shade400),
-                                ),
-                              ]),
-                            ),
-                          ],
-                          // ── Trigger: avatar + name + chevron ─────────────────
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 12),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                CircleAvatar(
-                                  radius: 18,
-                                  backgroundColor: const Color(0xFFC8A96E),
-                                  child: Text(
-                                    name.isNotEmpty
-                                        ? name[0].toUpperCase()
-                                        : '?',
-                                    style: const TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                ConstrainedBox(
-                                  constraints:
-                                      const BoxConstraints(maxWidth: 150),
-                                  child: Text(
-                                    name,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                const Icon(Icons.keyboard_arrow_down,
-                                    color: Colors.white70, size: 18),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+      appBar: _KafaAppBar(
+        name: name,
+        isActive: isActive,
+        locale: locale,
+        showChatbot: _showChatbot,
+        activeMemberLabel: s('activeMember'),
+        inactiveMemberLabel: s('inactiveMember'),
+        viewProfileLabel: s('chatbotToggleDashboard'),
+        chatLabel: s('chatbotToggleChat'),
+        logoutLabel: s('logout'),
+        langToggleLabel: locale == 'fr' ? '🇺🇸 EN' : '🇫🇷 FR',
+        onToggleView: _toggle,
+        onLogout: () async {
+          await SessionService.clearSession();
+          if (!context.mounted) return;
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const MemberLoginScreen()),
+            (_) => false,
+          );
+        },
+        onLangToggle: () => context.read<LanguageProvider>().toggle(),
+      ),
+      body: FadeTransition(
+        opacity: _fade,
+        child: _showChatbot
+            ? ChatbotWidget(member: member, locale: locale)
+            : _ProfileView(
+                name: name, memberId: memberId, phone: phone,
+                email: email, address: address, dob: dob,
+                idNumber: idNumber, idType: idType, notes: notes,
+                commune: commune, s: s,
               ),
-            ),
-          ),
-
-          // ── Body (animated fade between chatbot and dashboard) ─────────────
-          SliverFillRemaining(
-            child: FadeTransition(
-              opacity: _fadeAnim,
-              child: _showChatbot
-                  ? ChatbotWidget(
-                      member: widget.member,
-                      locale: locale,
-                    )
-                  : _DashboardBody(member: widget.member, locale: locale),
-            ),
-          ),
-        ],
       ),
     );
   }
 }
 
-// ── Dashboard info body ───────────────────────────────────────────────────────
+// ── AppBar ────────────────────────────────────────────────────────────────────
 
-class _DashboardBody extends StatelessWidget {
-  final Map<String, dynamic> member;
+class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
+  final String name;
+  final bool isActive;
+  final bool showChatbot;
   final String locale;
-  const _DashboardBody({required this.member, required this.locale});
+  final String activeMemberLabel;
+  final String inactiveMemberLabel;
+  final String viewProfileLabel;
+  final String chatLabel;
+  final String logoutLabel;
+  final String langToggleLabel;
+  final VoidCallback onToggleView;
+  final VoidCallback onLogout;
+  final VoidCallback onLangToggle;
+
+  const _KafaAppBar({
+    required this.name,
+    required this.isActive,
+    required this.showChatbot,
+    required this.locale,
+    required this.activeMemberLabel,
+    required this.inactiveMemberLabel,
+    required this.viewProfileLabel,
+    required this.chatLabel,
+    required this.logoutLabel,
+    required this.langToggleLabel,
+    required this.onToggleView,
+    required this.onLogout,
+    required this.onLangToggle,
+  });
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
 
   @override
   Widget build(BuildContext context) {
-    String s(String key) => AppStrings.get(key, locale);
+    final initials = name.isNotEmpty ? name[0].toUpperCase() : '?';
 
-    final name     = member['full_name']   ?? '';
-    final memberId = member['memberId']    ?? '';
-    final phone    = member['phone']       ?? '';
-    final email    = member['email']       ?? '';
-    final address  = member['address']     ?? '';
-    final dob      = member['date_of_birth'] ?? '';
-    final idNumber = member['identification_number'] ?? '';
-    final idType   = member['identification_type']   ?? '';
-    final notes    = member['notes']       ?? '';
-    final locality = member['locality'] as Map<String, dynamic>?;
-    final commune  = locality?['commune'] ?? '';
+    return AppBar(
+      backgroundColor: const Color(0xFF1A5C2A),
+      elevation: 0,
+      automaticallyImplyLeading: false,
+      titleSpacing: 16,
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
+      // ── Left: logo + KAFA ─────────────────────────────────────────────────
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          _WelcomeCard(
-            name: name,
-            memberId: memberId,
-            commune: commune,
-            greeting: '${s('helloGreeting')}, $name!',
-            welcomeText: s('memberPortalWelcomeText'),
-          ),
-          const SizedBox(height: 16),
-          _InfoCard(
-            title: s('memberSectionPersonal'),
-            icon: Icons.person,
-            rows: [
-              if (name.isNotEmpty)    _InfoRow(s('fullName'),    name,    Icons.badge),
-              if (dob.isNotEmpty)     _InfoRow(s('dateOfBirth'), dob,     Icons.cake),
-              if (address.isNotEmpty) _InfoRow(s('address'),     address, Icons.home),
-              if (commune.isNotEmpty) _InfoRow(s('commune'),     commune, Icons.location_on),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _InfoCard(
-            title: s('memberSectionContact'),
-            icon: Icons.contact_phone,
-            rows: [
-              if (phone.isNotEmpty) _InfoRow(s('phone'), phone, Icons.phone),
-              if (email.isNotEmpty) _InfoRow(s('email'), email, Icons.email),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (idNumber.isNotEmpty || idType.isNotEmpty)
-            _InfoCard(
-              title: s('memberSectionId'),
-              icon: Icons.credit_card,
-              rows: [
-                if (memberId.isNotEmpty) _InfoRow(s('memberId'), memberId, Icons.tag),
-                if (idType.isNotEmpty)   _InfoRow(s('idType'),   idType,   Icons.article),
-                if (idNumber.isNotEmpty) _InfoRow(s('idNumber'), idNumber, Icons.numbers),
-              ],
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: Image.asset(
+              'assets/images/kafa_logo.png',
+              width: 34,
+              height: 34,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFC8A96E),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(Icons.shield, color: Colors.white, size: 20),
+              ),
             ),
-          if (notes.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            _InfoCard(
-              title: s('memberSectionNotes'),
-              icon: Icons.notes,
-              rows: [_InfoRow('', notes, Icons.notes)],
+          ),
+          const SizedBox(width: 10),
+          const Text(
+            'KAFA',
+            style: TextStyle(
+              color: Color(0xFFC8A96E),
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 3,
             ),
-          ],
-          const SizedBox(height: 32),
+          ),
         ],
       ),
+
+      // ── Right: toggle button + name + profile dropdown ────────────────────
+      actions: [
+        // Toggle view button
+        TextButton.icon(
+          onPressed: onToggleView,
+          icon: Icon(
+            showChatbot ? Icons.person_outline : Icons.chat_bubble_outline,
+            color: Colors.white70,
+            size: 18,
+          ),
+          label: Text(
+            showChatbot ? viewProfileLabel : chatLabel,
+            style: const TextStyle(color: Colors.white70, fontSize: 13),
+          ),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+          ),
+        ),
+        const SizedBox(width: 4),
+
+        // Name + avatar with dropdown
+        Padding(
+          padding: const EdgeInsets.only(right: 12),
+          child: PopupMenuButton<String>(
+            offset: const Offset(0, 48),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
+            onSelected: (value) {
+              if (value == 'toggle') onToggleView();
+              if (value == 'logout') onLogout();
+              if (value == 'lang')   onLangToggle();
+            },
+            itemBuilder: (_) => [
+              // Status chip
+              PopupMenuItem<String>(
+                enabled: false,
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 6),
+                child: Row(children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isActive
+                          ? Colors.green.shade100
+                          : Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.circle, size: 8,
+                          color: isActive
+                              ? Colors.green.shade700
+                              : Colors.grey.shade500),
+                      const SizedBox(width: 6),
+                      Text(
+                        isActive ? activeMemberLabel : inactiveMemberLabel,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: isActive
+                              ? Colors.green.shade700
+                              : Colors.grey.shade600,
+                        ),
+                      ),
+                    ]),
+                  ),
+                ]),
+              ),
+              const PopupMenuDivider(),
+              PopupMenuItem<String>(
+                value: 'toggle',
+                child: Row(children: [
+                  Icon(
+                    showChatbot ? Icons.person_outline : Icons.chat_bubble_outline,
+                    size: 18, color: const Color(0xFF1A5C2A)),
+                  const SizedBox(width: 12),
+                  Text(showChatbot ? viewProfileLabel : chatLabel),
+                ]),
+              ),
+              PopupMenuItem<String>(
+                value: 'lang',
+                child: Row(children: [
+                  const Icon(Icons.language,
+                      size: 18, color: Color(0xFF1A5C2A)),
+                  const SizedBox(width: 12),
+                  Text(langToggleLabel),
+                ]),
+              ),
+              const PopupMenuDivider(),
+              PopupMenuItem<String>(
+                value: 'logout',
+                child: Row(children: [
+                  Icon(Icons.logout, size: 18, color: Colors.red.shade400),
+                  const SizedBox(width: 12),
+                  Text(logoutLabel,
+                      style: TextStyle(color: Colors.red.shade400)),
+                ]),
+              ),
+            ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Full name
+                Text(
+                  name,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(width: 8),
+                // Avatar
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: const Color(0xFFC8A96E),
+                  child: Text(
+                    initials,
+                    style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
 
-// ── Sub-widgets ───────────────────────────────────────────────────────────────
+// ── Profile view ─────────────────────────────────────────────────────────────
 
-class _WelcomeCard extends StatelessWidget {
-  final String name;
-  final String memberId;
-  final String commune;
-  final String greeting;
-  final String welcomeText;
-  const _WelcomeCard({
-    required this.name,
-    required this.memberId,
-    required this.commune,
-    required this.greeting,
-    required this.welcomeText,
+class _ProfileView extends StatelessWidget {
+  final String name, memberId, phone, email, address, dob,
+      idNumber, idType, notes, commune;
+  final String Function(String) s;
+
+  const _ProfileView({
+    required this.name, required this.memberId, required this.phone,
+    required this.email, required this.address, required this.dob,
+    required this.idNumber, required this.idType, required this.notes,
+    required this.commune, required this.s,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          gradient: const LinearGradient(
-            colors: [Color(0xFFFFF8EE), Color(0xFFFFF3DC)],
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+      child: Column(children: [
+
+        // Profile header card
+        Card(
+          elevation: 3,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              gradient: const LinearGradient(
+                colors: [Color(0xFFFFF8EE), Color(0xFFFFF3DC)],
+              ),
+            ),
+            padding: const EdgeInsets.all(20),
+            child: Row(children: [
+              CircleAvatar(
+                radius: 30,
+                backgroundColor: const Color(0xFF1A5C2A),
+                child: Text(
+                  name.isNotEmpty ? name[0].toUpperCase() : '?',
+                  style: const TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(name,
+                        style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1A1A1A))),
+                    if (memberId.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(memberId,
+                          style: const TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 12,
+                              color: Color(0xFF1A5C2A),
+                              fontWeight: FontWeight.w600)),
+                    ],
+                  ],
+                ),
+              ),
+            ]),
           ),
         ),
-        padding: const EdgeInsets.all(20),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            const Icon(Icons.waving_hand, color: Color(0xFFC8A96E), size: 22),
-            const SizedBox(width: 8),
-            Text(greeting,
-                style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1A5C2A))),
-          ]),
-          const SizedBox(height: 8),
-          Text(
-            welcomeText,
-            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-          ),
-          if (memberId.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A5C2A).withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text('ID: $memberId',
-                  style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A5C2A))),
-            ),
-          ],
+        const SizedBox(height: 16),
+
+        _InfoCard(title: s('memberSectionPersonal'), icon: Icons.person, rows: [
+          if (name.isNotEmpty)    _InfoRow(s('fullName'),    name,    Icons.badge),
+          if (dob.isNotEmpty)     _InfoRow(s('dateOfBirth'), dob,     Icons.cake),
+          if (address.isNotEmpty) _InfoRow(s('address'),     address, Icons.home),
+          if (commune.isNotEmpty) _InfoRow(s('commune'),     commune, Icons.location_on),
         ]),
-      ),
+        const SizedBox(height: 16),
+
+        _InfoCard(title: s('memberSectionContact'), icon: Icons.contact_phone, rows: [
+          if (phone.isNotEmpty) _InfoRow(s('phone'), phone, Icons.phone),
+          if (email.isNotEmpty) _InfoRow(s('email'), email, Icons.email),
+        ]),
+
+        if (idNumber.isNotEmpty || idType.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          _InfoCard(title: s('memberSectionId'), icon: Icons.credit_card, rows: [
+            if (memberId.isNotEmpty) _InfoRow(s('memberId'), memberId, Icons.tag),
+            if (idType.isNotEmpty)   _InfoRow(s('idType'),   idType,   Icons.article),
+            if (idNumber.isNotEmpty) _InfoRow(s('idNumber'), idNumber, Icons.numbers),
+          ]),
+        ],
+
+        if (notes.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          _InfoCard(title: s('memberSectionNotes'), icon: Icons.notes,
+              rows: [_InfoRow('', notes, Icons.notes)]),
+        ],
+      ]),
     );
   }
 }
 
+// ── Shared card widgets ───────────────────────────────────────────────────────
+
 class _InfoRow {
-  final String label;
-  final String value;
+  final String label, value;
   final IconData icon;
   const _InfoRow(this.label, this.value, this.icon);
 }
@@ -443,8 +432,7 @@ class _InfoCard extends StatelessWidget {
   final String title;
   final IconData icon;
   final List<_InfoRow> rows;
-  const _InfoCard(
-      {required this.title, required this.icon, required this.rows});
+  const _InfoCard({required this.title, required this.icon, required this.rows});
 
   @override
   Widget build(BuildContext context) {
@@ -483,7 +471,7 @@ class _RowTile extends StatelessWidget {
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Icon(row.icon, size: 16, color: Colors.grey.shade500),
         const SizedBox(width: 10),
-        if (row.label.isNotEmpty) ...[
+        if (row.label.isNotEmpty)
           SizedBox(
             width: 110,
             child: Text(row.label,
@@ -492,10 +480,10 @@ class _RowTile extends StatelessWidget {
                     color: Colors.grey.shade600,
                     fontWeight: FontWeight.w500)),
           ),
-        ],
         Expanded(
           child: Text(row.value,
-              style: const TextStyle(fontSize: 13, color: Color(0xFF1A1A1A))),
+              style:
+                  const TextStyle(fontSize: 13, color: Color(0xFF1A1A1A))),
         ),
       ]),
     );
