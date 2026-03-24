@@ -148,6 +148,15 @@ def lambda_handler(event, context):
     if method == "GET" and resource == "/localities":
         return _handle_list_localities()
 
+    # ── POST /member/login — member self-service login ────────────────────────
+    if method == "POST" and resource == "/member/login":
+        return _handle_member_login(event)
+
+    # ── POST /members/set-credentials — admin sets member password ────────────
+    if method == "POST" and resource == "/members/set-credentials":
+        return _handle_set_member_credentials(event)
+
+
     # ── POST /members/create — create new member with uniqueness check ─────────
     if method == "POST" and resource == "/members/create":
         return _handle_create_member(event)
@@ -767,6 +776,94 @@ def _handle_update_member_v2(event: dict) -> dict:
 
     logger.info("Member %s updated (new ID: %s)", old_member_id, new_member_id)
     return _resp(200, {"message": "Member updated", "member": updated})
+
+################################################################################
+# POST /member/login — member self-service login
+################################################################################
+
+def _handle_member_login(event: dict) -> dict:
+    """
+    Allows a cooperative member to log in using their email or phone number
+    plus a password. Scans kopera-member for a matching identifier, verifies
+    the SHA-256 hashed password stored in the 'credentials' attribute, and
+    returns the member's profile (excluding credentials).
+    """
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    identifier = body.get("identifier", "").strip()   # email OR phone
+    password   = body.get("password", "").strip()
+
+    if not identifier or not password:
+        return _resp(400, {"error": "identifier (email or phone) and password are required"})
+
+    password_hash = hashlib.sha256(password.encode()).hexdigest()
+    table         = dynamodb.Table(MEMBERS_TABLE)
+
+    # Scan for email match
+    resp  = table.scan(FilterExpression=Attr("email").eq(identifier))
+    items = resp.get("Items", [])
+
+    # Fall back to phone match if no email hit
+    if not items:
+        resp  = table.scan(FilterExpression=Attr("phone").eq(identifier))
+        items = resp.get("Items", [])
+
+    if not items:
+        return _resp(401, {"error": "No member found with that email or phone number."})
+
+    member = items[0]
+
+    stored_hash = member.get("credentials")
+    if not stored_hash:
+        return _resp(401, {"error": "This account does not have a password set. Please contact your administrator."})
+
+    if stored_hash != password_hash:
+        return _resp(401, {"error": "Incorrect password."})
+
+    # Return member profile — never include credentials in the response
+    safe_member = {k: v for k, v in member.items() if k != "credentials"}
+    logger.info("Member login: %s", member.get("memberId"))
+    return _resp(200, {"message": "Login successful", "member": safe_member})
+
+
+################################################################################
+# POST /members/set-credentials — admin sets a member's password
+################################################################################
+
+def _handle_set_member_credentials(event: dict) -> dict:
+    """
+    Admin-only. Sets or updates the 'credentials' attribute on a member record
+    by storing the SHA-256 hash of the supplied password.
+    """
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    member_id  = body.get("memberId", "").strip()
+    company_id = body.get("companyId", "KAFA-001").strip()
+    password   = body.get("password", "").strip()
+
+    if not member_id or not password:
+        return _resp(400, {"error": "memberId and password are required"})
+
+    if len(password) < 6:
+        return _resp(400, {"error": "Password must be at least 6 characters"})
+
+    password_hash = hashlib.sha256(password.encode()).hexdigest()
+
+    dynamodb.Table(MEMBERS_TABLE).update_item(
+        Key={"memberId": member_id, "companyId": company_id},
+        UpdateExpression="SET credentials = :h",
+        ExpressionAttributeValues={":h": password_hash},
+    )
+
+    logger.info("Credentials set for member: %s", member_id)
+    return _resp(200, {"message": f"Password set successfully for member {member_id}"})
+
 
 ################################################################################
 # HTTP response helper

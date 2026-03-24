@@ -71,6 +71,17 @@ s3_client = boto3.client("s3", **_s3_kwargs)
 ################################################################################
 
 def lambda_handler(event, context):
+    # CORS preflight
+    if event.get("httpMethod") == "OPTIONS":
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Access-Control-Allow-Origin":  "*",
+                "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256",
+                "Access-Control-Allow-Methods": "GET,OPTIONS",
+            },
+            "body": "{}",
+        }
     logger.info("Event: %s", json.dumps(event))
 
     method   = event.get("httpMethod", "GET")
@@ -295,7 +306,12 @@ def _presign(s3_url: str) -> str | None:
 def _response(status_code: int, body: dict) -> dict:
     return {
         "statusCode": status_code,
-        "headers":    {"Content-Type": "application/json"},
+        "headers": {
+            "Content-Type":                 "application/json",
+            "Access-Control-Allow-Origin":  "*",
+            "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256",
+            "Access-Control-Allow-Methods": "GET,OPTIONS",
+        },
         "body":       json.dumps(body, default=str),
     }
 
@@ -544,6 +560,11 @@ def _presign(s3_url: str) -> str | None:
 def _response(status_code: int, body: dict) -> dict:
     return {
         "statusCode": status_code,
-        "headers":    {"Content-Type": "application/json"},
+        "headers": {
+            "Content-Type":                 "application/json",
+            "Access-Control-Allow-Origin":  "*",
+            "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256",
+            "Access-Control-Allow-Methods": "GET,OPTIONS",
+        },
         "body":       json.dumps(body, default=str),
     }
