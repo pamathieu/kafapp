@@ -118,6 +118,61 @@ class ApiService {
         'Failed to retrieve certificate links: ${response.statusCode} ${response.body}');
   }
 
+  /// GET /member/policy — fetch policies for a member (no SigV4)
+  Future<List<Map<String, dynamic>>> getMemberPolicies(String memberId) async {
+    final uri      = Uri.parse('$_baseUrl/member/policy?memberId=${Uri.encodeComponent(memberId)}');
+    final response = await http.get(uri, headers: {'Content-Type': 'application/json'});
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return List<Map<String, dynamic>>.from(data['policies'] ?? []);
+    }
+    throw Exception('Failed to load policies: ${response.statusCode}');
+  }
+
+  /// POST /member/payment — record a premium payment (no SigV4)
+  Future<String> makePayment({
+    required String policyNo,
+    required String memberId,
+    required double amount,
+    required String paymentMethod,
+    String schedSK = '',
+  }) async {
+    final uri  = Uri.parse('$_baseUrl/member/payment');
+    final body = json.encode({
+      'policyNo':      policyNo,
+      'memberId':      memberId,
+      'amount':        amount,
+      'paymentMethod': paymentMethod,
+      'schedSK':       schedSK,
+    });
+    final response = await http.post(uri,
+        headers: {'Content-Type': 'application/json'}, body: body);
+    final data = json.decode(response.body);
+    if (response.statusCode == 201) return data['referenceNo'] as String;
+    throw Exception(data['error'] ?? 'Payment failed');
+  }
+
+  /// POST /member/claim — submit a new claim (no SigV4)
+  Future<String> createClaim({
+    required String policyNo,
+    required String memberId,
+    required String claimType,
+    required String description,
+  }) async {
+    final uri  = Uri.parse('$_baseUrl/member/claim');
+    final body = json.encode({
+      'policyNo':    policyNo,
+      'memberId':    memberId,
+      'claimType':   claimType,
+      'description': description,
+    });
+    final response = await http.post(uri,
+        headers: {'Content-Type': 'application/json'}, body: body);
+    final data = json.decode(response.body);
+    if (response.statusCode == 201) return data['claimNo'] as String;
+    throw Exception(data['error'] ?? 'Claim submission failed');
+  }
+
   /// POST /member/login — member self-service (no SigV4, public endpoint)
   Future<Map<String, dynamic>> memberLogin(String identifier, String password) async {
     final uri      = Uri.parse('$_baseUrl/member/login');

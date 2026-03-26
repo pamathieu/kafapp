@@ -131,6 +131,14 @@ class AppStrings {
       'chatbotIdReply': 'Votre identifiant de membre est {memberId}.',
       'chatbotSpeechUnavailable': 'La reconnaissance vocale n\'est pas disponible sur cet appareil.',
       'chatbotMicPermissionDenied': 'Permission microphone refusée.',
+
+      // Chat landing
+      'chatLandingSubtitle': 'Que souhaitez-vous faire aujourd\'hui ?',
+      'chatStartConversation': 'Démarrer une conversation',
+      'chatViewInformation': 'Voir mes informations',
+      'chatViewPolicies': 'Voir mes polices',
+      'chatAutoPromptInfo': 'Veuillez me présenter mes informations de profil en détail.',
+      'chatAutoPromptPolicies': 'Veuillez me présenter mes polices d\'assurance en détail.',
     },
     'en': {
       // Login
@@ -263,6 +271,14 @@ class AppStrings {
       'chatbotIdReply': 'Your member ID is {memberId}.',
       'chatbotSpeechUnavailable': 'Speech recognition is not available on this device.',
       'chatbotMicPermissionDenied': 'Microphone permission denied.',
+
+      // Chat landing
+      'chatLandingSubtitle': 'What would you like to do today?',
+      'chatStartConversation': 'Start a Conversation',
+      'chatViewInformation': 'View My Information',
+      'chatViewPolicies': 'View My Policies',
+      'chatAutoPromptInfo': 'Please show me my profile information in detail.',
+      'chatAutoPromptPolicies': 'Please show me my insurance policies in detail.',
     },
   };
 

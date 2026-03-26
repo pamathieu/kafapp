@@ -29,6 +29,9 @@ dependencies:
   # Speech-to-text
   speech_to_text: ^6.6.2
 
+  # Markdown rendering for chat responses
+  flutter_markdown_plus: ^1.0.7
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

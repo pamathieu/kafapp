@@ -5,6 +5,7 @@ import '../misc/app_strings.dart';
 import '../services/session_service.dart';
 import 'member_login_screen.dart';
 import 'chatbot_widget.dart';
+import 'policy_screen.dart';
 
 class MemberDashboardScreen extends StatefulWidget {
   final Map<String, dynamic> member;
@@ -77,7 +78,11 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
         chatLabel: s('chatbotToggleChat'),
         logoutLabel: s('logout'),
         langToggleLabel: locale == 'fr' ? '🇺🇸 EN' : '🇫🇷 FR',
+        policiesLabel: locale == 'fr' ? 'Mes Polices' : 'My Policies',
         onToggleView: _toggle,
+        onPolicies: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => PolicyScreen(member: member)),
+        ),
         onLogout: () async {
           await SessionService.clearSession();
           if (!context.mounted) return;
@@ -116,7 +121,9 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String chatLabel;
   final String logoutLabel;
   final String langToggleLabel;
+  final String policiesLabel;
   final VoidCallback onToggleView;
+  final VoidCallback onPolicies;
   final VoidCallback onLogout;
   final VoidCallback onLangToggle;
 
@@ -131,7 +138,9 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.chatLabel,
     required this.logoutLabel,
     required this.langToggleLabel,
+    required this.policiesLabel,
     required this.onToggleView,
+    required this.onPolicies,
     required this.onLogout,
     required this.onLangToggle,
   });
@@ -184,26 +193,8 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
         ],
       ),
 
-      // ── Right: toggle button + name + profile dropdown ────────────────────
+      // ── Right: name + profile dropdown ────────────────────────────────────────
       actions: [
-        // Toggle view button
-        TextButton.icon(
-          onPressed: onToggleView,
-          icon: Icon(
-            showChatbot ? Icons.person_outline : Icons.chat_bubble_outline,
-            color: Colors.white70,
-            size: 18,
-          ),
-          label: Text(
-            showChatbot ? viewProfileLabel : chatLabel,
-            style: const TextStyle(color: Colors.white70, fontSize: 13),
-          ),
-          style: TextButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-          ),
-        ),
-        const SizedBox(width: 4),
-
         // Name + avatar with dropdown
         Padding(
           padding: const EdgeInsets.only(right: 12),
@@ -253,16 +244,6 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
                 ]),
               ),
               const PopupMenuDivider(),
-              PopupMenuItem<String>(
-                value: 'toggle',
-                child: Row(children: [
-                  Icon(
-                    showChatbot ? Icons.person_outline : Icons.chat_bubble_outline,
-                    size: 18, color: const Color(0xFF1A5C2A)),
-                  const SizedBox(width: 12),
-                  Text(showChatbot ? viewProfileLabel : chatLabel),
-                ]),
-              ),
               PopupMenuItem<String>(
                 value: 'lang',
                 child: Row(children: [
