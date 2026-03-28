@@ -293,8 +293,10 @@ resource "aws_iam_role_policy" "lambda_dynamodb" {
         aws_dynamodb_table.kopera-member.arn,
         aws_dynamodb_table.kopera-admin.arn,
         aws_dynamodb_table.kopera-localities.arn,
+        aws_dynamodb_table.kopera-life-insurance.arn,
         "${aws_dynamodb_table.kopera-company.arn}/index/*",
         "${aws_dynamodb_table.kopera-member.arn}/index/*",
+        "${aws_dynamodb_table.kopera-life-insurance.arn}/index/*",
       ]
     }]
   })
@@ -409,6 +411,7 @@ resource "aws_lambda_function" "certificate_handler" {
       ADMIN_TABLE     = aws_dynamodb_table.kopera-admin.name
       LOCALITIES_TABLE = aws_dynamodb_table.kopera-localities.name
       ANTHROPIC_API_KEY = var.anthropic_api_key
+      LIFE_INSURANCE_TABLE = "kopera-life-insurance"
     }
   }
 
@@ -1358,6 +1361,198 @@ resource "aws_api_gateway_integration_response" "member_chat_options" {
   depends_on = [aws_api_gateway_integration.member_chat_options]
 }
 
+# ── /member/policy  GET → member's policies ───────────────────────────────────
+
+resource "aws_api_gateway_resource" "member_policy" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.member.id
+  path_part   = "policy"
+}
+
+resource "aws_api_gateway_method" "member_policy_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_policy.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_policy_get" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.member_policy.id
+  http_method             = aws_api_gateway_method.member_policy_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.certificate_handler.invoke_arn
+}
+
+resource "aws_api_gateway_method" "member_policy_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_policy.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_policy_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_policy.id
+  http_method = aws_api_gateway_method.member_policy_options.http_method
+  type        = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+
+resource "aws_api_gateway_method_response" "member_policy_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_policy.id
+  http_method = aws_api_gateway_method.member_policy_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "member_policy_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_policy.id
+  http_method = aws_api_gateway_method.member_policy_options.http_method
+  status_code = aws_api_gateway_method_response.member_policy_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.member_policy_options]
+}
+
+# ── /member/payment  POST → record a premium payment ─────────────────────────
+
+resource "aws_api_gateway_resource" "member_payment" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.member.id
+  path_part   = "payment"
+}
+
+resource "aws_api_gateway_method" "member_payment_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_payment.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_payment_post" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.member_payment.id
+  http_method             = aws_api_gateway_method.member_payment_post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.certificate_handler.invoke_arn
+}
+
+resource "aws_api_gateway_method" "member_payment_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_payment.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_payment_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_payment.id
+  http_method = aws_api_gateway_method.member_payment_options.http_method
+  type        = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+
+resource "aws_api_gateway_method_response" "member_payment_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_payment.id
+  http_method = aws_api_gateway_method.member_payment_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "member_payment_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_payment.id
+  http_method = aws_api_gateway_method.member_payment_options.http_method
+  status_code = aws_api_gateway_method_response.member_payment_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.member_payment_options]
+}
+
+# ── /member/claim  POST → submit a new claim ─────────────────────────────────
+
+resource "aws_api_gateway_resource" "member_claim" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.member.id
+  path_part   = "claim"
+}
+
+resource "aws_api_gateway_method" "member_claim_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_claim.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_claim_post" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.member_claim.id
+  http_method             = aws_api_gateway_method.member_claim_post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.certificate_handler.invoke_arn
+}
+
+resource "aws_api_gateway_method" "member_claim_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_claim.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_claim_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_claim.id
+  http_method = aws_api_gateway_method.member_claim_options.http_method
+  type        = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+
+resource "aws_api_gateway_method_response" "member_claim_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_claim.id
+  http_method = aws_api_gateway_method.member_claim_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "member_claim_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_claim.id
+  http_method = aws_api_gateway_method.member_claim_options.http_method
+  status_code = aws_api_gateway_method_response.member_claim_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.member_claim_options]
+}
+
 # ── /members/set-credentials  POST → admin sets member password ──────────────
 
 resource "aws_api_gateway_resource" "members_set_credentials" {
@@ -1448,6 +1643,9 @@ resource "aws_api_gateway_deployment" "main" {
       aws_api_gateway_integration.member_login_post.id,
       aws_api_gateway_integration.members_set_credentials_post.id,
       aws_api_gateway_integration.member_chat_post.id,
+      aws_api_gateway_integration.member_policy_get.id,
+      aws_api_gateway_integration.member_payment_post.id,
+      aws_api_gateway_integration.member_claim_post.id,
     ]))
   }
 
@@ -1470,6 +1668,9 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_integration.member_login_post,
     aws_api_gateway_integration.members_set_credentials_post,
     aws_api_gateway_integration.member_chat_post,
+    aws_api_gateway_integration.member_policy_get,
+    aws_api_gateway_integration.member_payment_post,
+    aws_api_gateway_integration.member_claim_post,
   ]
 
   lifecycle {
@@ -1970,4 +2171,690 @@ output "member_portal_cloudfront_url" {
 output "member_portal_cloudfront_id" {
   description = "CloudFront distribution ID for Member Portal"
   value       = aws_cloudfront_distribution.member_portal.id
+}
+
+################################################################################
+# DynamoDB — kopera-life-insurance  (Cooperative Life Insurance)
+#
+# Single-table design  ·  PK + SK  ·  3 GSIs
+#
+# ── FOREIGN KEY ───────────────────────────────────────────────────────────────
+#   Members are stored in the separate "kopera-member" table.
+#   Every policy item carries BOTH:
+#     memberId  — kopera-member hash key
+#     companyId — kopera-member range key
+#   Together they form the composite key needed for a direct GetItem on
+#   kopera-member. No member data is duplicated in this table.
+#
+# ── KEY SCHEMA ────────────────────────────────────────────────────────────────
+#   PK  (HASH)   entity-type prefix    e.g. POLICY#POL-2024-000001
+#   SK  (RANGE)  sub-entity / date     e.g. METADATA | PAY#2024-03-15#TXN-XXX
+#
+# ── ENTITY → KEY MAPPING ──────────────────────────────────────────────────────
+#   Policy master           PK=POLICY#<policyNo>    SK=METADATA
+#   Policy-by-member index  PK=MEMBER#<memberId>    SK=POLICY#<policyNo>
+#   Premium schedule        PK=POLICY#<policyNo>    SK=SCHED#<YYYY-MM-DD>#<000001>
+#   Premium payment         PK=POLICY#<policyNo>    SK=PAY#<YYYY-MM-DD>#<refNo>
+#   Beneficiary             PK=POLICY#<policyNo>    SK=BENEF#<id>
+#   Claim                   PK=POLICY#<policyNo>    SK=CLAIM#<claimNo>
+#   Insurance product       PK=PRODUCT#<code>       SK=METADATA
+#   Premium plan            PK=PRODUCT#<code>       SK=PLAN#<planId>
+#
+# ── GSI USAGE ─────────────────────────────────────────────────────────────────
+#   GSI2-DueDate      all policies due on a given date (reminder / collection jobs)
+#   GSI3-PaymentRef   retrieve a payment by its unique reference number
+#   GSI4-StatusDue    overdue sweep: status=ACTIVE AND nextDueDate < today
+################################################################################
+
+resource "aws_dynamodb_table" "kopera-life-insurance" {
+  name         = "kopera-life-insurance"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "PK"
+  range_key    = "SK"
+
+  # ── Base table keys ──────────────────────────────────────────────────────────
+  attribute {
+    name = "PK"
+    type = "S"
+  }
+
+  attribute {
+    name = "SK"
+    type = "S"
+  }
+
+  # ── GSI2 attributes (policies by next due date) ──────────────────────────────
+  attribute {
+    name = "GSI2PK"   # next_due_date  e.g. "2024-03-15"
+    type = "S"
+  }
+
+  attribute {
+    name = "GSI2SK"   # PK of the policy  e.g. "POLICY#POL-2024-000001"
+    type = "S"
+  }
+
+  # ── GSI3 attribute (payment lookup by reference number) ──────────────────────
+  attribute {
+    name = "GSI3PK"   # reference_no  e.g. "TXN-20240315-A1B2C3D4"
+    type = "S"
+  }
+
+  # ── GSI4 attributes (overdue/lapsed policy sweep) ────────────────────────────
+  attribute {
+    name = "GSI4PK"   # policy_status  e.g. "ACTIVE" | "LAPSED"
+    type = "S"
+  }
+
+  attribute {
+    name = "GSI4SK"   # next_due_date  e.g. "2024-03-15"  (same shape as GSI2PK)
+    type = "S"
+  }
+
+  # ── GSI2 — policies due on a date ────────────────────────────────────────────
+  # Access pattern: getPoliciesDueOnDate("2024-03-15")
+  # Sparse projection keeps this index lean — only premium collection fields.
+  global_secondary_index {
+    name            = "GSI2-DueDate"
+    hash_key        = "GSI2PK"
+    range_key       = "GSI2SK"
+    projection_type = "INCLUDE"
+    non_key_attributes = [
+      "policyNo",
+      "memberId",
+      "memberName",
+      "premiumAmount",
+      "policyStatus",
+    ]
+  }
+
+  # ── GSI3 — payment by reference number ───────────────────────────────────────
+  # Access pattern: getPaymentByRef("TXN-20240315-A1B2C3D4")
+  # No range key — reference numbers are globally unique (UUID segment + date).
+  global_secondary_index {
+    name            = "GSI3-PaymentRef"
+    hash_key        = "GSI3PK"
+    projection_type = "ALL"
+  }
+
+  # ── GSI4 — overdue policy sweep ──────────────────────────────────────────────
+  # Access pattern: getOverduePolicies()
+  #   Query: GSI4PK = "ACTIVE" AND GSI4SK < "2024-03-15"
+  global_secondary_index {
+    name            = "GSI4-StatusDue"
+    hash_key        = "GSI4PK"
+    range_key       = "GSI4SK"
+    projection_type = "INCLUDE"
+    non_key_attributes = [
+      "policyNo",
+      "memberId",
+      "memberName",
+      "premiumAmount",
+      "nextDueDate",
+    ]
+  }
+
+  # ── Operational safety ───────────────────────────────────────────────────────
+  point_in_time_recovery {
+    enabled = true   # 35-day rolling backup window
+  }
+
+  server_side_encryption {
+    enabled = true   # AES-256 managed by AWS
+  }
+
+  tags = merge(local.common_tags, {
+    Name    = "kopera-life-insurance"
+    Purpose = "cooperative-life-insurance"
+  })
+}
+
+################################################################################
+# IAM — extend Lambda execution role to cover the life-insurance table
+#
+# Added actions beyond the base lambda_dynamodb policy:
+#   TransactWriteItems  — atomic pay-premium (write PAY# + update SCHED# + update METADATA)
+#   ConditionCheck      — idempotency guard inside TransactWrite
+################################################################################
+
+resource "aws_iam_role_policy" "lambda_life_insurance_dynamodb" {
+  name = "life-insurance-dynamodb"
+  role = aws_iam_role.lambda_exec.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "LifeInsuranceCRUD"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan",
+          "dynamodb:BatchWriteItem",
+          # Required for atomic pay-premium TransactWrite
+          "dynamodb:TransactWriteItems",
+          "dynamodb:TransactGetItems",
+          # Required as a participant inside TransactWrite
+          "dynamodb:ConditionCheckItem",
+        ]
+        Resource = [
+          aws_dynamodb_table.kopera-life-insurance.arn,
+          "${aws_dynamodb_table.kopera-life-insurance.arn}/index/*",
+        ]
+      },
+    ]
+  })
+}
+
+################################################################################
+# Outputs — kopera-life-insurance table
+################################################################################
+
+output "life_insurance_table_name" {
+  description = "DynamoDB table name for the cooperative life insurance model"
+  value       = aws_dynamodb_table.kopera-life-insurance.name
+}
+
+output "life_insurance_table_arn" {
+  description = "ARN of the kopera-life-insurance DynamoDB table"
+  value       = aws_dynamodb_table.kopera-life-insurance.arn
+}
+
+output "life_insurance_stream_arn" {
+  description = "DynamoDB Streams ARN (empty when streams are disabled)"
+  value       = aws_dynamodb_table.kopera-life-insurance.stream_arn
+}
+
+################################################################################
+# DynamoDB Seed Data — kopera-life-insurance
+#
+# Entities seeded (single-table):
+#   2 Insurance products  (LIFE-BASIC, LIFE-PLUS)
+#   2 Premium plans       (monthly for each product)
+#   2 Members             (Alice Kamau, Bruno Nakamura)
+#   2 Policies            (one per member)
+#   2 Policy→Member refs  (allows listing a member's policies)
+#   6 Premium schedule    (3 installments per policy)
+#   2 Payments            (first installment paid for each policy)
+#   2 Beneficiaries       (one primary per policy)
+################################################################################
+
+# ── Insurance Products ────────────────────────────────────────────────────────
+
+resource "aws_dynamodb_table_item" "product_life_basic" {
+  table_name = aws_dynamodb_table.kopera-life-insurance.name
+  hash_key   = "PK"
+  range_key  = "SK"
+
+  item = jsonencode({
+    PK            = { S = "PRODUCT#LIFE-BASIC" }
+    SK            = { S = "METADATA" }
+    entity_type   = { S = "PRODUCT" }
+    productCode   = { S = "LIFE-BASIC" }
+    name          = { S = "Kopera Basic Life Cover" }
+    description   = { S = "Essential whole-life cover for cooperative members" }
+    coverageType  = { S = "WHOLE_LIFE" }
+    isActive      = { BOOL = true }
+    createdAt     = { S = "2024-01-01T00:00:00Z" }
+  })
+}
+
+resource "aws_dynamodb_table_item" "product_life_plus" {
+  table_name = aws_dynamodb_table.kopera-life-insurance.name
+  hash_key   = "PK"
+  range_key  = "SK"
+
+  item = jsonencode({
+    PK            = { S = "PRODUCT#LIFE-PLUS" }
+    SK            = { S = "METADATA" }
+    entity_type   = { S = "PRODUCT" }
+    productCode   = { S = "LIFE-PLUS" }
+    name          = { S = "Kopera Plus Life Cover" }
+    description   = { S = "Enhanced term cover with critical illness rider" }
+    coverageType  = { S = "TERM" }
+    isActive      = { BOOL = true }
+    createdAt     = { S = "2024-01-01T00:00:00Z" }
+  })
+}
+
+# ── Premium Plans ─────────────────────────────────────────────────────────────
+
+resource "aws_dynamodb_table_item" "plan_basic_monthly" {
+  table_name = aws_dynamodb_table.kopera-life-insurance.name
+  hash_key   = "PK"
+  range_key  = "SK"
+
+  item = jsonencode({
+    PK               = { S = "PRODUCT#LIFE-BASIC" }
+    SK               = { S = "PLAN#plan-basic-monthly" }
+    entity_type      = { S = "PLAN" }
+    planId           = { S = "plan-basic-monthly" }
+    productCode      = { S = "LIFE-BASIC" }
+    name             = { S = "Basic Monthly" }
+    frequency        = { S = "MONTHLY" }
+    premiumAmount    = { N = "150" }
+    sumAssured       = { N = "50000" }
+    gracePeriodDays  = { N = "30" }
+    lateFeeAmount    = { N = "10" }
+    lateFeePct       = { N = "2" }
+    isActive         = { BOOL = true }
+  })
+}
+
+resource "aws_dynamodb_table_item" "plan_plus_monthly" {
+  table_name = aws_dynamodb_table.kopera-life-insurance.name
+  hash_key   = "PK"
+  range_key  = "SK"
+
+  item = jsonencode({
+    PK               = { S = "PRODUCT#LIFE-PLUS" }
+    SK               = { S = "PLAN#plan-plus-monthly" }
+    entity_type      = { S = "PLAN" }
+    planId           = { S = "plan-plus-monthly" }
+    productCode      = { S = "LIFE-PLUS" }
+    name             = { S = "Plus Monthly" }
+    frequency        = { S = "MONTHLY" }
+    premiumAmount    = { N = "280" }
+    sumAssured       = { N = "120000" }
+    gracePeriodDays  = { N = "30" }
+    lateFeeAmount    = { N = "20" }
+    lateFeePct       = { N = "2" }
+    isActive         = { BOOL = true }
+  })
+}
+
+# ── Members ───────────────────────────────────────────────────────────────────
+
+# ── Policy Masters ────────────────────────────────────────────────────────────
+
+resource "aws_dynamodb_table_item" "policy_alice_metadata" {
+  table_name = aws_dynamodb_table.kopera-life-insurance.name
+  hash_key   = "PK"
+  range_key  = "SK"
+
+  item = jsonencode({
+    PK             = { S = "POLICY#POL-2024-000001" }
+    SK             = { S = "METADATA" }
+    GSI2PK         = { S = "2024-04-15" }
+    GSI2SK         = { S = "POLICY#POL-2024-000001" }
+    GSI4PK         = { S = "ACTIVE" }
+    GSI4SK         = { S = "2024-04-15" }
+    entity_type    = { S = "POLICY" }
+    policyNo       = { S = "POL-2024-000001" }
+    # FK → kopera-member (hash=memberId, range=companyId)
+    memberId       = { S = "mbr-001" }
+    companyId      = { S = "coop-001" }
+    memberName     = { S = "Alice Kamau" }
+    productCode    = { S = "LIFE-BASIC" }
+    planId         = { S = "plan-basic-monthly" }
+    frequency      = { S = "MONTHLY" }
+    startDate      = { S = "2024-01-15" }
+    endDate        = { S = "" }
+    policyStatus   = { S = "ACTIVE" }
+    sumAssured     = { N = "50000" }
+    premiumAmount  = { N = "150" }
+    nextDueDate    = { S = "2024-04-15" }
+    lastPaidDate   = { S = "2024-03-15" }
+    lastPaidAmount = { N = "150" }
+    totalPaid      = { N = "300" }
+    createdAt      = { S = "2024-01-15T10:00:00Z" }
+    updatedAt      = { S = "2024-03-15T11:00:00Z" }
+  })
+}
+
+resource "aws_dynamodb_table_item" "policy_bruno_metadata" {
+  table_name = aws_dynamodb_table.kopera-life-insurance.name
+  hash_key   = "PK"
+  range_key  = "SK"
+
+  item = jsonencode({
+    PK             = { S = "POLICY#POL-2024-000002" }
+    SK             = { S = "METADATA" }
+    GSI2PK         = { S = "2024-04-15" }
+    GSI2SK         = { S = "POLICY#POL-2024-000002" }
+    GSI4PK         = { S = "ACTIVE" }
+    GSI4SK         = { S = "2024-04-15" }
+    entity_type    = { S = "POLICY" }
+    policyNo       = { S = "POL-2024-000002" }
+    # FK → kopera-member (hash=memberId, range=companyId)
+    memberId       = { S = "mbr-002" }
+    companyId      = { S = "coop-001" }
+    memberName     = { S = "Bruno Nakamura" }
+    productCode    = { S = "LIFE-PLUS" }
+    planId         = { S = "plan-plus-monthly" }
+    frequency      = { S = "MONTHLY" }
+    startDate      = { S = "2024-01-20" }
+    endDate        = { S = "" }
+    policyStatus   = { S = "ACTIVE" }
+    sumAssured     = { N = "120000" }
+    premiumAmount  = { N = "280" }
+    nextDueDate    = { S = "2024-04-15" }
+    lastPaidDate   = { S = "2024-03-15" }
+    lastPaidAmount = { N = "280" }
+    totalPaid      = { N = "560" }
+    createdAt      = { S = "2024-01-20T10:00:00Z" }
+    updatedAt      = { S = "2024-03-15T11:30:00Z" }
+  })
+}
+
+# ── Policy → Member index items (allows listing policies per member) ──────────
+
+resource "aws_dynamodb_table_item" "member_alice_policy_ref" {
+  table_name = aws_dynamodb_table.kopera-life-insurance.name
+  hash_key   = "PK"
+  range_key  = "SK"
+
+  item = jsonencode({
+    PK            = { S = "MEMBER#mbr-001" }
+    SK            = { S = "POLICY#POL-2024-000001" }
+    entity_type   = { S = "MEMBER_POLICY_REF" }
+    # FK → kopera-member (hash=memberId, range=companyId)
+    memberId      = { S = "mbr-001" }
+    companyId     = { S = "coop-001" }
+    policyNo      = { S = "POL-2024-000001" }
+    productCode   = { S = "LIFE-BASIC" }
+    policyStatus  = { S = "ACTIVE" }
+    premiumAmount = { N = "150" }
+    sumAssured    = { N = "50000" }
+    startDate     = { S = "2024-01-15" }
+    nextDueDate   = { S = "2024-04-15" }
+  })
+}
+
+resource "aws_dynamodb_table_item" "member_bruno_policy_ref" {
+  table_name = aws_dynamodb_table.kopera-life-insurance.name
+  hash_key   = "PK"
+  range_key  = "SK"
+
+  item = jsonencode({
+    PK            = { S = "MEMBER#mbr-002" }
+    SK            = { S = "POLICY#POL-2024-000002" }
+    entity_type   = { S = "MEMBER_POLICY_REF" }
+    # FK → kopera-member (hash=memberId, range=companyId)
+    memberId      = { S = "mbr-002" }
+    companyId     = { S = "coop-001" }
+    policyNo      = { S = "POL-2024-000002" }
+    productCode   = { S = "LIFE-PLUS" }
+    policyStatus  = { S = "ACTIVE" }
+    premiumAmount = { N = "280" }
+    sumAssured    = { N = "120000" }
+    startDate     = { S = "2024-01-20" }
+    nextDueDate   = { S = "2024-04-15" }
+  })
+}
+
+# ── Premium Schedules — Alice (POL-2024-000001) ───────────────────────────────
+
+resource "aws_dynamodb_table_item" "sched_alice_1" {
+  table_name = aws_dynamodb_table.kopera-life-insurance.name
+  hash_key   = "PK"
+  range_key  = "SK"
+
+  item = jsonencode({
+    PK             = { S = "POLICY#POL-2024-000001" }
+    SK             = { S = "SCHED#2024-02-15#000001" }
+    entity_type    = { S = "SCHEDULE" }
+    policyNo       = { S = "POL-2024-000001" }
+    installmentNo  = { N = "1" }
+    dueDate        = { S = "2024-02-15" }
+    amountDue      = { N = "150" }
+    status         = { S = "PAID" }
+    paidDate       = { S = "2024-02-15" }
+    paidAmount     = { N = "150" }
+  })
+}
+
+resource "aws_dynamodb_table_item" "sched_alice_2" {
+  table_name = aws_dynamodb_table.kopera-life-insurance.name
+  hash_key   = "PK"
+  range_key  = "SK"
+
+  item = jsonencode({
+    PK             = { S = "POLICY#POL-2024-000001" }
+    SK             = { S = "SCHED#2024-03-15#000002" }
+    entity_type    = { S = "SCHEDULE" }
+    policyNo       = { S = "POL-2024-000001" }
+    installmentNo  = { N = "2" }
+    dueDate        = { S = "2024-03-15" }
+    amountDue      = { N = "150" }
+    status         = { S = "PAID" }
+    paidDate       = { S = "2024-03-15" }
+    paidAmount     = { N = "150" }
+  })
+}
+
+resource "aws_dynamodb_table_item" "sched_alice_3" {
+  table_name = aws_dynamodb_table.kopera-life-insurance.name
+  hash_key   = "PK"
+  range_key  = "SK"
+
+  item = jsonencode({
+    PK             = { S = "POLICY#POL-2024-000001" }
+    SK             = { S = "SCHED#2024-04-15#000003" }
+    entity_type    = { S = "SCHEDULE" }
+    policyNo       = { S = "POL-2024-000001" }
+    installmentNo  = { N = "3" }
+    dueDate        = { S = "2024-04-15" }
+    amountDue      = { N = "150" }
+    status         = { S = "PENDING" }
+    paidDate       = { S = "" }
+    paidAmount     = { N = "0" }
+  })
+}
+
+# ── Premium Schedules — Bruno (POL-2024-000002) ───────────────────────────────
+
+resource "aws_dynamodb_table_item" "sched_bruno_1" {
+  table_name = aws_dynamodb_table.kopera-life-insurance.name
+  hash_key   = "PK"
+  range_key  = "SK"
+
+  item = jsonencode({
+    PK             = { S = "POLICY#POL-2024-000002" }
+    SK             = { S = "SCHED#2024-02-15#000001" }
+    entity_type    = { S = "SCHEDULE" }
+    policyNo       = { S = "POL-2024-000002" }
+    installmentNo  = { N = "1" }
+    dueDate        = { S = "2024-02-15" }
+    amountDue      = { N = "280" }
+    status         = { S = "PAID" }
+    paidDate       = { S = "2024-02-14" }
+    paidAmount     = { N = "280" }
+  })
+}
+
+resource "aws_dynamodb_table_item" "sched_bruno_2" {
+  table_name = aws_dynamodb_table.kopera-life-insurance.name
+  hash_key   = "PK"
+  range_key  = "SK"
+
+  item = jsonencode({
+    PK             = { S = "POLICY#POL-2024-000002" }
+    SK             = { S = "SCHED#2024-03-15#000002" }
+    entity_type    = { S = "SCHEDULE" }
+    policyNo       = { S = "POL-2024-000002" }
+    installmentNo  = { N = "2" }
+    dueDate        = { S = "2024-03-15" }
+    amountDue      = { N = "280" }
+    status         = { S = "PAID" }
+    paidDate       = { S = "2024-03-15" }
+    paidAmount     = { N = "280" }
+  })
+}
+
+resource "aws_dynamodb_table_item" "sched_bruno_3" {
+  table_name = aws_dynamodb_table.kopera-life-insurance.name
+  hash_key   = "PK"
+  range_key  = "SK"
+
+  item = jsonencode({
+    PK             = { S = "POLICY#POL-2024-000002" }
+    SK             = { S = "SCHED#2024-04-15#000003" }
+    entity_type    = { S = "SCHEDULE" }
+    policyNo       = { S = "POL-2024-000002" }
+    installmentNo  = { N = "3" }
+    dueDate        = { S = "2024-04-15" }
+    amountDue      = { N = "280" }
+    status         = { S = "PENDING" }
+    paidDate       = { S = "" }
+    paidAmount     = { N = "0" }
+  })
+}
+
+# ── Premium Payments — Alice ──────────────────────────────────────────────────
+
+resource "aws_dynamodb_table_item" "pay_alice_1" {
+  table_name = aws_dynamodb_table.kopera-life-insurance.name
+  hash_key   = "PK"
+  range_key  = "SK"
+
+  item = jsonencode({
+    PK             = { S = "POLICY#POL-2024-000001" }
+    SK             = { S = "PAY#2024-02-15#TXN-20240215-A1B2C3D4" }
+    GSI3PK         = { S = "TXN-20240215-A1B2C3D4" }
+    entity_type    = { S = "PAYMENT" }
+    referenceNo    = { S = "TXN-20240215-A1B2C3D4" }
+    policyNo       = { S = "POL-2024-000001" }
+    schedSK        = { S = "SCHED#2024-02-15#000001" }
+    paymentDate    = { S = "2024-02-15" }
+    amountPaid     = { N = "150" }
+    lateFee        = { N = "0" }
+    totalCollected = { N = "150" }
+    paymentMethod  = { S = "MOBILE_MONEY" }
+    channel        = { S = "MOBILE_APP" }
+    externalRef    = { S = "MM-20240215-XYZXYZ" }
+    collectedBy    = { S = "mbr-001" }
+    voided         = { BOOL = false }
+    createdAt      = { S = "2024-02-15T10:22:00Z" }
+  })
+}
+
+resource "aws_dynamodb_table_item" "pay_alice_2" {
+  table_name = aws_dynamodb_table.kopera-life-insurance.name
+  hash_key   = "PK"
+  range_key  = "SK"
+
+  item = jsonencode({
+    PK             = { S = "POLICY#POL-2024-000001" }
+    SK             = { S = "PAY#2024-03-15#TXN-20240315-E5F6G7H8" }
+    GSI3PK         = { S = "TXN-20240315-E5F6G7H8" }
+    entity_type    = { S = "PAYMENT" }
+    referenceNo    = { S = "TXN-20240315-E5F6G7H8" }
+    policyNo       = { S = "POL-2024-000001" }
+    schedSK        = { S = "SCHED#2024-03-15#000002" }
+    paymentDate    = { S = "2024-03-15" }
+    amountPaid     = { N = "150" }
+    lateFee        = { N = "0" }
+    totalCollected = { N = "150" }
+    paymentMethod  = { S = "BANK_TRANSFER" }
+    channel        = { S = "WEB" }
+    externalRef    = { S = "BNK-20240315-ABCABC" }
+    collectedBy    = { S = "mbr-001" }
+    voided         = { BOOL = false }
+    createdAt      = { S = "2024-03-15T09:10:00Z" }
+  })
+}
+
+# ── Premium Payments — Bruno ──────────────────────────────────────────────────
+
+resource "aws_dynamodb_table_item" "pay_bruno_1" {
+  table_name = aws_dynamodb_table.kopera-life-insurance.name
+  hash_key   = "PK"
+  range_key  = "SK"
+
+  item = jsonencode({
+    PK             = { S = "POLICY#POL-2024-000002" }
+    SK             = { S = "PAY#2024-02-14#TXN-20240214-I9J0K1L2" }
+    GSI3PK         = { S = "TXN-20240214-I9J0K1L2" }
+    entity_type    = { S = "PAYMENT" }
+    referenceNo    = { S = "TXN-20240214-I9J0K1L2" }
+    policyNo       = { S = "POL-2024-000002" }
+    schedSK        = { S = "SCHED#2024-02-15#000001" }
+    paymentDate    = { S = "2024-02-14" }
+    amountPaid     = { N = "280" }
+    lateFee        = { N = "0" }
+    totalCollected = { N = "280" }
+    paymentMethod  = { S = "CASH" }
+    channel        = { S = "BRANCH" }
+    externalRef    = { S = "" }
+    collectedBy    = { S = "mbr-002" }
+    voided         = { BOOL = false }
+    createdAt      = { S = "2024-02-14T14:05:00Z" }
+  })
+}
+
+resource "aws_dynamodb_table_item" "pay_bruno_2" {
+  table_name = aws_dynamodb_table.kopera-life-insurance.name
+  hash_key   = "PK"
+  range_key  = "SK"
+
+  item = jsonencode({
+    PK             = { S = "POLICY#POL-2024-000002" }
+    SK             = { S = "PAY#2024-03-15#TXN-20240315-M3N4O5P6" }
+    GSI3PK         = { S = "TXN-20240315-M3N4O5P6" }
+    entity_type    = { S = "PAYMENT" }
+    referenceNo    = { S = "TXN-20240315-M3N4O5P6" }
+    policyNo       = { S = "POL-2024-000002" }
+    schedSK        = { S = "SCHED#2024-03-15#000002" }
+    paymentDate    = { S = "2024-03-15" }
+    amountPaid     = { N = "280" }
+    lateFee        = { N = "0" }
+    totalCollected = { N = "280" }
+    paymentMethod  = { S = "MOBILE_MONEY" }
+    channel        = { S = "USSD" }
+    externalRef    = { S = "MM-20240315-MNOPQR" }
+    collectedBy    = { S = "mbr-002" }
+    voided         = { BOOL = false }
+    createdAt      = { S = "2024-03-15T08:45:00Z" }
+  })
+}
+
+# ── Beneficiaries ─────────────────────────────────────────────────────────────
+
+resource "aws_dynamodb_table_item" "benef_alice" {
+  table_name = aws_dynamodb_table.kopera-life-insurance.name
+  hash_key   = "PK"
+  range_key  = "SK"
+
+  item = jsonencode({
+    PK           = { S = "POLICY#POL-2024-000001" }
+    SK           = { S = "BENEF#bnf-001" }
+    entity_type  = { S = "BENEFICIARY" }
+    benefId      = { S = "bnf-001" }
+    policyNo     = { S = "POL-2024-000001" }
+    fullName     = { S = "James Kamau" }
+    relationship = { S = "SPOUSE" }
+    dateOfBirth  = { S = "1983-07-22" }
+    nationalId   = { S = "ID-5544332" }
+    phone        = { S = "+254700000010" }
+    sharePct     = { N = "100" }
+    isPrimary    = { BOOL = true }
+    createdAt    = { S = "2024-01-15T10:05:00Z" }
+  })
+}
+
+resource "aws_dynamodb_table_item" "benef_bruno" {
+  table_name = aws_dynamodb_table.kopera-life-insurance.name
+  hash_key   = "PK"
+  range_key  = "SK"
+
+  item = jsonencode({
+    PK           = { S = "POLICY#POL-2024-000002" }
+    SK           = { S = "BENEF#bnf-002" }
+    entity_type  = { S = "BENEFICIARY" }
+    benefId      = { S = "bnf-002" }
+    policyNo     = { S = "POL-2024-000002" }
+    fullName     = { S = "Yuki Nakamura" }
+    relationship = { S = "SPOUSE" }
+    dateOfBirth  = { S = "1981-03-14" }
+    nationalId   = { S = "ID-3322110" }
+    phone        = { S = "+254700000020" }
+    sharePct     = { N = "100" }
+    isPrimary    = { BOOL = true }
+    createdAt    = { S = "2024-01-20T10:10:00Z" }
+  })
 }
