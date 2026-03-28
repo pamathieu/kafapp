@@ -1,11 +1,20 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:http/http.dart' as http;
 import '../providers/language_provider.dart';
 import '../misc/app_strings.dart';
 import '../services/session_service.dart';
 import 'member_login_screen.dart';
 import 'chatbot_widget.dart';
 import 'policy_screen.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Colour palette
+// ─────────────────────────────────────────────────────────────────────────────
+const _green = Color(0xFF1A5C2A);
+const _gold = Color(0xFFC8A96E);
+const _bg = Color(0xFFF2F4F7);
 
 class MemberDashboardScreen extends StatefulWidget {
   final Map<String, dynamic> member;
@@ -15,33 +24,10 @@ class MemberDashboardScreen extends StatefulWidget {
   State<MemberDashboardScreen> createState() => _MemberDashboardScreenState();
 }
 
-class _MemberDashboardScreenState extends State<MemberDashboardScreen>
-    with SingleTickerProviderStateMixin {
-  bool _showChatbot = true;
-  late final AnimationController _fadeCtrl;
-  late final Animation<double> _fade;
+class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
+  int _tab = 0;
 
-  @override
-  void initState() {
-    super.initState();
-    _fadeCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 250));
-    _fade = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeInOut);
-    _fadeCtrl.forward();
-  }
-
-  @override
-  void dispose() {
-    _fadeCtrl.dispose();
-    super.dispose();
-  }
-
-  void _toggle() {
-    _fadeCtrl.reverse().then((_) {
-      setState(() => _showChatbot = !_showChatbot);
-      _fadeCtrl.forward();
-    });
-  }
+  void _goTab(int t) => setState(() => _tab = t);
 
   @override
   Widget build(BuildContext context) {
@@ -49,40 +35,44 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
     final locale = langProvider.locale;
     String s(String key) => AppStrings.get(key, locale);
 
-    final member   = widget.member;
-    final name     = member['full_name']              as String? ?? '';
-    final memberId = member['memberId']               as String? ?? '';
-    final phone    = member['phone']                  as String? ?? '';
-    final email    = member['email']                  as String? ?? '';
-    final address  = member['address']                as String? ?? '';
-    final dob      = member['date_of_birth']          as String? ?? '';
-    final idNumber = member['identification_number']  as String? ?? '';
-    final idType   = member['identification_type']    as String? ?? '';
-    final notes    = member['notes']                  as String? ?? '';
-    final status   = member['status'];
-    final isActive = status == true || status == 'true';
-    final locality = member['locality'] as Map<String, dynamic>?;
-    final commune  = locality?['commune'] as String? ?? '';
-    final firstName = name.split(' ').first;
+    final member = widget.member;
+    final name = member['full_name'] as String? ?? '';
+    final isActive =
+        member['status'] == true || member['status'] == 'true';
+
+    final tabs = [
+      _DashboardTab(member: member, locale: locale, onGoTransactions: () => _goTab(1)),
+      _TransactionsTab(member: member, locale: locale),
+      PolicyScreen(member: member, embedded: true),
+      ChatbotWidget(member: member, locale: locale),
+    ];
+
+    const navItems = [
+      BottomNavigationBarItem(
+          icon: Icon(Icons.dashboard_outlined),
+          activeIcon: Icon(Icons.dashboard),
+          label: 'Dashboard'),
+      BottomNavigationBarItem(
+          icon: Icon(Icons.receipt_long_outlined),
+          activeIcon: Icon(Icons.receipt_long),
+          label: 'Payments'),
+      BottomNavigationBarItem(
+          icon: Icon(Icons.policy_outlined),
+          activeIcon: Icon(Icons.policy),
+          label: 'Policies'),
+      BottomNavigationBarItem(
+          icon: Icon(Icons.chat_bubble_outline),
+          activeIcon: Icon(Icons.chat_bubble),
+          label: 'Assistant'),
+    ];
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: _bg,
       appBar: _KafaAppBar(
         name: name,
         isActive: isActive,
         locale: locale,
-        showChatbot: _showChatbot,
-        activeMemberLabel: s('activeMember'),
-        inactiveMemberLabel: s('inactiveMember'),
-        viewProfileLabel: s('chatbotToggleDashboard'),
-        chatLabel: s('chatbotToggleChat'),
-        logoutLabel: s('logout'),
-        langToggleLabel: locale == 'fr' ? '🇺🇸 EN' : '🇫🇷 FR',
-        policiesLabel: locale == 'fr' ? 'Mes Polices' : 'My Policies',
-        onToggleView: _toggle,
-        onPolicies: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => PolicyScreen(member: member)),
-        ),
+        s: s,
         onLogout: () async {
           await SessionService.clearSession();
           if (!context.mounted) return;
@@ -93,54 +83,38 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen>
         },
         onLangToggle: () => context.read<LanguageProvider>().toggle(),
       ),
-      body: FadeTransition(
-        opacity: _fade,
-        child: _showChatbot
-            ? ChatbotWidget(member: member, locale: locale)
-            : _ProfileView(
-                name: name, memberId: memberId, phone: phone,
-                email: email, address: address, dob: dob,
-                idNumber: idNumber, idType: idType, notes: notes,
-                commune: commune, s: s,
-              ),
+      body: IndexedStack(index: _tab, children: tabs),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _tab,
+        onTap: _goTab,
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: _green,
+        unselectedItemColor: Colors.grey.shade500,
+        backgroundColor: Colors.white,
+        elevation: 12,
+        selectedFontSize: 11,
+        unselectedFontSize: 11,
+        items: navItems,
       ),
     );
   }
 }
 
-// ── AppBar ────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+//  AppBar
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
-  final String name;
+  final String name, locale;
   final bool isActive;
-  final bool showChatbot;
-  final String locale;
-  final String activeMemberLabel;
-  final String inactiveMemberLabel;
-  final String viewProfileLabel;
-  final String chatLabel;
-  final String logoutLabel;
-  final String langToggleLabel;
-  final String policiesLabel;
-  final VoidCallback onToggleView;
-  final VoidCallback onPolicies;
-  final VoidCallback onLogout;
-  final VoidCallback onLangToggle;
+  final String Function(String) s;
+  final VoidCallback onLogout, onLangToggle;
 
   const _KafaAppBar({
     required this.name,
     required this.isActive,
-    required this.showChatbot,
     required this.locale,
-    required this.activeMemberLabel,
-    required this.inactiveMemberLabel,
-    required this.viewProfileLabel,
-    required this.chatLabel,
-    required this.logoutLabel,
-    required this.langToggleLabel,
-    required this.policiesLabel,
-    required this.onToggleView,
-    required this.onPolicies,
+    required this.s,
     required this.onLogout,
     required this.onLangToggle,
   });
@@ -151,145 +125,122 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     final initials = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    final langLabel = locale == 'fr' ? '🇺🇸 EN' : '🇫🇷 FR';
 
     return AppBar(
-      backgroundColor: const Color(0xFF1A5C2A),
+      backgroundColor: _green,
       elevation: 0,
       automaticallyImplyLeading: false,
       titleSpacing: 16,
-
-      // ── Left: logo + KAFA ─────────────────────────────────────────────────
-      title: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: Image.asset(
-              'assets/images/kafa_logo.png',
+      title: Row(mainAxisSize: MainAxisSize.min, children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: Image.asset(
+            'assets/images/kafa_logo.png',
+            width: 34,
+            height: 34,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Container(
               width: 34,
               height: 34,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFC8A96E),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Icon(Icons.shield, color: Colors.white, size: 20),
-              ),
+              decoration: BoxDecoration(
+                  color: _gold, borderRadius: BorderRadius.circular(6)),
+              child:
+                  const Icon(Icons.shield, color: Colors.white, size: 20),
             ),
           ),
-          const SizedBox(width: 10),
-          const Text(
-            'KAFA',
+        ),
+        const SizedBox(width: 10),
+        const Text('KAFA',
             style: TextStyle(
-              color: Color(0xFFC8A96E),
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 3,
-            ),
-          ),
-        ],
-      ),
-
-      // ── Right: name + profile dropdown ────────────────────────────────────────
+                color: _gold,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 3)),
+      ]),
       actions: [
-        // Name + avatar with dropdown
-        Padding(
-          padding: const EdgeInsets.only(right: 12),
-          child: PopupMenuButton<String>(
-            offset: const Offset(0, 48),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
-            onSelected: (value) {
-              if (value == 'toggle') onToggleView();
-              if (value == 'logout') onLogout();
-              if (value == 'lang')   onLangToggle();
-            },
-            itemBuilder: (_) => [
-              // Status chip
-              PopupMenuItem<String>(
-                enabled: false,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 6),
-                child: Row(children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
+        PopupMenuButton<String>(
+          offset: const Offset(0, 48),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          onSelected: (v) {
+            if (v == 'logout') onLogout();
+            if (v == 'lang') onLangToggle();
+          },
+          itemBuilder: (_) => [
+            PopupMenuItem<String>(
+              enabled: false,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isActive
+                      ? Colors.green.shade100
+                      : Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.circle,
+                      size: 8,
                       color: isActive
-                          ? Colors.green.shade100
-                          : Colors.grey.shade200,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.circle, size: 8,
-                          color: isActive
-                              ? Colors.green.shade700
-                              : Colors.grey.shade500),
-                      const SizedBox(width: 6),
-                      Text(
-                        isActive ? activeMemberLabel : inactiveMemberLabel,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: isActive
-                              ? Colors.green.shade700
-                              : Colors.grey.shade600,
-                        ),
-                      ),
-                    ]),
+                          ? Colors.green.shade700
+                          : Colors.grey.shade500),
+                  const SizedBox(width: 6),
+                  Text(
+                    isActive
+                        ? s('activeMember')
+                        : s('inactiveMember'),
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isActive
+                            ? Colors.green.shade700
+                            : Colors.grey.shade600),
                   ),
                 ]),
               ),
-              const PopupMenuDivider(),
-              PopupMenuItem<String>(
-                value: 'lang',
-                child: Row(children: [
-                  const Icon(Icons.language,
-                      size: 18, color: Color(0xFF1A5C2A)),
-                  const SizedBox(width: 12),
-                  Text(langToggleLabel),
-                ]),
-              ),
-              const PopupMenuDivider(),
-              PopupMenuItem<String>(
-                value: 'logout',
-                child: Row(children: [
-                  Icon(Icons.logout, size: 18, color: Colors.red.shade400),
-                  const SizedBox(width: 12),
-                  Text(logoutLabel,
-                      style: TextStyle(color: Colors.red.shade400)),
-                ]),
-              ),
-            ],
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Full name
-                Text(
-                  name,
+            ),
+            const PopupMenuDivider(),
+            PopupMenuItem<String>(
+              value: 'lang',
+              child: Row(children: [
+                const Icon(Icons.language, size: 18, color: _green),
+                const SizedBox(width: 12),
+                Text(langLabel),
+              ]),
+            ),
+            const PopupMenuDivider(),
+            PopupMenuItem<String>(
+              value: 'logout',
+              child: Row(children: [
+                Icon(Icons.logout, size: 18, color: Colors.red.shade400),
+                const SizedBox(width: 12),
+                Text(s('logout'),
+                    style: TextStyle(color: Colors.red.shade400)),
+              ]),
+            ),
+          ],
+          child: Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Text(name,
                   style: const TextStyle(
                       color: Colors.white,
                       fontSize: 13,
-                      fontWeight: FontWeight.w500),
-                ),
-                const SizedBox(width: 8),
-                // Avatar
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: const Color(0xFFC8A96E),
-                  child: Text(
-                    initials,
+                      fontWeight: FontWeight.w500)),
+              const SizedBox(width: 8),
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: _gold,
+                child: Text(initials,
                     style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
-                        color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
+                        color: Colors.white)),
+              ),
+            ]),
           ),
         ),
       ],
@@ -297,174 +248,1029 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
   }
 }
 
-// ── Profile view ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+//  Dashboard Tab — BofA-style card grid
+// ─────────────────────────────────────────────────────────────────────────────
 
-class _ProfileView extends StatelessWidget {
-  final String name, memberId, phone, email, address, dob,
-      idNumber, idType, notes, commune;
-  final String Function(String) s;
+class _DashboardTab extends StatefulWidget {
+  final Map<String, dynamic> member;
+  final String locale;
+  final VoidCallback onGoTransactions;
 
-  const _ProfileView({
-    required this.name, required this.memberId, required this.phone,
-    required this.email, required this.address, required this.dob,
-    required this.idNumber, required this.idType, required this.notes,
-    required this.commune, required this.s,
-  });
+  const _DashboardTab(
+      {required this.member,
+      required this.locale,
+      required this.onGoTransactions});
+
+  @override
+  State<_DashboardTab> createState() => _DashboardTabState();
+}
+
+class _DashboardTabState extends State<_DashboardTab> {
+  List<Map<String, dynamic>> _policies = [];
+  bool _loadingPolicies = true;
+
+  static const String _baseUrl =
+      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchPolicies();
+  }
+
+  Future<void> _fetchPolicies() async {
+    final memberId = widget.member['memberId'] as String? ?? '';
+    try {
+      final uri = Uri.parse(
+          '$_baseUrl/member/policy?memberId=${Uri.encodeComponent(memberId)}');
+      final response =
+          await http.get(uri, headers: {'Content-Type': 'application/json'});
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (mounted) {
+          setState(() {
+            _policies =
+                List<Map<String, dynamic>>.from(data['policies'] ?? []);
+            _loadingPolicies = false;
+          });
+        }
+      } else {
+        if (mounted) setState(() => _loadingPolicies = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingPolicies = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-      child: Column(children: [
+    final member = widget.member;
+    final name = member['full_name'] as String? ?? '';
+    final memberId = member['memberId'] as String? ?? '';
+    final isActive =
+        member['status'] == true || member['status'] == 'true';
+    final issuedDate = member['issued_date'] as String? ??
+        member['issuedDate'] as String? ?? '';
 
-        // Profile header card
-        Card(
-          elevation: 3,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              gradient: const LinearGradient(
-                colors: [Color(0xFFFFF8EE), Color(0xFFFFF3DC)],
+    final activePolicies = _policies.where((p) {
+      final pol = p['policy'] as Map<String, dynamic>? ?? {};
+      return (pol['policyStatus'] as String? ?? '').toUpperCase() == 'ACTIVE';
+    }).length;
+    final totalPolicies = _policies.length;
+
+    // Derive next premium from first active policy if available
+    final firstEntry = _policies.isNotEmpty ? _policies.first : null;
+    final firstPolicy = firstEntry?['policy'] as Map<String, dynamic>?;
+    final premiumAmount = firstPolicy?['premiumAmount']?.toString() ?? '—';
+    final nextPayDate   = firstPolicy?['nextDueDate']  as String? ?? '—';
+
+    final firstName = name.split(' ').first;
+
+    return RefreshIndicator(
+      onRefresh: _fetchPolicies,
+      color: _green,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // ── Greeting ──────────────────────────────────────────────────────
+          Text('Hello, $firstName 👋',
+              style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1A1A1A))),
+          const SizedBox(height: 2),
+          Text(
+            isActive ? 'Your membership is active' : 'Your membership is inactive',
+            style: TextStyle(
+                fontSize: 13,
+                color: isActive ? Colors.green.shade700 : Colors.grey.shade600),
+          ),
+          const SizedBox(height: 20),
+
+          // ── 2 × 2 card grid ───────────────────────────────────────────────
+          Row(children: [
+            Expanded(
+              child: _DashCard(
+                icon: Icons.badge_outlined,
+                iconColor: _green,
+                accentColor: const Color(0xFFE8F5E9),
+                label: 'Member ID',
+                value: memberId.isNotEmpty
+                    ? memberId.length > 12
+                        ? '…${memberId.substring(memberId.length - 8)}'
+                        : memberId
+                    : '—',
+                sub: isActive ? 'Active' : 'Inactive',
+                subColor: isActive ? Colors.green.shade700 : Colors.grey,
               ),
             ),
-            padding: const EdgeInsets.all(20),
-            child: Row(children: [
-              CircleAvatar(
-                radius: 30,
-                backgroundColor: const Color(0xFF1A5C2A),
-                child: Text(
-                  name.isNotEmpty ? name[0].toUpperCase() : '?',
-                  style: const TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white),
-                ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _DashCard(
+                icon: Icons.policy_outlined,
+                iconColor: const Color(0xFF1565C0),
+                accentColor: const Color(0xFFE3F2FD),
+                label: 'Policies',
+                value: _loadingPolicies ? '…' : '$activePolicies active',
+                sub: _loadingPolicies
+                    ? ''
+                    : '$totalPolicies total',
+                subColor: Colors.grey.shade600,
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(name,
-                        style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1A1A1A))),
-                    if (memberId.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(memberId,
-                          style: const TextStyle(
-                              fontFamily: 'monospace',
-                              fontSize: 12,
-                              color: Color(0xFF1A5C2A),
-                              fontWeight: FontWeight.w600)),
-                    ],
-                  ],
-                ),
+            ),
+          ]),
+          const SizedBox(height: 12),
+
+          Row(children: [
+            Expanded(
+              child: _DashCard(
+                icon: Icons.payments_outlined,
+                iconColor: const Color(0xFF7B1FA2),
+                accentColor: const Color(0xFFF3E5F5),
+                label: 'Premium',
+                value: premiumAmount != '—' ? 'HTG $premiumAmount' : '—',
+                sub: 'Monthly due',
+                subColor: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _DashCard(
+                icon: Icons.calendar_month_outlined,
+                iconColor: const Color(0xFFE65100),
+                accentColor: const Color(0xFFFFF3E0),
+                label: 'Next Payment',
+                value: nextPayDate != '—'
+                    ? _formatShortDate(nextPayDate)
+                    : '—',
+                sub: 'Due date',
+                subColor: Colors.grey.shade600,
+              ),
+            ),
+          ]),
+          const SizedBox(height: 24),
+
+          // ── Quick actions ─────────────────────────────────────────────────
+          const Text('Quick Actions',
+              style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1A1A1A))),
+          const SizedBox(height: 12),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2))
+              ],
+            ),
+            child: Column(children: [
+              _QuickAction(
+                icon: Icons.credit_card,
+                label: 'Pay Premium',
+                subtitle: 'Make a payment toward your policy',
+                color: _green,
+                isFirst: true,
+                isLast: false,
+                onTap: widget.onGoTransactions,
+              ),
+              _QuickAction(
+                icon: Icons.description,
+                label: 'My Certificate',
+                subtitle: 'Download your membership certificate',
+                color: const Color(0xFF1565C0),
+                isFirst: false,
+                isLast: false,
+                onTap: () => _showCertificateSheet(context, member),
+              ),
+              _QuickAction(
+                icon: Icons.receipt_long,
+                label: 'Payment History',
+                subtitle: 'View past and upcoming payments',
+                color: const Color(0xFF7B1FA2),
+                isFirst: false,
+                isLast: false,
+                onTap: widget.onGoTransactions,
+              ),
+              _QuickAction(
+                icon: Icons.headset_mic,
+                label: 'Contact Support',
+                subtitle: 'Get help from the KAFA team',
+                color: const Color(0xFFE65100),
+                isFirst: false,
+                isLast: true,
+                onTap: () => _showSupportSheet(context),
               ),
             ]),
           ),
-        ),
-        const SizedBox(height: 16),
+          const SizedBox(height: 24),
 
-        _InfoCard(title: s('memberSectionPersonal'), icon: Icons.person, rows: [
-          if (name.isNotEmpty)    _InfoRow(s('fullName'),    name,    Icons.badge),
-          if (dob.isNotEmpty)     _InfoRow(s('dateOfBirth'), dob,     Icons.cake),
-          if (address.isNotEmpty) _InfoRow(s('address'),     address, Icons.home),
-          if (commune.isNotEmpty) _InfoRow(s('commune'),     commune, Icons.location_on),
-        ]),
-        const SizedBox(height: 16),
-
-        _InfoCard(title: s('memberSectionContact'), icon: Icons.contact_phone, rows: [
-          if (phone.isNotEmpty) _InfoRow(s('phone'), phone, Icons.phone),
-          if (email.isNotEmpty) _InfoRow(s('email'), email, Icons.email),
-        ]),
-
-        if (idNumber.isNotEmpty || idType.isNotEmpty) ...[
+          // ── Member info card ──────────────────────────────────────────────
+          _SectionCard(
+            title: 'Member Overview',
+            icon: Icons.person_outline,
+            child: Column(children: [
+              _OverviewRow(
+                  icon: Icons.person, label: 'Full Name', value: name),
+              _OverviewRow(
+                  icon: Icons.location_on_outlined,
+                  label: 'Commune',
+                  value: (member['locality'] as Map<String, dynamic>?)?['commune'] as String? ?? '—'),
+              _OverviewRow(
+                  icon: Icons.phone_outlined,
+                  label: 'Phone',
+                  value: member['phone'] as String? ?? '—'),
+              _OverviewRow(
+                  icon: Icons.email_outlined,
+                  label: 'Email',
+                  value: member['email'] as String? ?? '—'),
+              if (issuedDate.isNotEmpty)
+                _OverviewRow(
+                    icon: Icons.verified_outlined,
+                    label: 'Member Since',
+                    value: _formatShortDate(issuedDate)),
+            ]),
+          ),
           const SizedBox(height: 16),
-          _InfoCard(title: s('memberSectionId'), icon: Icons.credit_card, rows: [
-            if (memberId.isNotEmpty) _InfoRow(s('memberId'), memberId, Icons.tag),
-            if (idType.isNotEmpty)   _InfoRow(s('idType'),   idType,   Icons.article),
-            if (idNumber.isNotEmpty) _InfoRow(s('idNumber'), idNumber, Icons.numbers),
-          ]),
-        ],
 
-        if (notes.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          _InfoCard(title: s('memberSectionNotes'), icon: Icons.notes,
-              rows: [_InfoRow('', notes, Icons.notes)]),
-        ],
-      ]),
+          // ── Alerts card ───────────────────────────────────────────────────
+          _AlertsCard(isActive: isActive, nextPayDate: nextPayDate),
+        ]),
+      ),
     );
   }
-}
 
-// ── Shared card widgets ───────────────────────────────────────────────────────
+  String _formatShortDate(String raw) {
+    try {
+      final parts = raw.split('-');
+      if (parts.length == 3) {
+        const months = [
+          '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+        ];
+        final m = int.tryParse(parts[1]) ?? 0;
+        return '${months[m]} ${parts[2]}, ${parts[0]}';
+      }
+    } catch (_) {}
+    return raw;
+  }
 
-class _InfoRow {
-  final String label, value;
-  final IconData icon;
-  const _InfoRow(this.label, this.value, this.icon);
-}
+  void _showCertificateSheet(
+      BuildContext context, Map<String, dynamic> member) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.description, color: _green, size: 48),
+          const SizedBox(height: 12),
+          const Text('Member Certificate',
+              style:
+                  TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Text('Download your official KAFA membership certificate.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey.shade600)),
+          const SizedBox(height: 20),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.download),
+            label: const Text('Download PDF'),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: _green,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 48),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12))),
+            onPressed: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                    content: Text('Certificate download coming soon'),
+                    backgroundColor: _green),
+              );
+            },
+          ),
+        ]),
+      ),
+    );
+  }
 
-class _InfoCard extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final List<_InfoRow> rows;
-  const _InfoCard({required this.title, required this.icon, required this.rows});
-
-  @override
-  Widget build(BuildContext context) {
-    if (rows.isEmpty) return const SizedBox.shrink();
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Icon(icon, color: const Color(0xFF1A5C2A), size: 18),
-            const SizedBox(width: 8),
-            Text(title,
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                    color: Color(0xFF1A5C2A))),
-          ]),
-          const Divider(height: 16),
-          ...rows.map((r) => _RowTile(row: r)),
+  void _showSupportSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => const Padding(
+        padding: EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.support_agent, color: _green, size: 48),
+          SizedBox(height: 12),
+          Text('Contact Support',
+              style:
+                  TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          SizedBox(height: 16),
+          _SupportTile(
+              icon: Icons.phone,
+              label: 'Call Us',
+              value: '+509 XXXX-XXXX'),
+          Divider(),
+          _SupportTile(
+              icon: Icons.email,
+              label: 'Email',
+              value: 'support@kafa.org'),
+          Divider(),
+          _SupportTile(
+              icon: Icons.access_time,
+              label: 'Hours',
+              value: 'Mon–Fri 8am–5pm'),
         ]),
       ),
     );
   }
 }
 
-class _RowTile extends StatelessWidget {
-  final _InfoRow row;
-  const _RowTile({required this.row});
+// ─────────────────────────────────────────────────────────────────────────────
+//  Transactions Tab
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _TransactionsTab extends StatefulWidget {
+  final Map<String, dynamic> member;
+  final String locale;
+
+  const _TransactionsTab({required this.member, required this.locale});
+
+  @override
+  State<_TransactionsTab> createState() => _TransactionsTabState();
+}
+
+class _TransactionsTabState extends State<_TransactionsTab> {
+  static const String _baseUrl =
+      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
+
+  bool _loading = true;
+  List<Map<String, dynamic>> _policies = [];
+  bool _payLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchPolicies();
+  }
+
+  Future<void> _fetchPolicies() async {
+    setState(() => _loading = true);
+    final memberId = widget.member['memberId'] as String? ?? '';
+    try {
+      final uri = Uri.parse(
+          '$_baseUrl/member/policy?memberId=${Uri.encodeComponent(memberId)}');
+      final response =
+          await http.get(uri, headers: {'Content-Type': 'application/json'});
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (mounted) {
+          setState(() {
+            _policies =
+                List<Map<String, dynamic>>.from(data['policies'] ?? []);
+            _loading = false;
+          });
+        }
+      } else {
+        if (mounted) setState(() => _loading = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final firstEntry    = _policies.isNotEmpty ? _policies.first : null;
+    final firstPolicy   = firstEntry?['policy']  as Map<String, dynamic>?;
+    final firstLastPay  = firstEntry?['lastPay']  as Map<String, dynamic>?;
+    final premiumAmount = firstPolicy?['premiumAmount']?.toString() ?? '—';
+    final lastPayDate   = firstLastPay?['paymentDate']  as String? ??
+                          firstPolicy?['lastPaidDate']   as String? ?? '—';
+    final nextPayDate   = firstPolicy?['nextDueDate']    as String? ?? '—';
+    final policyNo      = firstPolicy?['policyNo']       as String? ?? '—';
+
+    return RefreshIndicator(
+      onRefresh: _fetchPolicies,
+      color: _green,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Payments',
+              style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1A1A1A))),
+          const SizedBox(height: 4),
+          Text('Manage your premium payments',
+              style:
+                  TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+          const SizedBox(height: 20),
+
+          // ── Payment summary cards ─────────────────────────────────────
+          if (_loading)
+            const Center(
+                child: Padding(
+              padding: EdgeInsets.all(32),
+              child: CircularProgressIndicator(color: _green),
+            ))
+          else ...[
+            Row(children: [
+              Expanded(
+                child: _PayInfoCard(
+                  label: 'Last Payment',
+                  icon: Icons.check_circle_outline,
+                  iconColor: Colors.green.shade600,
+                  value: lastPayDate != '—'
+                      ? _fmtDate(lastPayDate)
+                      : 'No record',
+                  sub: premiumAmount != '—' ? 'HTG $premiumAmount' : '',
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _PayInfoCard(
+                  label: 'Next Payment',
+                  icon: Icons.schedule,
+                  iconColor: const Color(0xFFE65100),
+                  value: nextPayDate != '—'
+                      ? _fmtDate(nextPayDate)
+                      : 'Contact us',
+                  sub: premiumAmount != '—' ? 'HTG $premiumAmount' : '',
+                ),
+              ),
+            ]),
+            const SizedBox(height: 20),
+
+            // ── Pay Premium button ────────────────────────────────────
+            _SectionCard(
+              title: 'Pay Premium',
+              icon: Icons.credit_card,
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (policyNo != '—') ...[
+                      Text('Policy: $policyNo',
+                          style: TextStyle(
+                              fontSize: 13, color: Colors.grey.shade600)),
+                      const SizedBox(height: 4),
+                    ],
+                    if (premiumAmount != '—') ...[
+                      RichText(
+                        text: TextSpan(children: [
+                          TextSpan(
+                              text: 'Amount due: ',
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey.shade600)),
+                          TextSpan(
+                              text: 'HTG $premiumAmount',
+                              style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: _green)),
+                        ]),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    ElevatedButton.icon(
+                      icon: _payLoading
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2))
+                          : const Icon(Icons.payment),
+                      label: Text(
+                          _payLoading ? 'Processing…' : 'Pay Now'),
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: _green,
+                          foregroundColor: Colors.white,
+                          minimumSize:
+                              const Size(double.infinity, 52),
+                          shape: RoundedRectangleBorder(
+                              borderRadius:
+                                  BorderRadius.circular(12))),
+                      onPressed:
+                          _payLoading ? null : () => _handlePayNow(context),
+                    ),
+                    const SizedBox(height: 8),
+                    Center(
+                      child: Text(
+                        'Secure payment processed by KAFA',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade500),
+                      ),
+                    ),
+                  ]),
+            ),
+            const SizedBox(height: 20),
+
+            // ── Payment history ───────────────────────────────────────
+            _SectionCard(
+              title: 'Payment History',
+              icon: Icons.history,
+              child: _policies.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Text('No payment records available.',
+                          style: TextStyle(
+                              color: Colors.grey.shade500,
+                              fontSize: 13)),
+                    )
+                  : Column(
+                      children: _policies
+                          .map((p) => _PaymentHistoryTile(policy: p))
+                          .toList()),
+            ),
+          ],
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _handlePayNow(BuildContext context) async {
+    setState(() => _payLoading = true);
+    await Future.delayed(const Duration(seconds: 1));
+    if (!mounted) return;
+    setState(() => _payLoading = false);
+    // ignore: use_build_context_synchronously
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+                color: Colors.green.shade50, shape: BoxShape.circle),
+            child:
+                Icon(Icons.check_circle, color: Colors.green.shade600, size: 36),
+          ),
+          const SizedBox(height: 16),
+          const Text('Payment Portal',
+              style:
+                  TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Text(
+            'Online payment is coming soon. Please visit a KAFA office or contact support to make your payment.',
+            textAlign: TextAlign.center,
+            style:
+                TextStyle(color: Colors.grey.shade600, fontSize: 13),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: _green,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 48),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12))),
+            child: const Text('OK'),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  String _fmtDate(String raw) {
+    try {
+      final parts = raw.split('-');
+      if (parts.length == 3) {
+        const months = [
+          '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+        ];
+        final m = int.tryParse(parts[1]) ?? 0;
+        return '${months[m]} ${parts[2]}, ${parts[0]}';
+      }
+    } catch (_) {}
+    return raw;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Reusable small widgets
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DashCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor, accentColor;
+  final String label, value, sub;
+  final Color subColor;
+
+  const _DashCard({
+    required this.icon,
+    required this.iconColor,
+    required this.accentColor,
+    required this.label,
+    required this.value,
+    required this.sub,
+    required this.subColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 8,
+                offset: const Offset(0, 2))
+          ]),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration:
+              BoxDecoration(color: accentColor, shape: BoxShape.circle),
+          child: Icon(icon, color: iconColor, size: 20),
+        ),
+        const SizedBox(height: 12),
+        Text(label,
+            style:
+                TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+        const SizedBox(height: 2),
+        Text(value,
+            style: const TextStyle(
+                fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+        const SizedBox(height: 2),
+        Text(sub, style: TextStyle(fontSize: 11, color: subColor)),
+      ]),
+    );
+  }
+}
+
+class _QuickAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final Color color;
+  final bool isFirst;
+  final bool isLast;
+  final VoidCallback onTap;
+
+  const _QuickAction({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.color,
+    required this.isFirst,
+    required this.isLast,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.vertical(
+            top: isFirst ? const Radius.circular(16) : Radius.zero,
+            bottom: isLast ? const Radius.circular(16) : Radius.zero,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12)),
+                child: Icon(icon, color: color, size: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label,
+                        style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A1A))),
+                    const SizedBox(height: 2),
+                    Text(subtitle,
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey.shade500)),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_forward_ios,
+                  size: 14, color: Colors.grey.shade400),
+            ]),
+          ),
+        ),
+        if (!isLast)
+          Divider(height: 1, indent: 72, endIndent: 16,
+              color: Colors.grey.shade100),
+      ],
+    );
+  }
+}
+
+class _SectionCard extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Widget child;
+
+  const _SectionCard(
+      {required this.title, required this.icon, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 8,
+                offset: const Offset(0, 2))
+          ]),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(icon, color: _green, size: 18),
+          const SizedBox(width: 8),
+          Text(title,
+              style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: _green)),
+        ]),
+        const Divider(height: 20),
+        child,
+      ]),
+    );
+  }
+}
+
+class _OverviewRow extends StatelessWidget {
+  final IconData icon;
+  final String label, value;
+
+  const _OverviewRow(
+      {required this.icon, required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Icon(row.icon, size: 16, color: Colors.grey.shade500),
+      child: Row(children: [
+        Icon(icon, size: 16, color: Colors.grey.shade400),
         const SizedBox(width: 10),
-        if (row.label.isNotEmpty)
-          SizedBox(
-            width: 110,
-            child: Text(row.label,
-                style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey.shade600,
-                    fontWeight: FontWeight.w500)),
-          ),
+        SizedBox(
+          width: 100,
+          child: Text(label,
+              style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500)),
+        ),
         Expanded(
-          child: Text(row.value,
+          child: Text(value,
               style:
                   const TextStyle(fontSize: 13, color: Color(0xFF1A1A1A))),
+        ),
+      ]),
+    );
+  }
+}
+
+class _AlertsCard extends StatelessWidget {
+  final bool isActive;
+  final String nextPayDate;
+
+  const _AlertsCard({required this.isActive, required this.nextPayDate});
+
+  @override
+  Widget build(BuildContext context) {
+    final alerts = <Map<String, dynamic>>[];
+
+    if (!isActive) {
+      alerts.add({
+        'icon': Icons.warning_amber_rounded,
+        'color': Colors.orange,
+        'text': 'Your membership is currently inactive. Contact KAFA to reactivate.',
+      });
+    }
+
+    if (nextPayDate != '—') {
+      alerts.add({
+        'icon': Icons.notifications_active_outlined,
+        'color': _green,
+        'text': 'Next premium payment due: $nextPayDate',
+      });
+    }
+
+    alerts.add({
+      'icon': Icons.info_outline,
+      'color': const Color(0xFF1565C0),
+      'text': 'Keep your contact information up to date for faster service.',
+    });
+
+    return _SectionCard(
+      title: 'Alerts & Reminders',
+      icon: Icons.notifications_outlined,
+      child: Column(
+        children: alerts
+            .map((a) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(a['icon'] as IconData,
+                            color: a['color'] as Color, size: 18),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(a['text'] as String,
+                              style: const TextStyle(
+                                  fontSize: 13, color: Color(0xFF333333))),
+                        ),
+                      ]),
+                ))
+            .toList(),
+      ),
+    );
+  }
+}
+
+class _PayInfoCard extends StatelessWidget {
+  final String label, value, sub;
+  final IconData icon;
+  final Color iconColor;
+
+  const _PayInfoCard({
+    required this.label,
+    required this.icon,
+    required this.iconColor,
+    required this.value,
+    required this.sub,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 8,
+                offset: const Offset(0, 2))
+          ]),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(icon, color: iconColor, size: 18),
+          const SizedBox(width: 6),
+          Text(label,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+        ]),
+        const SizedBox(height: 8),
+        Text(value,
+            style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1A1A1A))),
+        if (sub.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(sub,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+        ],
+      ]),
+    );
+  }
+}
+
+class _PaymentHistoryTile extends StatelessWidget {
+  final Map<String, dynamic> policy;
+
+  const _PaymentHistoryTile({required this.policy});
+
+  @override
+  Widget build(BuildContext context) {
+    final pol       = policy['policy'] as Map<String, dynamic>? ?? {};
+    final policyNo  = pol['policyNo']      as String? ?? '—';
+    final premium   = pol['premiumAmount']?.toString() ?? '—';
+    final startDate = pol['startDate']     as String? ?? '—';
+    final status    = (pol['policyStatus'] as String? ?? '').toUpperCase();
+    final isActive  = status == 'ACTIVE';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+              color:
+                  isActive ? Colors.green.shade50 : Colors.grey.shade100,
+              shape: BoxShape.circle),
+          child: Icon(
+            isActive ? Icons.check_circle : Icons.cancel_outlined,
+            color: isActive ? Colors.green.shade600 : Colors.grey.shade400,
+            size: 20,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Policy $policyNo',
+                style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1A1A1A))),
+            Text('Since $startDate',
+                style:
+                    TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+          ]),
+        ),
+        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          if (premium != '—')
+            Text('HTG $premium',
+                style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: _green)),
+          Container(
+            margin: const EdgeInsets.only(top: 2),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: isActive
+                  ? Colors.green.shade100
+                  : Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              status.isNotEmpty ? status : '—',
+              style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: isActive
+                      ? Colors.green.shade700
+                      : Colors.grey.shade600),
+            ),
+          ),
+        ]),
+      ]),
+    );
+  }
+}
+
+class _SupportTile extends StatelessWidget {
+  final IconData icon;
+  final String label, value;
+
+  const _SupportTile(
+      {required this.icon, required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(children: [
+        Icon(icon, color: _green, size: 20),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label,
+                style: TextStyle(
+                    fontSize: 12, color: Colors.grey.shade500)),
+            Text(value,
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w600)),
+          ]),
         ),
       ]),
     );

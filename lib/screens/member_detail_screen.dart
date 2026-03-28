@@ -36,6 +36,14 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   late TextEditingController _newPasswordCtrl;
   bool _isSavingPassword = false;
   String? _passwordMessage;
+
+  // Payment state
+  List<Map<String, dynamic>> _memberPolicies    = [];
+  Map<String, dynamic>?      _selectedPolicy;
+  final _paymentAmountCtrl = TextEditingController();
+  String  _paymentMethod   = 'CASH';
+  bool    _isSavingPayment = false;
+  String? _paymentMessage;
   late bool _editStatus;
 
   // Locality state
@@ -93,6 +101,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     _idTypeCtrl.dispose();
     _notesCtrl.dispose();
     _newPasswordCtrl.dispose();
+    _paymentAmountCtrl.dispose();
     super.dispose();
   }
 
@@ -102,6 +111,23 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       _successMessage = null;
       _errorMessage = null;
     });
+    _loadMemberPolicies();
+  }
+
+  Future<void> _loadMemberPolicies() async {
+    try {
+      final api = context.read<AuthProvider>().apiService!;
+      final policies = await api.getMemberPolicies(_member.memberId);
+      if (!mounted) return;
+      setState(() {
+        _memberPolicies = policies;
+        if (policies.isNotEmpty) {
+          _selectedPolicy = policies.first['policy'] as Map<String, dynamic>?;
+          final amount = _selectedPolicy?['premiumAmount']?.toString() ?? '';
+          _paymentAmountCtrl.text = amount;
+        }
+      });
+    } catch (_) {}
   }
 
   void _cancelEdit() {
@@ -609,10 +635,170 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 onPressed: _isSavingPassword ? null : _setPassword,
               ),
             ),
+
+            // ── Collect Payment ────────────────────────────────────────────
+            const Divider(height: 32),
+            const _SectionHeader(title: 'COLLECT PAYMENT'),
+            const SizedBox(height: 4),
+            Text(
+              'Record a premium payment on behalf of this member.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+            ),
+            const SizedBox(height: 12),
+
+            // Policy selector
+            if (_memberPolicies.isEmpty)
+              Text('No policies found for this member.',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade500))
+            else
+              DropdownButtonFormField<Map<String, dynamic>>(
+                value: _selectedPolicy,
+                decoration: InputDecoration(
+                  labelText: 'Policy',
+                  prefixIcon: const Icon(Icons.policy_outlined),
+                  isDense: true,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                items: _memberPolicies.map((p) {
+                  final pol = p['policy'] as Map<String, dynamic>? ?? {};
+                  return DropdownMenuItem<Map<String, dynamic>>(
+                    value: pol,
+                    child: Text(
+                        '${pol['policyNo'] ?? '—'}  (HTG ${pol['premiumAmount'] ?? '—'}/mo)'),
+                  );
+                }).toList(),
+                onChanged: (pol) => setState(() {
+                  _selectedPolicy = pol;
+                  _paymentAmountCtrl.text =
+                      pol?['premiumAmount']?.toString() ?? '';
+                }),
+              ),
+
+            if (_memberPolicies.isNotEmpty) ...[
+              const SizedBox(height: 12),
+
+              // Amount
+              TextField(
+                controller: _paymentAmountCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: 'Amount (HTG)',
+                  prefixIcon: const Icon(Icons.attach_money),
+                  isDense: true,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Payment method
+              DropdownButtonFormField<String>(
+                value: _paymentMethod,
+                decoration: InputDecoration(
+                  labelText: 'Payment Method',
+                  prefixIcon: const Icon(Icons.payment),
+                  isDense: true,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                items: ['CASH', 'MOBILE_MONEY', 'BANK_TRANSFER']
+                    .map((m) =>
+                        DropdownMenuItem(value: m, child: Text(m)))
+                    .toList(),
+                onChanged: (v) =>
+                    setState(() => _paymentMethod = v ?? 'CASH'),
+              ),
+              const SizedBox(height: 10),
+
+              // Feedback message
+              if (_paymentMessage != null)
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  margin: const EdgeInsets.only(bottom: 8),
+                  decoration: BoxDecoration(
+                    color: _paymentMessage!.startsWith('✓')
+                        ? Colors.green.shade50
+                        : Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: _paymentMessage!.startsWith('✓')
+                          ? Colors.green.shade200
+                          : Colors.red.shade200,
+                    ),
+                  ),
+                  child: Text(_paymentMessage!,
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: _paymentMessage!.startsWith('✓')
+                              ? Colors.green.shade700
+                              : Colors.red)),
+                ),
+
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: _isSavingPayment
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.payment, size: 18),
+                  label: const Text('Collect Payment'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1A5C2A),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: _isSavingPayment ? null : _collectPayment,
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _collectPayment() async {
+    if (_selectedPolicy == null) {
+      setState(() => _paymentMessage = 'Please select a policy.');
+      return;
+    }
+    final amountStr = _paymentAmountCtrl.text.trim();
+    final amount    = double.tryParse(amountStr) ?? 0;
+    if (amount <= 0) {
+      setState(() => _paymentMessage = 'Please enter a valid amount.');
+      return;
+    }
+
+    setState(() { _isSavingPayment = true; _paymentMessage = null; });
+
+    try {
+      final api       = context.read<AuthProvider>().apiService!;
+      final policyNo  = _selectedPolicy!['policyNo'] as String? ?? '';
+      final refNo     = await api.makePayment(
+        policyNo:      policyNo,
+        memberId:      _member.memberId,
+        amount:        amount,
+        paymentMethod: _paymentMethod,
+      );
+      setState(() {
+        _isSavingPayment = false;
+        _paymentMessage  = '✓ Payment recorded. Ref: $refNo';
+        _paymentAmountCtrl.clear();
+      });
+    } catch (e) {
+      setState(() {
+        _isSavingPayment = false;
+        _paymentMessage  =
+            'Error: ${e.toString().replaceAll("Exception: ", "")}';
+      });
+    }
   }
 
   Future<void> _setPassword() async {
