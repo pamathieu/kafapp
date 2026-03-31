@@ -40,10 +40,14 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   // Payment state
   List<Map<String, dynamic>> _memberPolicies    = [];
   Map<String, dynamic>?      _selectedPolicy;
-  final _paymentAmountCtrl = TextEditingController();
-  String  _paymentMethod   = 'CASH';
-  bool    _isSavingPayment = false;
+  final _paymentAmountCtrl   = TextEditingController();
+  final _externalRefCtrl     = TextEditingController(); // MonCash TxID / bank ref / cash receipt
+  final _externalPhoneCtrl   = TextEditingController(); // MonCash phone
+  final _externalBankCtrl    = TextEditingController(); // Bank name
+  String  _paymentMethod     = 'CASH';
+  bool    _isSavingPayment   = false;
   String? _paymentMessage;
+
   late bool _editStatus;
 
   // Locality state
@@ -71,7 +75,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     _idTypeCtrl   = TextEditingController(text: _member.identificationType);
     _notesCtrl        = TextEditingController(text: _member.notes);
     _newPasswordCtrl  = TextEditingController();
-    _editStatus   = _member.status;
+    _editStatus       = _member.status;
     _selectedLocality = _member.locality;
   }
 
@@ -102,6 +106,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     _notesCtrl.dispose();
     _newPasswordCtrl.dispose();
     _paymentAmountCtrl.dispose();
+    _externalRefCtrl.dispose();
+    _externalPhoneCtrl.dispose();
+    _externalBankCtrl.dispose();
     super.dispose();
   }
 
@@ -703,13 +710,88 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8)),
                 ),
-                items: ['CASH', 'MOBILE_MONEY', 'BANK_TRANSFER']
-                    .map((m) =>
-                        DropdownMenuItem(value: m, child: Text(m)))
-                    .toList(),
-                onChanged: (v) =>
-                    setState(() => _paymentMethod = v ?? 'CASH'),
+                items: const [
+                  DropdownMenuItem(value: 'CASH',
+                      child: Text('💵  Cash')),
+                  DropdownMenuItem(value: 'MOBILE_MONEY',
+                      child: Text('📱  MonCash (Mobile Money)')),
+                  DropdownMenuItem(value: 'BANK_TRANSFER',
+                      child: Text('🏦  Bank Transfer')),
+                ],
+                onChanged: (v) => setState(() {
+                  _paymentMethod = v ?? 'CASH';
+                  _externalRefCtrl.clear();
+                  _externalPhoneCtrl.clear();
+                  _externalBankCtrl.clear();
+                }),
               ),
+              const SizedBox(height: 12),
+
+              // Method-specific fields
+              if (_paymentMethod == 'MOBILE_MONEY') ...[
+                TextField(
+                  controller: _externalPhoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: InputDecoration(
+                    labelText: 'MonCash Phone Number',
+                    prefixIcon: const Icon(Icons.phone_android),
+                    hintText: 'e.g. 509-XXXX-XXXX',
+                    isDense: true,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _externalRefCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'MonCash Transaction ID',
+                    prefixIcon: const Icon(Icons.tag),
+                    hintText: 'e.g. MC-XXXXXXXX',
+                    isDense: true,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ] else if (_paymentMethod == 'BANK_TRANSFER') ...[
+                TextField(
+                  controller: _externalBankCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Bank Name',
+                    prefixIcon: const Icon(Icons.account_balance),
+                    hintText: 'e.g. BNC, Sogebank',
+                    isDense: true,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _externalRefCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Transfer Reference Number',
+                    prefixIcon: const Icon(Icons.tag),
+                    hintText: 'e.g. BNK-XXXXXXXXXX',
+                    isDense: true,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ] else ...[
+                // CASH — auto-generate receipt, allow override
+                TextField(
+                  controller: _externalRefCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Receipt Number (optional)',
+                    prefixIcon: const Icon(Icons.receipt),
+                    hintText: 'Leave blank to auto-generate',
+                    isDense: true,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ],
+
               const SizedBox(height: 10),
 
               // Feedback message
@@ -769,34 +851,67 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       setState(() => _paymentMessage = 'Please select a policy.');
       return;
     }
-    final amountStr = _paymentAmountCtrl.text.trim();
-    final amount    = double.tryParse(amountStr) ?? 0;
+    final amount = double.tryParse(_paymentAmountCtrl.text.trim()) ?? 0;
     if (amount <= 0) {
       setState(() => _paymentMessage = 'Please enter a valid amount.');
       return;
     }
 
+    // Validate method-specific fields
+    final externalRef    = _externalRefCtrl.text.trim();
+    final externalPhone  = _externalPhoneCtrl.text.trim();
+    final externalBank   = _externalBankCtrl.text.trim();
+
+    if (_paymentMethod == 'MOBILE_MONEY') {
+      if (externalPhone.isEmpty || externalRef.isEmpty) {
+        setState(() => _paymentMessage =
+            'Please enter the MonCash phone number and transaction ID.');
+        return;
+      }
+    } else if (_paymentMethod == 'BANK_TRANSFER') {
+      if (externalRef.isEmpty) {
+        setState(() => _paymentMessage = 'Please enter the bank transfer reference number.');
+        return;
+      }
+    }
+
     setState(() { _isSavingPayment = true; _paymentMessage = null; });
 
+    // Build external details map
+    final Map<String, String> details = {};
+    if (_paymentMethod == 'MOBILE_MONEY') {
+      details['moncashPhone'] = externalPhone;
+      details['transactionId'] = externalRef;
+    } else if (_paymentMethod == 'BANK_TRANSFER') {
+      details['bankName'] = externalBank;
+      details['transferRef'] = externalRef;
+    } else {
+      details['receiptNo'] = externalRef;
+    }
+
     try {
-      final api       = context.read<AuthProvider>().apiService!;
-      final policyNo  = _selectedPolicy!['policyNo'] as String? ?? '';
-      final refNo     = await api.makePayment(
-        policyNo:      policyNo,
-        memberId:      _member.memberId,
-        amount:        amount,
-        paymentMethod: _paymentMethod,
+      final api      = context.read<AuthProvider>().apiService!;
+      final policyNo = _selectedPolicy!['policyNo'] as String? ?? '';
+      final refNo    = await api.makePayment(
+        policyNo:        policyNo,
+        memberId:        _member.memberId,
+        amount:          amount,
+        paymentMethod:   _paymentMethod,
+        externalRef:     externalRef,
+        externalDetails: details,
       );
       setState(() {
         _isSavingPayment = false;
         _paymentMessage  = '✓ Payment recorded. Ref: $refNo';
         _paymentAmountCtrl.clear();
+        _externalRefCtrl.clear();
+        _externalPhoneCtrl.clear();
+        _externalBankCtrl.clear();
       });
     } catch (e) {
       setState(() {
         _isSavingPayment = false;
-        _paymentMessage  =
-            'Error: ${e.toString().replaceAll("Exception: ", "")}';
+        _paymentMessage  = 'Error: ${e.toString().replaceAll("Exception: ", "")}';
       });
     }
   }

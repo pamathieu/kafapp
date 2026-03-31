@@ -44,6 +44,8 @@ class _MembersScreenState extends State<MembersScreen> {
     try {
       final api = context.read<AuthProvider>().apiService!;
       final members = await api.listMembers();
+      members.sort((a, b) =>
+          a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()));
       setState(() {
         _allMembers = members;
         _isLoading = false;

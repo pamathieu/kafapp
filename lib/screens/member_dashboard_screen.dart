@@ -1,4 +1,6 @@
 import 'dart:convert';
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
@@ -25,7 +27,29 @@ class MemberDashboardScreen extends StatefulWidget {
 }
 
 class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
-  int _tab = 0;
+  int  _tab       = 0;
+  bool _hasPolicy = true; // optimistic — updated after first fetch
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPolicy();
+  }
+
+  Future<void> _checkPolicy() async {
+    final memberId = widget.member['memberId'] as String? ?? '';
+    if (memberId.isEmpty) return;
+    try {
+      final uri = Uri.parse(
+          'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod'
+          '/member/policy?memberId=${Uri.encodeComponent(memberId)}');
+      final response = await http.get(uri);
+      if (!mounted) return;
+      final data     = json.decode(response.body) as Map<String, dynamic>;
+      final policies = (data['policies'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      setState(() => _hasPolicy = policies.isNotEmpty);
+    } catch (_) {}
+  }
 
   void _goTab(int t) => setState(() => _tab = t);
 
@@ -73,6 +97,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
         isActive: isActive,
         locale: locale,
         s: s,
+        hasPolicy: _hasPolicy,
         onLogout: () async {
           await SessionService.clearSession();
           if (!context.mounted) return;
@@ -107,6 +132,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
 class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String name, locale;
   final bool isActive;
+  final bool hasPolicy;
   final String Function(String) s;
   final VoidCallback onLogout, onLangToggle;
 
@@ -115,16 +141,18 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.isActive,
     required this.locale,
     required this.s,
+    required this.hasPolicy,
     required this.onLogout,
     required this.onLangToggle,
   });
 
   @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+  Size get preferredSize => Size.fromHeight(
+      hasPolicy ? kToolbarHeight : kToolbarHeight + 40);
 
   @override
   Widget build(BuildContext context) {
-    final initials = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    final initials  = name.isNotEmpty ? name[0].toUpperCase() : '?';
     final langLabel = locale == 'fr' ? '🇺🇸 EN' : '🇫🇷 FR';
 
     return AppBar(
@@ -137,16 +165,12 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
           borderRadius: BorderRadius.circular(6),
           child: Image.asset(
             'assets/images/kafa_logo.png',
-            width: 34,
-            height: 34,
-            fit: BoxFit.cover,
+            width: 34, height: 34, fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => Container(
-              width: 34,
-              height: 34,
+              width: 34, height: 34,
               decoration: BoxDecoration(
                   color: _gold, borderRadius: BorderRadius.circular(6)),
-              child:
-                  const Icon(Icons.shield, color: Colors.white, size: 20),
+              child: const Icon(Icons.shield, color: Colors.white, size: 20),
             ),
           ),
         ),
@@ -158,6 +182,44 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
                 fontWeight: FontWeight.bold,
                 letterSpacing: 3)),
       ]),
+      // ── No-policy warning banner ──────────────────────────────────────────
+      bottom: hasPolicy ? null : PreferredSize(
+        preferredSize: const Size.fromHeight(40),
+        child: Container(
+          width: double.infinity,
+          color: const Color(0xFFFFF3CD),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(children: [
+            const Icon(Icons.info_outline, size: 16, color: Color(0xFF856404)),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Please contact KAFA for authorization',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF856404)),
+              ),
+            ),
+            TextButton(
+              onPressed: () =>
+                  html.window.open('https://admin.kafayiti.com', '_blank'),
+              style: TextButton.styleFrom(
+                backgroundColor: const Color(0xFF856404),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6)),
+              ),
+              child: const Text('Contact Admin',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+            ),
+          ]),
+        ),
+      ),
       actions: [
         PopupMenuButton<String>(
           offset: const Offset(0, 48),
@@ -334,6 +396,10 @@ class _DashboardTabState extends State<_DashboardTab> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+          // ── Payment notification banner ───────────────────────────────────
+          _PaymentNotificationBanner(member: widget.member),
+
           // ── Greeting ──────────────────────────────────────────────────────
           Text('Hello, $firstName 👋',
               style: const TextStyle(
@@ -568,9 +634,9 @@ class _DashboardTabState extends State<_DashboardTab> {
       context: context,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => const Padding(
-        padding: EdgeInsets.all(24),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: const [
           Icon(Icons.support_agent, color: _green, size: 48),
           SizedBox(height: 12),
           Text('Contact Support',
@@ -660,6 +726,9 @@ class _TransactionsTabState extends State<_TransactionsTab> {
                           firstPolicy?['lastPaidDate']   as String? ?? '—';
     final nextPayDate   = firstPolicy?['nextDueDate']    as String? ?? '—';
     final policyNo      = firstPolicy?['policyNo']       as String? ?? '—';
+
+    // Check if member has payment access
+    final paymentAccess = widget.member['payment_access'] == true;
 
     return RefreshIndicator(
       onRefresh: _fetchPolicies,
@@ -757,16 +826,33 @@ class _TransactionsTabState extends State<_TransactionsTab> {
                       label: Text(
                           _payLoading ? 'Processing…' : 'Pay Now'),
                       style: ElevatedButton.styleFrom(
-                          backgroundColor: _green,
+                          backgroundColor: paymentAccess ? _green : Colors.grey.shade400,
                           foregroundColor: Colors.white,
                           minimumSize:
                               const Size(double.infinity, 52),
                           shape: RoundedRectangleBorder(
                               borderRadius:
                                   BorderRadius.circular(12))),
-                      onPressed:
-                          _payLoading ? null : () => _handlePayNow(context),
+                      onPressed: (!paymentAccess || _payLoading)
+                          ? null
+                          : () => _handlePayNow(context),
                     ),
+                    if (!paymentAccess) ...[
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        Icon(Icons.lock_outline,
+                            size: 14, color: Colors.grey.shade500),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Payment access is not enabled for your account. Please contact your KAFA administrator.',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade500),
+                          ),
+                        ),
+                      ]),
+                    ],
                     const SizedBox(height: 8),
                     Center(
                       child: Text(
@@ -1248,6 +1334,135 @@ class _PaymentHistoryTile extends StatelessWidget {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Payment Notification Banner
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PaymentNotificationBanner extends StatefulWidget {
+  final Map<String, dynamic> member;
+  const _PaymentNotificationBanner({required this.member});
+
+  @override
+  State<_PaymentNotificationBanner> createState() =>
+      _PaymentNotificationBannerState();
+}
+
+class _PaymentNotificationBannerState
+    extends State<_PaymentNotificationBanner> {
+  static const _baseUrl =
+      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
+
+  bool _dismissed = false;
+
+  Future<void> _acknowledge() async {
+    setState(() => _dismissed = true);
+    try {
+      final memberId = widget.member['memberId'] as String? ?? '';
+      await http.post(
+        Uri.parse('$_baseUrl/member/acknowledge-payment'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'memberId': memberId, 'companyId': 'KAFA-001'}),
+      );
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final notif =
+        widget.member['payment_notification'] as Map<String, dynamic>?;
+    if (notif == null) return const SizedBox.shrink();
+    final seen = notif['seen'] == true || notif['seen'] == 'true';
+    if (seen || _dismissed) return const SizedBox.shrink();
+
+    final amount    = notif['amountPaid']?.toString()  ?? '—';
+    final date      = notif['paymentDate'] as String?  ?? '—';
+    final ref       = notif['referenceNo'] as String?  ?? '—';
+    final policyNo  = notif['policyNo']    as String?  ?? '—';
+    final method    = notif['paymentMethod'] as String? ?? '—';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.green.shade50,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.green.shade300),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.check_circle,
+              color: Colors.green.shade600, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Payment Received',
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: Colors.green.shade800),
+            ),
+          ),
+          GestureDetector(
+            onTap: _acknowledge,
+            child: Icon(Icons.close,
+                size: 18, color: Colors.green.shade600),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        Text(
+          'Your payment of HTG $amount has been collected by a KAFA administrator.',
+          style: TextStyle(fontSize: 13, color: Colors.green.shade800),
+        ),
+        const SizedBox(height: 8),
+        _NotifRow('Date',      date),
+        _NotifRow('Policy',    policyNo),
+        _NotifRow('Method',    method),
+        _NotifRow('Reference', ref),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          child: TextButton(
+            onPressed: _acknowledge,
+            style: TextButton.styleFrom(
+              backgroundColor: Colors.green.shade100,
+              foregroundColor: Colors.green.shade800,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Got it — Dismiss'),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _NotifRow extends StatelessWidget {
+  final String label, value;
+  const _NotifRow(this.label, this.value);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(children: [
+        SizedBox(
+          width: 80,
+          child: Text(label,
+              style: TextStyle(
+                  fontSize: 12, color: Colors.green.shade600)),
+        ),
+        Text(value,
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.green.shade900)),
+      ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 class _SupportTile extends StatelessWidget {
   final IconData icon;
   final String label, value;

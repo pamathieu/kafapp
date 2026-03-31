@@ -118,6 +118,57 @@ class ApiService {
         'Failed to retrieve certificate links: ${response.statusCode} ${response.body}');
   }
 
+  /// POST /members/set-payment-access — admin grants/revokes payment access (SigV4)
+  Future<void> setPaymentAccess(String memberId, bool enabled) async {
+    final uri  = Uri.parse('$_baseUrl/members/set-payment-access');
+    final body = json.encode({
+      'memberId':  memberId,
+      'companyId': _companyId,
+      'enabled':   enabled,
+    });
+    final headers  = _signRequest(method: 'POST', uri: uri, body: body);
+    final response = await http.post(uri, headers: headers, body: body);
+    if (response.statusCode == 200) return;
+    final error = json.decode(response.body);
+    throw Exception(error['error'] ?? 'Failed to update payment access');
+  }
+
+  /// POST /member/payment — record a premium payment (no SigV4, public)
+  Future<String> makePayment({
+    required String policyNo,
+    required String memberId,
+    required double amount,
+    required String paymentMethod,
+    String schedSK        = '',
+    String externalRef    = '',
+    Map<String, String> externalDetails = const {},
+  }) async {
+    final uri  = Uri.parse('$_baseUrl/member/payment');
+    final body = json.encode({
+      'policyNo':        policyNo,
+      'memberId':        memberId,
+      'companyId':       _companyId,
+      'amount':          amount,
+      'paymentMethod':   paymentMethod,
+      'schedSK':         schedSK,
+      'externalRef':     externalRef,
+      'externalDetails': externalDetails,
+    });
+    final response = await http.post(uri,
+        headers: {'Content-Type': 'application/json'}, body: body);
+    final data = json.decode(response.body);
+    if (response.statusCode == 201) return data['referenceNo'] as String;
+    throw Exception(data['error'] ?? 'Payment failed');
+  }
+
+  /// POST /member/acknowledge-payment — member dismisses notification (no SigV4)
+  Future<void> acknowledgePayment(String memberId) async {
+    final uri  = Uri.parse('$_baseUrl/member/acknowledge-payment');
+    final body = json.encode({'memberId': memberId, 'companyId': _companyId});
+    await http.post(uri,
+        headers: {'Content-Type': 'application/json'}, body: body);
+  }
+
   /// GET /member/policy — fetch policies for a member (no SigV4)
   Future<List<Map<String, dynamic>>> getMemberPolicies(String memberId) async {
     final uri      = Uri.parse('$_baseUrl/member/policy?memberId=${Uri.encodeComponent(memberId)}');
@@ -127,29 +178,6 @@ class ApiService {
       return List<Map<String, dynamic>>.from(data['policies'] ?? []);
     }
     throw Exception('Failed to load policies: ${response.statusCode}');
-  }
-
-  /// POST /member/payment — record a premium payment (no SigV4)
-  Future<String> makePayment({
-    required String policyNo,
-    required String memberId,
-    required double amount,
-    required String paymentMethod,
-    String schedSK = '',
-  }) async {
-    final uri  = Uri.parse('$_baseUrl/member/payment');
-    final body = json.encode({
-      'policyNo':      policyNo,
-      'memberId':      memberId,
-      'amount':        amount,
-      'paymentMethod': paymentMethod,
-      'schedSK':       schedSK,
-    });
-    final response = await http.post(uri,
-        headers: {'Content-Type': 'application/json'}, body: body);
-    final data = json.decode(response.body);
-    if (response.statusCode == 201) return data['referenceNo'] as String;
-    throw Exception(data['error'] ?? 'Payment failed');
   }
 
   /// POST /member/claim — submit a new claim (no SigV4)

@@ -139,6 +139,81 @@ class AppStrings {
       'chatViewPolicies': 'Voir mes polices',
       'chatAutoPromptInfo': 'Veuillez me présenter mes informations de profil en détail.',
       'chatAutoPromptPolicies': 'Veuillez me présenter mes polices d\'assurance en détail.',
+
+      // Dashboard cards & greeting
+      'membershipActive': 'Votre adhésion est active',
+      'membershipInactive': 'Votre adhésion est inactive',
+      'policiesLabel': 'Polices',
+      'premiumLabel': 'Prime',
+      'nextPaymentLabel': 'Prochain Paiement',
+      'monthlyDue': 'Mensuel dû',
+      'dueDate': 'Date d\'échéance',
+
+      // Quick actions
+      'quickActions': 'Actions Rapides',
+      'payPremium': 'Payer la Prime',
+      'payPremiumSub': 'Effectuer un paiement pour votre police',
+      'myCertificate': 'Mon Certificat',
+      'myCertificateSub': 'Télécharger votre certificat d\'adhésion',
+      'paymentHistory': 'Historique des Paiements',
+      'paymentHistorySub': 'Voir les paiements passés et à venir',
+      'contactSupport': 'Contacter le Support',
+      'contactSupportSub': 'Obtenir de l\'aide de l\'équipe KAFA',
+
+      // Member overview section
+      'memberOverview': 'Aperçu du Membre',
+      'memberSince': 'Membre depuis',
+
+      // Alerts & Reminders
+      'alertsReminders': 'Alertes et Rappels',
+      'alertInactive': 'Votre adhésion est actuellement inactive. Contactez KAFA pour la réactiver.',
+      'alertNextPayment': 'Prochain paiement de prime dû : {date}',
+      'alertContactInfo': 'Gardez vos informations de contact à jour pour un service plus rapide.',
+
+      // Payments tab
+      'paymentsTitle': 'Paiements',
+      'managePayments': 'Gérer vos paiements de prime',
+      'lastPayment': 'Dernier Paiement',
+      'noRecord': 'Aucun enregistrement',
+      'contactUs': 'Contactez-nous',
+      'amountDue': 'Montant dû : ',
+      'payNow': 'Payer Maintenant',
+      'processing': 'Traitement…',
+      'paymentAccessDisabled': 'L\'accès au paiement n\'est pas activé pour votre compte. Veuillez contacter votre administrateur KAFA.',
+      'securePayment': 'Paiement sécurisé traité par KAFA',
+      'noPaymentRecords': 'Aucun enregistrement de paiement disponible.',
+      'paymentPortal': 'Portail de Paiement',
+      'paymentComingSoon': 'Le paiement en ligne arrive bientôt. Veuillez visiter un bureau KAFA ou contacter le support pour effectuer votre paiement.',
+      'ok': 'OK',
+      'policyPrefix': 'Police',
+      'sincePrefix': 'Depuis',
+
+      // Certificate sheet
+      'memberCertificateTitle': 'Certificat de Membre',
+      'downloadCertificateDesc': 'Téléchargez votre certificat officiel d\'adhésion KAFA.',
+      'certificateComingSoon': 'Téléchargement du certificat bientôt disponible',
+
+      // Support sheet
+      'callUs': 'Appelez-nous',
+      'hours': 'Heures',
+      'hoursValue': 'Lun–Ven 8h–17h',
+
+      // Payment notification banner
+      'paymentReceived': 'Paiement Reçu',
+      'paymentReceivedDesc': 'Votre paiement de HTG {amount} a été collecté par un administrateur KAFA.',
+      'gotItDismiss': 'Compris — Fermer',
+      'dateLabel': 'Date',
+      'methodLabel': 'Méthode',
+      'referenceLabel': 'Référence',
+
+      // Bottom nav
+      'navDashboard': 'Tableau de bord',
+      'navPayments': 'Paiements',
+      'navPolicies': 'Polices',
+      'navAssistant': 'Assistant',
+
+      // No-policy banner
+      'contactKafaForAuth': 'Veuillez contacter KAFA pour une autorisation',
     },
     'en': {
       // Login
@@ -279,10 +354,109 @@ class AppStrings {
       'chatViewPolicies': 'View My Policies',
       'chatAutoPromptInfo': 'Please show me my profile information in detail.',
       'chatAutoPromptPolicies': 'Please show me my insurance policies in detail.',
+
+      // Dashboard cards & greeting
+      'membershipActive': 'Your membership is active',
+      'membershipInactive': 'Your membership is inactive',
+      'policiesLabel': 'Policies',
+      'premiumLabel': 'Premium',
+      'nextPaymentLabel': 'Next Payment',
+      'monthlyDue': 'Monthly due',
+      'dueDate': 'Due date',
+
+      // Quick actions
+      'quickActions': 'Quick Actions',
+      'payPremium': 'Pay Premium',
+      'payPremiumSub': 'Make a payment toward your policy',
+      'myCertificate': 'My Certificate',
+      'myCertificateSub': 'Download your membership certificate',
+      'paymentHistory': 'Payment History',
+      'paymentHistorySub': 'View past and upcoming payments',
+      'contactSupport': 'Contact Support',
+      'contactSupportSub': 'Get help from the KAFA team',
+
+      // Member overview section
+      'memberOverview': 'Member Overview',
+      'memberSince': 'Member Since',
+
+      // Alerts & Reminders
+      'alertsReminders': 'Alerts & Reminders',
+      'alertInactive': 'Your membership is currently inactive. Contact KAFA to reactivate.',
+      'alertNextPayment': 'Next premium payment due: {date}',
+      'alertContactInfo': 'Keep your contact information up to date for faster service.',
+
+      // Payments tab
+      'paymentsTitle': 'Payments',
+      'managePayments': 'Manage your premium payments',
+      'lastPayment': 'Last Payment',
+      'noRecord': 'No record',
+      'contactUs': 'Contact us',
+      'amountDue': 'Amount due: ',
+      'payNow': 'Pay Now',
+      'processing': 'Processing…',
+      'paymentAccessDisabled': 'Payment access is not enabled for your account. Please contact your KAFA administrator.',
+      'securePayment': 'Secure payment processed by KAFA',
+      'noPaymentRecords': 'No payment records available.',
+      'paymentPortal': 'Payment Portal',
+      'paymentComingSoon': 'Online payment is coming soon. Please visit a KAFA office or contact support to make your payment.',
+      'ok': 'OK',
+      'policyPrefix': 'Policy',
+      'sincePrefix': 'Since',
+
+      // Certificate sheet
+      'memberCertificateTitle': 'Member Certificate',
+      'downloadCertificateDesc': 'Download your official KAFA membership certificate.',
+      'certificateComingSoon': 'Certificate download coming soon',
+
+      // Support sheet
+      'callUs': 'Call Us',
+      'hours': 'Hours',
+      'hoursValue': 'Mon–Fri 8am–5pm',
+
+      // Payment notification banner
+      'paymentReceived': 'Payment Received',
+      'paymentReceivedDesc': 'Your payment of HTG {amount} has been collected by a KAFA administrator.',
+      'gotItDismiss': 'Got it — Dismiss',
+      'dateLabel': 'Date',
+      'methodLabel': 'Method',
+      'referenceLabel': 'Reference',
+
+      // Bottom nav
+      'navDashboard': 'Dashboard',
+      'navPayments': 'Payments',
+      'navPolicies': 'Policies',
+      'navAssistant': 'Assistant',
+
+      // No-policy banner
+      'contactKafaForAuth': 'Please contact KAFA for authorization',
     },
   };
 
   static String get(String key, String locale) {
     return _data[locale]?[key] ?? _data['en']?[key] ?? key;
+  }
+
+  static const _monthsEn = [
+    '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
+  static const _monthsFr = [
+    '', 'Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun',
+    'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'
+  ];
+
+  /// Formats a YYYY-MM-DD date string into a short locale-aware label.
+  static String formatDate(String raw, String locale) {
+    try {
+      final parts = raw.split('-');
+      if (parts.length == 3) {
+        final months = locale == 'fr' ? _monthsFr : _monthsEn;
+        final m = int.tryParse(parts[1]) ?? 0;
+        if (m >= 1 && m <= 12) {
+          return '${months[m]} ${parts[2]}, ${parts[0]}';
+        }
+      }
+    } catch (_) {}
+    return raw;
   }
 }
