@@ -2,8 +2,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../misc/app_strings.dart';
+import '../providers/language_provider.dart';
 
 class ChatMessage {
   final String text;
@@ -85,6 +87,39 @@ class _ChatbotWidgetState extends State<ChatbotWidget>
     if (mounted) setState(() => _speechAvailable = available);
   }
 
+  /// Simple keyword-based language detector. Returns a locale code or '' if
+  /// the language can't be determined from the text.
+  String _detectLocale(String text) {
+    final t = text.toLowerCase();
+
+    // Haitian Creole — distinctive words
+    const htWords = ['mwen', 'bonjou', 'bonswa', 'koman', 'kisa', 'mèsi',
+        'merci', 'konnen', 'pou mwen', 'ki jan', 'ou ye', 'tanpri', 'ede mwen'];
+    // Spanish
+    const esWords = ['hola', 'gracias', 'cómo', 'estoy', 'tengo', 'necesito',
+        'quiero', 'puedo', 'hablar', 'ayuda', 'buenos', 'por favor'];
+    // Portuguese
+    const ptWords = ['olá', 'obrigado', 'obrigada', 'preciso', 'quero', 'posso',
+        'falar', 'ajuda', 'você', 'bom dia', 'boa tarde', 'por favor'];
+    // French
+    const frWords = ['bonjour', 'merci', 'comment', 'je suis', 'je veux',
+        'pouvez', 'aide', 'bonsoir', 's\'il vous plaît'];
+
+    int score(List<String> words) =>
+        words.fold(0, (sum, w) => sum + (t.contains(w) ? 1 : 0));
+
+    final scores = {
+      'ht': score(htWords),
+      'es': score(esWords),
+      'pt': score(ptWords),
+      'fr': score(frWords),
+    };
+
+    final best = scores.entries
+        .reduce((a, b) => a.value >= b.value ? a : b);
+    return best.value > 0 ? best.key : '';
+  }
+
   void _addBotGreeting() {
     final greeting = s('chatbotGreeting').replaceAll('{name}', _firstName);
     setState(() {
@@ -164,6 +199,14 @@ class _ChatbotWidgetState extends State<ChatbotWidget>
     if (trimmed.isEmpty || _isBotThinking) return;
 
     _textCtrl.clear();
+
+    // Detect language on first user message and update the whole page
+    if (_history.isEmpty) {
+      final detected = _detectLocale(trimmed);
+      if (detected.isNotEmpty && detected != _locale) {
+        context.read<LanguageProvider>().setLocale(detected);
+      }
+    }
 
     // Add to display
     setState(() {

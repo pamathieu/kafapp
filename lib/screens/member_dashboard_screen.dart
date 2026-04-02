@@ -1,6 +1,4 @@
 import 'dart:convert';
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
@@ -65,29 +63,29 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
         member['status'] == true || member['status'] == 'true';
 
     final tabs = [
-      _DashboardTab(member: member, locale: locale, onGoTransactions: () => _goTab(1)),
-      _TransactionsTab(member: member, locale: locale),
+      _DashboardTab(member: member, onGoTransactions: () => _goTab(1)),
+      _TransactionsTab(member: member),
       PolicyScreen(member: member, embedded: true),
       ChatbotWidget(member: member, locale: locale),
     ];
 
-    const navItems = [
+    final navItems = [
       BottomNavigationBarItem(
-          icon: Icon(Icons.dashboard_outlined),
-          activeIcon: Icon(Icons.dashboard),
-          label: 'Dashboard'),
+          icon: const Icon(Icons.dashboard_outlined),
+          activeIcon: const Icon(Icons.dashboard),
+          label: s('navDashboard')),
       BottomNavigationBarItem(
-          icon: Icon(Icons.receipt_long_outlined),
-          activeIcon: Icon(Icons.receipt_long),
-          label: 'Payments'),
+          icon: const Icon(Icons.receipt_long_outlined),
+          activeIcon: const Icon(Icons.receipt_long),
+          label: s('navPayments')),
       BottomNavigationBarItem(
-          icon: Icon(Icons.policy_outlined),
-          activeIcon: Icon(Icons.policy),
-          label: 'Policies'),
+          icon: const Icon(Icons.policy_outlined),
+          activeIcon: const Icon(Icons.policy),
+          label: s('navPolicies')),
       BottomNavigationBarItem(
-          icon: Icon(Icons.chat_bubble_outline),
-          activeIcon: Icon(Icons.chat_bubble),
-          label: 'Assistant'),
+          icon: const Icon(Icons.chat_bubble_outline),
+          activeIcon: const Icon(Icons.chat_bubble),
+          label: s('navAssistant')),
     ];
 
     return Scaffold(
@@ -106,7 +104,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
             (_) => false,
           );
         },
-        onLangToggle: () => context.read<LanguageProvider>().toggle(),
+        onLocaleChange: (code) => context.read<LanguageProvider>().setLocale(code),
       ),
       body: IndexedStack(index: _tab, children: tabs),
       bottomNavigationBar: BottomNavigationBar(
@@ -134,7 +132,8 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
   final bool isActive;
   final bool hasPolicy;
   final String Function(String) s;
-  final VoidCallback onLogout, onLangToggle;
+  final VoidCallback onLogout;
+  final void Function(String) onLocaleChange;
 
   const _KafaAppBar({
     required this.name,
@@ -143,17 +142,45 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.s,
     required this.hasPolicy,
     required this.onLogout,
-    required this.onLangToggle,
+    required this.onLocaleChange,
   });
 
   @override
   Size get preferredSize => Size.fromHeight(
       hasPolicy ? kToolbarHeight : kToolbarHeight + 40);
 
+  void _showContactAdminPopup(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.support_agent, color: _green, size: 48),
+            const SizedBox(height: 8),
+            Text(s('contactSupport'),
+                style: const TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            _SupportTile(icon: Icons.phone, label: s('callUs'), value: '+509 XXXX-XXXX'),
+            const Divider(),
+            _SupportTile(icon: Icons.email, label: s('email'), value: 'support@kafa.org'),
+            const Divider(),
+            _SupportTile(icon: Icons.access_time, label: s('hours'), value: s('hoursValue')),
+            const SizedBox(height: 8),
+          ]),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final initials  = name.isNotEmpty ? name[0].toUpperCase() : '?';
-    final langLabel = locale == 'fr' ? '🇺🇸 EN' : '🇫🇷 FR';
+    final initials = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    final currentLang = LanguageProvider.supportedLanguages
+        .firstWhere((l) => l['code'] == locale,
+            orElse: () => LanguageProvider.supportedLanguages.first);
 
     return AppBar(
       backgroundColor: _green,
@@ -192,18 +219,17 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
           child: Row(children: [
             const Icon(Icons.info_outline, size: 16, color: Color(0xFF856404)),
             const SizedBox(width: 8),
-            const Expanded(
+            Expanded(
               child: Text(
-                'Please contact KAFA for authorization',
-                style: TextStyle(
+                s('contactKafaForAuth'),
+                style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF856404)),
               ),
             ),
             TextButton(
-              onPressed: () =>
-                  html.window.open('https://admin.kafayiti.com', '_blank'),
+              onPressed: () => _showContactAdminPopup(context),
               style: TextButton.styleFrom(
                 backgroundColor: const Color(0xFF856404),
                 foregroundColor: Colors.white,
@@ -221,13 +247,45 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
         ),
       ),
       actions: [
+        // ── Language dropdown ─────────────────────────────────────────────
+        PopupMenuButton<String>(
+          offset: const Offset(0, 48),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          onSelected: onLocaleChange,
+          itemBuilder: (_) => LanguageProvider.supportedLanguages
+              .map((lang) => PopupMenuItem<String>(
+                    value: lang['code'],
+                    child: Row(children: [
+                      Text(lang['label']!,
+                          style: TextStyle(
+                              fontWeight: lang['code'] == locale
+                                  ? FontWeight.bold
+                                  : FontWeight.normal)),
+                      if (lang['code'] == locale) ...[
+                        const Spacer(),
+                        const Icon(Icons.check, size: 16, color: _green),
+                      ],
+                    ]),
+                  ))
+              .toList(),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.language, color: Colors.white70, size: 18),
+              const SizedBox(width: 4),
+              Text(currentLang['label']!.split(' ').first,
+                  style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              const Icon(Icons.arrow_drop_down, color: Colors.white70, size: 18),
+            ]),
+          ),
+        ),
+        // ── Profile menu ──────────────────────────────────────────────────
         PopupMenuButton<String>(
           offset: const Offset(0, 48),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           onSelected: (v) {
             if (v == 'logout') onLogout();
-            if (v == 'lang') onLangToggle();
           },
           itemBuilder: (_) => [
             PopupMenuItem<String>(
@@ -263,15 +321,6 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
                   ),
                 ]),
               ),
-            ),
-            const PopupMenuDivider(),
-            PopupMenuItem<String>(
-              value: 'lang',
-              child: Row(children: [
-                const Icon(Icons.language, size: 18, color: _green),
-                const SizedBox(width: 12),
-                Text(langLabel),
-              ]),
             ),
             const PopupMenuDivider(),
             PopupMenuItem<String>(
@@ -316,12 +365,10 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
 
 class _DashboardTab extends StatefulWidget {
   final Map<String, dynamic> member;
-  final String locale;
   final VoidCallback onGoTransactions;
 
   const _DashboardTab(
       {required this.member,
-      required this.locale,
       required this.onGoTransactions});
 
   @override
@@ -367,6 +414,9 @@ class _DashboardTabState extends State<_DashboardTab> {
 
   @override
   Widget build(BuildContext context) {
+    final locale = context.watch<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
+
     final member = widget.member;
     final name = member['full_name'] as String? ?? '';
     final memberId = member['memberId'] as String? ?? '';
@@ -398,17 +448,17 @@ class _DashboardTabState extends State<_DashboardTab> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
           // ── Payment notification banner ───────────────────────────────────
-          _PaymentNotificationBanner(member: widget.member),
+          _PaymentNotificationBanner(member: widget.member, locale: locale),
 
           // ── Greeting ──────────────────────────────────────────────────────
-          Text('Hello, $firstName 👋',
+          Text('${s('helloGreeting')}, $firstName 👋',
               style: const TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
                   color: Color(0xFF1A1A1A))),
           const SizedBox(height: 2),
           Text(
-            isActive ? 'Your membership is active' : 'Your membership is inactive',
+            isActive ? s('membershipActive') : s('membershipInactive'),
             style: TextStyle(
                 fontSize: 13,
                 color: isActive ? Colors.green.shade700 : Colors.grey.shade600),
@@ -422,13 +472,13 @@ class _DashboardTabState extends State<_DashboardTab> {
                 icon: Icons.badge_outlined,
                 iconColor: _green,
                 accentColor: const Color(0xFFE8F5E9),
-                label: 'Member ID',
+                label: s('memberId'),
                 value: memberId.isNotEmpty
                     ? memberId.length > 12
                         ? '…${memberId.substring(memberId.length - 8)}'
                         : memberId
                     : '—',
-                sub: isActive ? 'Active' : 'Inactive',
+                sub: isActive ? s('active') : s('inactive'),
                 subColor: isActive ? Colors.green.shade700 : Colors.grey,
               ),
             ),
@@ -438,11 +488,9 @@ class _DashboardTabState extends State<_DashboardTab> {
                 icon: Icons.policy_outlined,
                 iconColor: const Color(0xFF1565C0),
                 accentColor: const Color(0xFFE3F2FD),
-                label: 'Policies',
-                value: _loadingPolicies ? '…' : '$activePolicies active',
-                sub: _loadingPolicies
-                    ? ''
-                    : '$totalPolicies total',
+                label: s('policiesLabel'),
+                value: _loadingPolicies ? '…' : '$activePolicies ${s('active').toLowerCase()}',
+                sub: _loadingPolicies ? '' : '$totalPolicies total',
                 subColor: Colors.grey.shade600,
               ),
             ),
@@ -455,9 +503,9 @@ class _DashboardTabState extends State<_DashboardTab> {
                 icon: Icons.payments_outlined,
                 iconColor: const Color(0xFF7B1FA2),
                 accentColor: const Color(0xFFF3E5F5),
-                label: 'Premium',
+                label: s('premiumLabel'),
                 value: premiumAmount != '—' ? 'HTG $premiumAmount' : '—',
-                sub: 'Monthly due',
+                sub: s('monthlyDue'),
                 subColor: Colors.grey.shade600,
               ),
             ),
@@ -467,11 +515,11 @@ class _DashboardTabState extends State<_DashboardTab> {
                 icon: Icons.calendar_month_outlined,
                 iconColor: const Color(0xFFE65100),
                 accentColor: const Color(0xFFFFF3E0),
-                label: 'Next Payment',
+                label: s('nextPaymentLabel'),
                 value: nextPayDate != '—'
-                    ? _formatShortDate(nextPayDate)
+                    ? AppStrings.formatDate(nextPayDate, locale)
                     : '—',
-                sub: 'Due date',
+                sub: s('dueDate'),
                 subColor: Colors.grey.shade600,
               ),
             ),
@@ -479,8 +527,8 @@ class _DashboardTabState extends State<_DashboardTab> {
           const SizedBox(height: 24),
 
           // ── Quick actions ─────────────────────────────────────────────────
-          const Text('Quick Actions',
-              style: TextStyle(
+          Text(s('quickActions'),
+              style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
                   color: Color(0xFF1A1A1A))),
@@ -499,8 +547,8 @@ class _DashboardTabState extends State<_DashboardTab> {
             child: Column(children: [
               _QuickAction(
                 icon: Icons.credit_card,
-                label: 'Pay Premium',
-                subtitle: 'Make a payment toward your policy',
+                label: s('payPremium'),
+                subtitle: s('payPremiumSub'),
                 color: _green,
                 isFirst: true,
                 isLast: false,
@@ -508,17 +556,17 @@ class _DashboardTabState extends State<_DashboardTab> {
               ),
               _QuickAction(
                 icon: Icons.description,
-                label: 'My Certificate',
-                subtitle: 'Download your membership certificate',
+                label: s('myCertificate'),
+                subtitle: s('myCertificateSub'),
                 color: const Color(0xFF1565C0),
                 isFirst: false,
                 isLast: false,
-                onTap: () => _showCertificateSheet(context, member),
+                onTap: () => _showCertificateSheet(context, member, s),
               ),
               _QuickAction(
                 icon: Icons.receipt_long,
-                label: 'Payment History',
-                subtitle: 'View past and upcoming payments',
+                label: s('paymentHistory'),
+                subtitle: s('paymentHistorySub'),
                 color: const Color(0xFF7B1FA2),
                 isFirst: false,
                 isLast: false,
@@ -526,12 +574,12 @@ class _DashboardTabState extends State<_DashboardTab> {
               ),
               _QuickAction(
                 icon: Icons.headset_mic,
-                label: 'Contact Support',
-                subtitle: 'Get help from the KAFA team',
+                label: s('contactSupport'),
+                subtitle: s('contactSupportSub'),
                 color: const Color(0xFFE65100),
                 isFirst: false,
                 isLast: true,
-                onTap: () => _showSupportSheet(context),
+                onTap: () => _showSupportSheet(context, s),
               ),
             ]),
           ),
@@ -539,56 +587,40 @@ class _DashboardTabState extends State<_DashboardTab> {
 
           // ── Member info card ──────────────────────────────────────────────
           _SectionCard(
-            title: 'Member Overview',
+            title: s('memberOverview'),
             icon: Icons.person_outline,
             child: Column(children: [
-              _OverviewRow(
-                  icon: Icons.person, label: 'Full Name', value: name),
+              _OverviewRow(icon: Icons.person, label: s('fullName'), value: name),
               _OverviewRow(
                   icon: Icons.location_on_outlined,
-                  label: 'Commune',
+                  label: s('commune'),
                   value: (member['locality'] as Map<String, dynamic>?)?['commune'] as String? ?? '—'),
               _OverviewRow(
                   icon: Icons.phone_outlined,
-                  label: 'Phone',
+                  label: s('phone'),
                   value: member['phone'] as String? ?? '—'),
               _OverviewRow(
                   icon: Icons.email_outlined,
-                  label: 'Email',
+                  label: s('email'),
                   value: member['email'] as String? ?? '—'),
               if (issuedDate.isNotEmpty)
                 _OverviewRow(
                     icon: Icons.verified_outlined,
-                    label: 'Member Since',
-                    value: _formatShortDate(issuedDate)),
+                    label: s('memberSince'),
+                    value: AppStrings.formatDate(issuedDate, locale)),
             ]),
           ),
           const SizedBox(height: 16),
 
           // ── Alerts card ───────────────────────────────────────────────────
-          _AlertsCard(isActive: isActive, nextPayDate: nextPayDate),
+          _AlertsCard(isActive: isActive, nextPayDate: nextPayDate, locale: locale),
         ]),
       ),
     );
   }
 
-  String _formatShortDate(String raw) {
-    try {
-      final parts = raw.split('-');
-      if (parts.length == 3) {
-        const months = [
-          '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-        ];
-        final m = int.tryParse(parts[1]) ?? 0;
-        return '${months[m]} ${parts[2]}, ${parts[0]}';
-      }
-    } catch (_) {}
-    return raw;
-  }
-
   void _showCertificateSheet(
-      BuildContext context, Map<String, dynamic> member) {
+      BuildContext context, Map<String, dynamic> member, String Function(String) s) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -598,17 +630,16 @@ class _DashboardTabState extends State<_DashboardTab> {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           const Icon(Icons.description, color: _green, size: 48),
           const SizedBox(height: 12),
-          const Text('Member Certificate',
-              style:
-                  TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Text(s('memberCertificateTitle'),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          Text('Download your official KAFA membership certificate.',
+          Text(s('downloadCertificateDesc'),
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.grey.shade600)),
           const SizedBox(height: 20),
           ElevatedButton.icon(
             icon: const Icon(Icons.download),
-            label: const Text('Download PDF'),
+            label: Text(s('downloadPdf')),
             style: ElevatedButton.styleFrom(
                 backgroundColor: _green,
                 foregroundColor: Colors.white,
@@ -618,8 +649,8 @@ class _DashboardTabState extends State<_DashboardTab> {
             onPressed: () {
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text('Certificate download coming soon'),
+                SnackBar(
+                    content: Text(s('certificateComingSoon')),
                     backgroundColor: _green),
               );
             },
@@ -629,34 +660,24 @@ class _DashboardTabState extends State<_DashboardTab> {
     );
   }
 
-  void _showSupportSheet(BuildContext context) {
+  void _showSupportSheet(BuildContext context, String Function(String) s) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => Padding(
         padding: const EdgeInsets.all(24),
-        child: Column(mainAxisSize: MainAxisSize.min, children: const [
-          Icon(Icons.support_agent, color: _green, size: 48),
-          SizedBox(height: 12),
-          Text('Contact Support',
-              style:
-                  TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          SizedBox(height: 16),
-          _SupportTile(
-              icon: Icons.phone,
-              label: 'Call Us',
-              value: '+509 XXXX-XXXX'),
-          Divider(),
-          _SupportTile(
-              icon: Icons.email,
-              label: 'Email',
-              value: 'support@kafa.org'),
-          Divider(),
-          _SupportTile(
-              icon: Icons.access_time,
-              label: 'Hours',
-              value: 'Mon–Fri 8am–5pm'),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.support_agent, color: _green, size: 48),
+          const SizedBox(height: 12),
+          Text(s('contactSupport'),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          _SupportTile(icon: Icons.phone, label: s('callUs'), value: '+509 XXXX-XXXX'),
+          const Divider(),
+          _SupportTile(icon: Icons.email, label: s('email'), value: 'support@kafa.org'),
+          const Divider(),
+          _SupportTile(icon: Icons.access_time, label: s('hours'), value: s('hoursValue')),
         ]),
       ),
     );
@@ -669,9 +690,8 @@ class _DashboardTabState extends State<_DashboardTab> {
 
 class _TransactionsTab extends StatefulWidget {
   final Map<String, dynamic> member;
-  final String locale;
 
-  const _TransactionsTab({required this.member, required this.locale});
+  const _TransactionsTab({required this.member});
 
   @override
   State<_TransactionsTab> createState() => _TransactionsTabState();
@@ -718,6 +738,9 @@ class _TransactionsTabState extends State<_TransactionsTab> {
 
   @override
   Widget build(BuildContext context) {
+    final locale = context.watch<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
+
     final firstEntry    = _policies.isNotEmpty ? _policies.first : null;
     final firstPolicy   = firstEntry?['policy']  as Map<String, dynamic>?;
     final firstLastPay  = firstEntry?['lastPay']  as Map<String, dynamic>?;
@@ -727,7 +750,6 @@ class _TransactionsTabState extends State<_TransactionsTab> {
     final nextPayDate   = firstPolicy?['nextDueDate']    as String? ?? '—';
     final policyNo      = firstPolicy?['policyNo']       as String? ?? '—';
 
-    // Check if member has payment access
     final paymentAccess = widget.member['payment_access'] == true;
 
     return RefreshIndicator(
@@ -737,21 +759,18 @@ class _TransactionsTabState extends State<_TransactionsTab> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Payments',
-              style: TextStyle(
+          Text(s('paymentsTitle'),
+              style: const TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
                   color: Color(0xFF1A1A1A))),
           const SizedBox(height: 4),
-          Text('Manage your premium payments',
-              style:
-                  TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+          Text(s('managePayments'),
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
           const SizedBox(height: 20),
 
-          // ── Payment summary cards ─────────────────────────────────────
           if (_loading)
-            const Center(
-                child: Padding(
+            const Center(child: Padding(
               padding: EdgeInsets.all(32),
               child: CircularProgressIndicator(color: _green),
             ))
@@ -759,128 +778,99 @@ class _TransactionsTabState extends State<_TransactionsTab> {
             Row(children: [
               Expanded(
                 child: _PayInfoCard(
-                  label: 'Last Payment',
+                  label: s('lastPayment'),
                   icon: Icons.check_circle_outline,
                   iconColor: Colors.green.shade600,
                   value: lastPayDate != '—'
-                      ? _fmtDate(lastPayDate)
-                      : 'No record',
+                      ? AppStrings.formatDate(lastPayDate, locale)
+                      : s('noRecord'),
                   sub: premiumAmount != '—' ? 'HTG $premiumAmount' : '',
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: _PayInfoCard(
-                  label: 'Next Payment',
+                  label: s('nextPaymentLabel'),
                   icon: Icons.schedule,
                   iconColor: const Color(0xFFE65100),
                   value: nextPayDate != '—'
-                      ? _fmtDate(nextPayDate)
-                      : 'Contact us',
+                      ? AppStrings.formatDate(nextPayDate, locale)
+                      : s('contactUs'),
                   sub: premiumAmount != '—' ? 'HTG $premiumAmount' : '',
                 ),
               ),
             ]),
             const SizedBox(height: 20),
 
-            // ── Pay Premium button ────────────────────────────────────
             _SectionCard(
-              title: 'Pay Premium',
+              title: s('payPremium'),
               icon: Icons.credit_card,
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (policyNo != '—') ...[
-                      Text('Policy: $policyNo',
-                          style: TextStyle(
-                              fontSize: 13, color: Colors.grey.shade600)),
-                      const SizedBox(height: 4),
-                    ],
-                    if (premiumAmount != '—') ...[
-                      RichText(
-                        text: TextSpan(children: [
-                          TextSpan(
-                              text: 'Amount due: ',
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.grey.shade600)),
-                          TextSpan(
-                              text: 'HTG $premiumAmount',
-                              style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: _green)),
-                        ]),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                    ElevatedButton.icon(
-                      icon: _payLoading
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2))
-                          : const Icon(Icons.payment),
-                      label: Text(
-                          _payLoading ? 'Processing…' : 'Pay Now'),
-                      style: ElevatedButton.styleFrom(
-                          backgroundColor: paymentAccess ? _green : Colors.grey.shade400,
-                          foregroundColor: Colors.white,
-                          minimumSize:
-                              const Size(double.infinity, 52),
-                          shape: RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(12))),
-                      onPressed: (!paymentAccess || _payLoading)
-                          ? null
-                          : () => _handlePayNow(context),
-                    ),
-                    if (!paymentAccess) ...[
-                      const SizedBox(height: 8),
-                      Row(children: [
-                        Icon(Icons.lock_outline,
-                            size: 14, color: Colors.grey.shade500),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            'Payment access is not enabled for your account. Please contact your KAFA administrator.',
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade500),
-                          ),
-                        ),
-                      ]),
-                    ],
-                    const SizedBox(height: 8),
-                    Center(
-                      child: Text(
-                        'Secure payment processed by KAFA',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey.shade500),
-                      ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if (policyNo != '—') ...[
+                  Text('${s('policyPrefix')}: $policyNo',
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+                  const SizedBox(height: 4),
+                ],
+                if (premiumAmount != '—') ...[
+                  RichText(
+                    text: TextSpan(children: [
+                      TextSpan(
+                          text: s('amountDue'),
+                          style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+                      TextSpan(
+                          text: 'HTG $premiumAmount',
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.bold, color: _green)),
+                    ]),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                ElevatedButton.icon(
+                  icon: _payLoading
+                      ? const SizedBox(
+                          width: 18, height: 18,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Icon(Icons.payment),
+                  label: Text(_payLoading ? s('processing') : s('payNow')),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: paymentAccess ? _green : Colors.grey.shade400,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(double.infinity, 52),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                  onPressed: (!paymentAccess || _payLoading)
+                      ? null
+                      : () => _handlePayNow(context, s),
+                ),
+                if (!paymentAccess) ...[
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    Icon(Icons.lock_outline, size: 14, color: Colors.grey.shade500),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(s('paymentAccessDisabled'),
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
                     ),
                   ]),
+                ],
+                const SizedBox(height: 8),
+                Center(child: Text(s('securePayment'),
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade500))),
+              ]),
             ),
             const SizedBox(height: 20),
 
-            // ── Payment history ───────────────────────────────────────
             _SectionCard(
-              title: 'Payment History',
+              title: s('paymentHistory'),
               icon: Icons.history,
               child: _policies.isEmpty
                   ? Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Text('No payment records available.',
-                          style: TextStyle(
-                              color: Colors.grey.shade500,
-                              fontSize: 13)),
+                      child: Text(s('noPaymentRecords'),
+                          style: TextStyle(color: Colors.grey.shade500, fontSize: 13)),
                     )
                   : Column(
                       children: _policies
-                          .map((p) => _PaymentHistoryTile(policy: p))
+                          .map((p) => _PaymentHistoryTile(policy: p, locale: locale))
                           .toList()),
             ),
           ],
@@ -889,67 +879,43 @@ class _TransactionsTabState extends State<_TransactionsTab> {
     );
   }
 
-  Future<void> _handlePayNow(BuildContext context) async {
+  Future<void> _handlePayNow(BuildContext context, String Function(String) s) async {
     setState(() => _payLoading = true);
     await Future.delayed(const Duration(seconds: 1));
     if (!mounted) return;
     setState(() => _payLoading = false);
-    // ignore: use_build_context_synchronously
-    showModalBottomSheet(
-      context: context,
+    showModalBottomSheet( // ignore: use_build_context_synchronously
+      context: this.context,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => Padding(
         padding: const EdgeInsets.all(24),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-                color: Colors.green.shade50, shape: BoxShape.circle),
-            child:
-                Icon(Icons.check_circle, color: Colors.green.shade600, size: 36),
+            width: 56, height: 56,
+            decoration: BoxDecoration(color: Colors.green.shade50, shape: BoxShape.circle),
+            child: Icon(Icons.check_circle, color: Colors.green.shade600, size: 36),
           ),
           const SizedBox(height: 16),
-          const Text('Payment Portal',
-              style:
-                  TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Text(s('paymentPortal'),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          Text(
-            'Online payment is coming soon. Please visit a KAFA office or contact support to make your payment.',
-            textAlign: TextAlign.center,
-            style:
-                TextStyle(color: Colors.grey.shade600, fontSize: 13),
-          ),
+          Text(s('paymentComingSoon'),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
           const SizedBox(height: 20),
           ElevatedButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(this.context),
             style: ElevatedButton.styleFrom(
                 backgroundColor: _green,
                 foregroundColor: Colors.white,
                 minimumSize: const Size(double.infinity, 48),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12))),
-            child: const Text('OK'),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            child: Text(s('ok')),
           ),
         ]),
       ),
     );
-  }
-
-  String _fmtDate(String raw) {
-    try {
-      final parts = raw.split('-');
-      if (parts.length == 3) {
-        const months = [
-          '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-        ];
-        final m = int.tryParse(parts[1]) ?? 0;
-        return '${months[m]} ${parts[2]}, ${parts[0]}';
-      }
-    } catch (_) {}
-    return raw;
   }
 }
 
@@ -1154,18 +1120,24 @@ class _OverviewRow extends StatelessWidget {
 class _AlertsCard extends StatelessWidget {
   final bool isActive;
   final String nextPayDate;
+  final String locale;
 
-  const _AlertsCard({required this.isActive, required this.nextPayDate});
+  const _AlertsCard({
+    required this.isActive,
+    required this.nextPayDate,
+    required this.locale,
+  });
 
   @override
   Widget build(BuildContext context) {
+    String s(String key) => AppStrings.get(key, locale);
     final alerts = <Map<String, dynamic>>[];
 
     if (!isActive) {
       alerts.add({
         'icon': Icons.warning_amber_rounded,
         'color': Colors.orange,
-        'text': 'Your membership is currently inactive. Contact KAFA to reactivate.',
+        'text': s('alertInactive'),
       });
     }
 
@@ -1173,18 +1145,18 @@ class _AlertsCard extends StatelessWidget {
       alerts.add({
         'icon': Icons.notifications_active_outlined,
         'color': _green,
-        'text': 'Next premium payment due: $nextPayDate',
+        'text': s('alertNextPayment').replaceAll('{date}', nextPayDate),
       });
     }
 
     alerts.add({
       'icon': Icons.info_outline,
       'color': const Color(0xFF1565C0),
-      'text': 'Keep your contact information up to date for faster service.',
+      'text': s('alertContactInfo'),
     });
 
     return _SectionCard(
-      title: 'Alerts & Reminders',
+      title: s('alertsReminders'),
       icon: Icons.notifications_outlined,
       child: Column(
         children: alerts
@@ -1260,11 +1232,13 @@ class _PayInfoCard extends StatelessWidget {
 
 class _PaymentHistoryTile extends StatelessWidget {
   final Map<String, dynamic> policy;
+  final String locale;
 
-  const _PaymentHistoryTile({required this.policy});
+  const _PaymentHistoryTile({required this.policy, required this.locale});
 
   @override
   Widget build(BuildContext context) {
+    String s(String key) => AppStrings.get(key, locale);
     final pol       = policy['policy'] as Map<String, dynamic>? ?? {};
     final policyNo  = pol['policyNo']      as String? ?? '—';
     final premium   = pol['premiumAmount']?.toString() ?? '—';
@@ -1279,8 +1253,7 @@ class _PaymentHistoryTile extends StatelessWidget {
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-              color:
-                  isActive ? Colors.green.shade50 : Colors.grey.shade100,
+              color: isActive ? Colors.green.shade50 : Colors.grey.shade100,
               shape: BoxShape.circle),
           child: Icon(
             isActive ? Icons.check_circle : Icons.cancel_outlined,
@@ -1291,14 +1264,13 @@ class _PaymentHistoryTile extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Policy $policyNo',
+            Text('${s('policyPrefix')} $policyNo',
                 style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF1A1A1A))),
-            Text('Since $startDate',
-                style:
-                    TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+            Text('${s('sincePrefix')} $startDate',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
           ]),
         ),
         Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
@@ -1340,7 +1312,8 @@ class _PaymentHistoryTile extends StatelessWidget {
 
 class _PaymentNotificationBanner extends StatefulWidget {
   final Map<String, dynamic> member;
-  const _PaymentNotificationBanner({required this.member});
+  final String locale;
+  const _PaymentNotificationBanner({required this.member, required this.locale});
 
   @override
   State<_PaymentNotificationBanner> createState() =>
@@ -1368,6 +1341,8 @@ class _PaymentNotificationBannerState
 
   @override
   Widget build(BuildContext context) {
+    String s(String key) => AppStrings.get(key, widget.locale);
+
     final notif =
         widget.member['payment_notification'] as Map<String, dynamic>?;
     if (notif == null) return const SizedBox.shrink();
@@ -1390,12 +1365,11 @@ class _PaymentNotificationBannerState
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Icon(Icons.check_circle,
-              color: Colors.green.shade600, size: 20),
+          Icon(Icons.check_circle, color: Colors.green.shade600, size: 20),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Payment Received',
+              s('paymentReceived'),
               style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
@@ -1404,20 +1378,19 @@ class _PaymentNotificationBannerState
           ),
           GestureDetector(
             onTap: _acknowledge,
-            child: Icon(Icons.close,
-                size: 18, color: Colors.green.shade600),
+            child: Icon(Icons.close, size: 18, color: Colors.green.shade600),
           ),
         ]),
         const SizedBox(height: 8),
         Text(
-          'Your payment of HTG $amount has been collected by a KAFA administrator.',
+          s('paymentReceivedDesc').replaceAll('{amount}', amount),
           style: TextStyle(fontSize: 13, color: Colors.green.shade800),
         ),
         const SizedBox(height: 8),
-        _NotifRow('Date',      date),
-        _NotifRow('Policy',    policyNo),
-        _NotifRow('Method',    method),
-        _NotifRow('Reference', ref),
+        _NotifRow(s('dateLabel'),      date),
+        _NotifRow(s('policyPrefix'),   policyNo),
+        _NotifRow(s('methodLabel'),    method),
+        _NotifRow(s('referenceLabel'), ref),
         const SizedBox(height: 10),
         SizedBox(
           width: double.infinity,
@@ -1429,7 +1402,7 @@ class _PaymentNotificationBannerState
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8)),
             ),
-            child: const Text('Got it — Dismiss'),
+            child: Text(s('gotItDismiss')),
           ),
         ),
       ]),

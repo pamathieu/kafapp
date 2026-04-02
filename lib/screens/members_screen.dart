@@ -133,15 +133,41 @@ class _MembersScreenState extends State<MembersScreen> {
               ],
             ),
           ),
-          TextButton(
-            onPressed: () => context.read<LanguageProvider>().toggle(),
-            child: Text(
-              locale == 'fr' ? '🇺🇸 EN' : '🇫🇷 FR',
-              style: const TextStyle(
-                color: Colors.white70,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-              ),
+          PopupMenuButton<String>(
+            offset: const Offset(0, 48),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            onSelected: (code) => context.read<LanguageProvider>().setLocale(code),
+            itemBuilder: (_) => LanguageProvider.supportedLanguages
+                .map((lang) => PopupMenuItem<String>(
+                      value: lang['code'],
+                      child: Row(children: [
+                        Text(lang['label']!,
+                            style: TextStyle(
+                                fontWeight: lang['code'] == locale
+                                    ? FontWeight.bold
+                                    : FontWeight.normal)),
+                        if (lang['code'] == locale) ...[
+                          const Spacer(),
+                          const Icon(Icons.check, size: 16, color: Color(0xFF1A5C2A)),
+                        ],
+                      ]),
+                    ))
+                .toList(),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.language, color: Colors.white70, size: 18),
+                const SizedBox(width: 4),
+                Text(
+                  LanguageProvider.supportedLanguages
+                      .firstWhere((l) => l['code'] == locale,
+                          orElse: () => LanguageProvider.supportedLanguages.first)['label']!
+                      .split(' ')
+                      .first,
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+                const Icon(Icons.arrow_drop_down, color: Colors.white70, size: 18),
+              ]),
             ),
           ),
           IconButton(

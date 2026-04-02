@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:html' as html;
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/language_provider.dart';
+import '../misc/app_strings.dart';
 import '../models/member.dart';
 
 class MemberDetailScreen extends StatefulWidget {
@@ -236,7 +238,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         _member = result;
         _isEditing = false;
         _isSaving = false;
-        _successMessage = 'Member updated successfully.';
+        _successMessage = AppStrings.get('memberUpdated', context.read<LanguageProvider>().locale);
         _memberIdCtrl.text = result.memberId;
       });
     } catch (e) {
@@ -248,24 +250,25 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   }
 
   Future<void> _toggleStatus() async {
+    final locale = context.read<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
     final newStatus = !_member.status;
-    final action = newStatus ? 'activate' : 'deactivate';
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('${newStatus ? 'Activate' : 'Deactivate'} Member'),
-        content: Text('Are you sure you want to $action ${_member.fullName}?'),
+        title: Text(newStatus ? s('activateConfirmTitle') : s('deactivateConfirmTitle')),
+        content: Text('${newStatus ? s('activate') : s('deactivate')} ${_member.fullName}?'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+              child: Text(s('cancel'))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: newStatus ? Colors.green : Colors.red,
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(newStatus ? 'Activate' : 'Deactivate'),
+            child: Text(newStatus ? s('activate') : s('deactivate')),
           ),
         ],
       ),
@@ -281,20 +284,22 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       setState(() {
         _member = result;
         _isSaving = false;
-        _successMessage = 'Member ${newStatus ? 'activated' : 'deactivated'} successfully.';
+        _successMessage = newStatus ? s('memberActivated') : s('memberDeactivated');
       });
     } catch (e) {
       setState(() {
         _isSaving = false;
-        _errorMessage = 'Failed to update status: $e';
+        _errorMessage = '${s('failedUpdateStatusPrefix')}$e';
       });
     }
   }
 
   Future<void> _downloadCertificate(String type) async {
+    final locale = context.read<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
     final phone = _member.phone;
     if (phone.isEmpty) {
-      setState(() => _downloadError = 'No phone number on record.');
+      setState(() => _downloadError = s('noPhoneNumber'));
       return;
     }
     setState(() {
@@ -308,7 +313,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       if (url == null || url.isEmpty) {
         setState(() {
           _isDownloading = false;
-          _downloadError = 'Certificate link not available.';
+          _downloadError = s('noCertificateLink');
         });
         return;
       }
@@ -317,13 +322,16 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     } catch (e) {
       setState(() {
         _isDownloading = false;
-        _downloadError = 'Failed to retrieve certificate: $e';
+        _downloadError = '${s('failedCertificatePrefix')}$e';
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final locale = context.watch<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
+
     return WillPopScope(
       onWillPop: () async {
         Navigator.of(context).pop(_member);
@@ -331,7 +339,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: Text(_isEditing ? 'Edit Member' : 'Member Details'),
+          title: Text(_isEditing ? s('editMember') : s('memberDetails')),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () => Navigator.of(context).pop(_member),
@@ -345,19 +353,66 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                       ? Colors.red.shade300
                       : Colors.green.shade300,
                 ),
-                tooltip: _member.status ? 'Deactivate Member' : 'Activate Member',
+                tooltip: _member.status ? s('deactivateMember') : s('activateMember'),
                 onPressed: _isSaving ? null : _toggleStatus,
               ),
+            Builder(builder: (ctx) {
+              final locale = ctx.watch<LanguageProvider>().locale;
+              return PopupMenuButton<String>(
+                offset: const Offset(0, 48),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                onSelected: (code) =>
+                    ctx.read<LanguageProvider>().setLocale(code),
+                itemBuilder: (_) => LanguageProvider.supportedLanguages
+                    .map((lang) => PopupMenuItem<String>(
+                          value: lang['code'],
+                          child: Row(children: [
+                            Text(lang['label']!,
+                                style: TextStyle(
+                                    fontWeight: lang['code'] == locale
+                                        ? FontWeight.bold
+                                        : FontWeight.normal)),
+                            if (lang['code'] == locale) ...[
+                              const Spacer(),
+                              const Icon(Icons.check,
+                                  size: 16, color: Color(0xFF1A5C2A)),
+                            ],
+                          ]),
+                        ))
+                    .toList(),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.language, color: Colors.white70, size: 18),
+                    const SizedBox(width: 4),
+                    Text(
+                      LanguageProvider.supportedLanguages
+                          .firstWhere((l) => l['code'] == locale,
+                              orElse: () =>
+                                  LanguageProvider.supportedLanguages.first)['label']!
+                          .split(' ')
+                          .first,
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                    const Icon(Icons.arrow_drop_down,
+                        color: Colors.white70, size: 18),
+                  ]),
+                ),
+              );
+            }),
           ],
         ),
         body: _isSaving
-            ? const Center(
+            ? Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    CircularProgressIndicator(color: Color(0xFFC8A96E)),
-                    SizedBox(height: 16),
-                    Text('Saving changes...'),
+                    const CircularProgressIndicator(color: Color(0xFFC8A96E)),
+                    const SizedBox(height: 16),
+                    Text(s('savingChanges')),
                   ],
                 ),
               )
@@ -377,25 +432,25 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                           isError: true,
                           onDismiss: () => setState(() => _errorMessage = null)),
 
-                    _buildHeaderCard(),
+                    _buildHeaderCard(s),
                     const SizedBox(height: 16),
 
-                    _isEditing ? _buildEditForm() : _buildReadOnlyInfo(),
+                    _isEditing ? _buildEditForm(s) : _buildReadOnlyInfo(s),
 
                     const SizedBox(height: 16),
 
-                    if (_member.certificate != null) _buildCertificateCard(),
+                    if (_member.certificate != null) _buildCertificateCard(s),
 
                     const SizedBox(height: 80),
                   ],
                 ),
               ),
-        bottomNavigationBar: _buildBottomBar(),
+        bottomNavigationBar: _buildBottomBar(s),
       ),
     );
   }
 
-  Widget _buildHeaderCard() {
+  Widget _buildHeaderCard(String Function(String) s) {
     return Card(
       elevation: 3,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -464,7 +519,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                _member.status ? 'Active' : 'Inactive',
+                _member.status ? s('active') : s('inactive'),
                 style: TextStyle(
                   color:
                       _member.status ? Colors.greenAccent : Colors.redAccent,
@@ -479,7 +534,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
-  Widget _buildReadOnlyInfo() {
+  Widget _buildReadOnlyInfo(String Function(String) s) {
     return Card(
       elevation: 1,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -488,26 +543,26 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const _SectionHeader(title: 'MEMBER INFO'),
-            _InfoRow(icon: Icons.badge, label: 'Member ID', value: _member.memberId),
-            _InfoRow(icon: Icons.location_on, label: 'Commune', value: _member.communeName),
+            _SectionHeader(title: s('sectionMemberInfo')),
+            _InfoRow(icon: Icons.badge, label: s('memberId'), value: _member.memberId),
+            _InfoRow(icon: Icons.location_on, label: s('commune'), value: _member.communeName),
             const Divider(height: 24),
-            const _SectionHeader(title: 'PERSONAL INFO'),
-            _InfoRow(icon: Icons.person, label: 'Full Name', value: _member.fullName),
-            _InfoRow(icon: Icons.cake, label: 'Date of Birth', value: _member.dateOfBirth),
-            _InfoRow(icon: Icons.home, label: 'Address', value: _member.address),
+            _SectionHeader(title: s('sectionPersonalInfo')),
+            _InfoRow(icon: Icons.person, label: s('fullName'), value: _member.fullName),
+            _InfoRow(icon: Icons.cake, label: s('dateOfBirth'), value: _member.dateOfBirth),
+            _InfoRow(icon: Icons.home, label: s('address'), value: _member.address),
             const Divider(height: 24),
-            const _SectionHeader(title: 'CONTACT'),
-            _InfoRow(icon: Icons.phone, label: 'Phone', value: _member.phone),
-            _InfoRow(icon: Icons.email, label: 'Email', value: _member.email),
+            _SectionHeader(title: s('sectionContact')),
+            _InfoRow(icon: Icons.phone, label: s('phone'), value: _member.phone),
+            _InfoRow(icon: Icons.email, label: s('email'), value: _member.email),
             const Divider(height: 24),
-            const _SectionHeader(title: 'IDENTIFICATION'),
-            _InfoRow(icon: Icons.credit_card, label: 'ID Number', value: _member.identificationNumber),
-            _InfoRow(icon: Icons.article, label: 'ID Type', value: _member.identificationType),
+            _SectionHeader(title: s('sectionIdentification')),
+            _InfoRow(icon: Icons.credit_card, label: s('idNumber'), value: _member.identificationNumber),
+            _InfoRow(icon: Icons.article, label: s('idType'), value: _member.identificationType),
             if (_member.notes.isNotEmpty) ...[
               const Divider(height: 24),
-              const _SectionHeader(title: 'NOTES'),
-              _InfoRow(icon: Icons.notes, label: 'Notes', value: _member.notes),
+              _SectionHeader(title: s('sectionNotes')),
+              _InfoRow(icon: Icons.notes, label: s('notes'), value: _member.notes),
             ],
           ],
         ),
@@ -515,7 +570,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
-  Widget _buildEditForm() {
+  Widget _buildEditForm(String Function(String) s) {
     return Card(
       elevation: 1,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -524,65 +579,65 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const _SectionHeader(title: 'MEMBER INFO'),
+            _SectionHeader(title: s('sectionMemberInfo')),
 
             // Commune dropdown (searchable)
-            _buildCommuneDropdown(),
+            _buildCommuneDropdown(s),
             const SizedBox(height: 12),
 
             // Member ID (read-only — server generates from commune + sequence)
             _EditField(
               controller: _memberIdCtrl,
-              label: 'Member ID',
+              label: s('memberId'),
               icon: Icons.badge,
-              hint: 'Select a commune to generate',
+              hint: s('selectCommuneToGenerate'),
               readOnly: true,
             ),
             const SizedBox(height: 4),
             Text(
               _isLoadingSequence
-                  ? 'Fetching next sequence...'
-                  : 'Auto-generated by the server when saved.',
+                  ? s('fetchingSequence')
+                  : s('autoGenerated'),
               style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
             ),
 
             const Divider(height: 24),
-            const _SectionHeader(title: 'PERSONAL INFO'),
-            _EditField(controller: _nameCtrl, label: 'Full Name', icon: Icons.person),
+            _SectionHeader(title: s('sectionPersonalInfo')),
+            _EditField(controller: _nameCtrl, label: s('fullName'), icon: Icons.person),
             const SizedBox(height: 12),
-            _EditField(controller: _dobCtrl, label: 'Date of Birth', icon: Icons.cake,
+            _EditField(controller: _dobCtrl, label: s('dateOfBirth'), icon: Icons.cake,
                 hint: 'YYYY-MM-DD'),
             const SizedBox(height: 12),
-            _EditField(controller: _addressCtrl, label: 'Address', icon: Icons.home,
+            _EditField(controller: _addressCtrl, label: s('address'), icon: Icons.home,
                 maxLines: 2),
 
             const Divider(height: 24),
-            const _SectionHeader(title: 'CONTACT'),
-            _EditField(controller: _phoneCtrl, label: 'Phone', icon: Icons.phone,
+            _SectionHeader(title: s('sectionContact')),
+            _EditField(controller: _phoneCtrl, label: s('phone'), icon: Icons.phone,
                 keyboardType: TextInputType.phone),
             const SizedBox(height: 12),
-            _EditField(controller: _emailCtrl, label: 'Email', icon: Icons.email,
+            _EditField(controller: _emailCtrl, label: s('email'), icon: Icons.email,
                 keyboardType: TextInputType.emailAddress),
 
             const Divider(height: 24),
-            const _SectionHeader(title: 'IDENTIFICATION'),
-            _EditField(controller: _idNumberCtrl, label: 'ID Number', icon: Icons.credit_card),
+            _SectionHeader(title: s('sectionIdentification')),
+            _EditField(controller: _idNumberCtrl, label: s('idNumber'), icon: Icons.credit_card),
             const SizedBox(height: 12),
-            _EditField(controller: _idTypeCtrl, label: 'ID Type', icon: Icons.article),
+            _EditField(controller: _idTypeCtrl, label: s('idType'), icon: Icons.article),
 
             const Divider(height: 24),
-            const _SectionHeader(title: 'STATUS'),
+            _SectionHeader(title: s('sectionStatus')),
             SwitchListTile(
               value: _editStatus,
               onChanged: (v) => setState(() => _editStatus = v),
-              title: Text(_editStatus ? 'Active' : 'Inactive'),
+              title: Text(_editStatus ? s('active') : s('inactive')),
               activeColor: const Color(0xFF1A5C2A),
               contentPadding: EdgeInsets.zero,
             ),
 
             const Divider(height: 24),
-            const _SectionHeader(title: 'NOTES'),
-            _EditField(controller: _notesCtrl, label: 'Notes', icon: Icons.notes,
+            _SectionHeader(title: s('sectionNotes')),
+            _EditField(controller: _notesCtrl, label: s('notes'), icon: Icons.notes,
                 maxLines: 3),
 
             const Divider(height: 24),
@@ -943,19 +998,19 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     }
   }
 
-  Widget _buildCommuneDropdown() {
+  Widget _buildCommuneDropdown(String Function(String) s) {
     if (_loadingLocalities) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 8),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(
           children: [
-            SizedBox(
+            const SizedBox(
                 width: 16,
                 height: 16,
                 child: CircularProgressIndicator(
                     strokeWidth: 2, color: Color(0xFFC8A96E))),
-            SizedBox(width: 8),
-            Text('Loading communes...', style: TextStyle(fontSize: 13)),
+            const SizedBox(width: 8),
+            Text(s('loadingCommunes'), style: const TextStyle(fontSize: 13)),
           ],
         ),
       );
@@ -978,7 +1033,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           controller: controller,
           focusNode: focusNode,
           decoration: InputDecoration(
-            labelText: 'Commune',
+            labelText: s('commune'),
             prefixIcon: const Icon(Icons.location_on),
             suffixIcon: const Icon(Icons.arrow_drop_down),
             isDense: true,
@@ -1004,7 +1059,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                     leading: const Icon(Icons.location_on,
                         size: 16, color: Color(0xFF1A5C2A)),
                     title: Text(option['commune'] as String),
-                    subtitle: Text('Code: ${option['code']}',
+                    subtitle: Text('${s('codeLabel')}: ${option['code']}',
                         style: const TextStyle(fontSize: 11)),
                     onTap: () => onSelected(option),
                   );
@@ -1017,7 +1072,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
-  Widget _buildCertificateCard() {
+  Widget _buildCertificateCard(String Function(String) s) {
     final cert = _member.certificate!;
     return Card(
       elevation: 2,
@@ -1034,19 +1089,19 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               children: [
                 const Icon(Icons.verified, color: Color(0xFFC8A96E)),
                 const SizedBox(width: 8),
-                const Text('Certificate',
-                    style: TextStyle(
+                Text(s('certificate'),
+                    style: const TextStyle(
                         fontWeight: FontWeight.bold, fontSize: 15)),
               ],
             ),
             const SizedBox(height: 12),
             _InfoRow(
                 icon: Icons.confirmation_number,
-                label: 'Certificate ID',
+                label: s('certificateId'),
                 value: cert['certificate_id'] ?? ''),
             _InfoRow(
                 icon: Icons.calendar_today,
-                label: 'Issued Date',
+                label: s('issuedDate'),
                 value: cert['issued_date'] ?? ''),
 
             if (_downloadError != null) ...[
@@ -1078,14 +1133,14 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             const SizedBox(height: 16),
 
             _isDownloading
-                ? const Center(
+                ? Center(
                     child: Column(
                       children: [
-                        CircularProgressIndicator(
+                        const CircularProgressIndicator(
                             color: Color(0xFFC8A96E)),
-                        SizedBox(height: 8),
-                        Text('Retrieving certificate...',
-                            style: TextStyle(
+                        const SizedBox(height: 8),
+                        Text(s('retrievingCertificate'),
+                            style: const TextStyle(
                                 fontSize: 12, color: Colors.grey)),
                       ],
                     ),
@@ -1097,8 +1152,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                           onPressed: () => _downloadCertificate('pdf'),
                           icon: const Icon(Icons.picture_as_pdf,
                               color: Color(0xFFC8A96E)),
-                          label: const Text('Download PDF',
-                              style: TextStyle(
+                          label: Text(s('downloadPdf'),
+                              style: const TextStyle(
                                   color: Color(0xFFC8A96E))),
                           style: OutlinedButton.styleFrom(
                             side: const BorderSide(
@@ -1114,8 +1169,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                           onPressed: () => _downloadCertificate('jpeg'),
                           icon: const Icon(Icons.image,
                               color: Color(0xFF1A5C2A)),
-                          label: const Text('Download JPEG',
-                              style: TextStyle(
+                          label: Text(s('downloadJpeg'),
+                              style: const TextStyle(
                                   color: Color(0xFF1A5C2A))),
                           style: OutlinedButton.styleFrom(
                             side: const BorderSide(
@@ -1133,7 +1188,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
-  Widget _buildBottomBar() {
+  Widget _buildBottomBar(String Function(String) s) {
     if (_isEditing) {
       return Container(
         padding: const EdgeInsets.all(16),
@@ -1155,8 +1210,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   side: const BorderSide(color: Colors.grey),
                 ),
-                child: const Text('Cancel',
-                    style: TextStyle(color: Colors.grey)),
+                child: Text(s('cancel'),
+                    style: const TextStyle(color: Colors.grey)),
               ),
             ),
             const SizedBox(width: 12),
@@ -1165,7 +1220,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               child: ElevatedButton.icon(
                 onPressed: _isSaving ? null : _saveUpdate,
                 icon: const Icon(Icons.save),
-                label: const Text('Update', style: TextStyle(fontSize: 16)),
+                label: Text(s('update'), style: const TextStyle(fontSize: 16)),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   backgroundColor: const Color(0xFF1A5C2A),
@@ -1191,7 +1246,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       child: ElevatedButton.icon(
         onPressed: _startEdit,
         icon: const Icon(Icons.edit),
-        label: const Text('Edit', style: TextStyle(fontSize: 16)),
+        label: Text(s('edit'), style: const TextStyle(fontSize: 16)),
         style: ElevatedButton.styleFrom(
           minimumSize: const Size(double.infinity, 50),
         ),

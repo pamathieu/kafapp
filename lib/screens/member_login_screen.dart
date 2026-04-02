@@ -50,8 +50,11 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
     final identifier = _identifierCtrl.text.trim();
     final password   = _passwordCtrl.text;
 
+    final locale = context.read<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
+
     if (identifier.isEmpty || password.isEmpty) {
-      setState(() => _errorMessage = 'Please enter your email or phone and password.');
+      setState(() => _errorMessage = s('loginErrorEmpty'));
       return;
     }
 
@@ -79,13 +82,13 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
         );
       } else {
         setState(() {
-          _errorMessage = data['error'] ?? 'Incorrect email/phone or password.';
+          _errorMessage = data['error'] ?? s('loginErrorInvalid');
           _isLoading    = false;
         });
       }
     } catch (e) {
       setState(() {
-        _errorMessage = 'Connection error. Please try again.';
+        _errorMessage = s('loginErrorConnection');
         _isLoading    = false;
       });
     }
@@ -115,6 +118,42 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
     String s(String key) => AppStrings.get(key, locale);
 
     final canPop = Navigator.of(context).canPop();
+    final currentLang = LanguageProvider.supportedLanguages
+        .firstWhere((l) => l['code'] == locale,
+            orElse: () => LanguageProvider.supportedLanguages.first);
+
+    Widget langDropdown = PopupMenuButton<String>(
+      offset: const Offset(0, 40),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      onSelected: (code) => context.read<LanguageProvider>().setLocale(code),
+      itemBuilder: (_) => LanguageProvider.supportedLanguages
+          .map((lang) => PopupMenuItem<String>(
+                value: lang['code'],
+                child: Row(children: [
+                  Text(lang['label']!,
+                      style: TextStyle(
+                          fontWeight: lang['code'] == locale
+                              ? FontWeight.bold
+                              : FontWeight.normal)),
+                  if (lang['code'] == locale) ...[
+                    const Spacer(),
+                    const Icon(Icons.check, size: 16, color: Color(0xFF1A5C2A)),
+                  ],
+                ]),
+              ))
+          .toList(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.language, color: Colors.white70, size: 18),
+          const SizedBox(width: 4),
+          Text(currentLang['label']!.split(' ').first,
+              style: const TextStyle(color: Colors.white70, fontSize: 13)),
+          const Icon(Icons.arrow_drop_down, color: Colors.white70, size: 18),
+        ]),
+      ),
+    );
+
     return Scaffold(
       backgroundColor: const Color(0xFF1A5C2A),
       appBar: canPop ? AppBar(
@@ -124,28 +163,12 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => context.read<LanguageProvider>().toggle(),
-            child: Text(
-              locale == 'fr' ? '🇺🇸 EN' : '🇫🇷 FR',
-              style: const TextStyle(color: Colors.white, fontSize: 13),
-            ),
-          ),
-        ],
+        actions: [langDropdown],
       ) : AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         automaticallyImplyLeading: false,
-        actions: [
-          TextButton(
-            onPressed: () => context.read<LanguageProvider>().toggle(),
-            child: Text(
-              locale == 'fr' ? '🇺🇸 EN' : '🇫🇷 FR',
-              style: const TextStyle(color: Colors.white, fontSize: 13),
-            ),
-          ),
-        ],
+        actions: [langDropdown],
       ),
       body: Center(
         child: SingleChildScrollView(
