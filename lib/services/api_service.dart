@@ -139,8 +139,9 @@ class ApiService {
     required String memberId,
     required double amount,
     required String paymentMethod,
-    String schedSK        = '',
-    String externalRef    = '',
+    String schedSK           = '',
+    String externalRef       = '',
+    String paymentPeriod     = '',
     Map<String, String> externalDetails = const {},
   }) async {
     final uri  = Uri.parse('$_baseUrl/member/payment');
@@ -152,6 +153,7 @@ class ApiService {
       'paymentMethod':   paymentMethod,
       'schedSK':         schedSK,
       'externalRef':     externalRef,
+      'paymentPeriod':   paymentPeriod,
       'externalDetails': externalDetails,
     });
     final response = await http.post(uri,

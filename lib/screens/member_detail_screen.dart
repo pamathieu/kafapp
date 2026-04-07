@@ -47,6 +47,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   final _externalPhoneCtrl   = TextEditingController(); // MonCash phone
   final _externalBankCtrl    = TextEditingController(); // Bank name
   String  _paymentMethod     = 'CASH';
+  String? _scheduleMonth;
   bool    _isSavingPayment   = false;
   String? _paymentMessage;
 
@@ -135,6 +136,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           final amount = _selectedPolicy?['premiumAmount']?.toString() ?? '';
           _paymentAmountCtrl.text = amount;
         }
+        // Default to current month/year
+        const months = ['','January','February','March','April','May','June',
+            'July','August','September','October','November','December'];
+        final now = DateTime.now();
+        _scheduleMonth = '${months[now.month]} ${now.year}';
       });
     } catch (_) {}
   }
@@ -434,6 +440,27 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
 
                     _buildHeaderCard(s),
                     const SizedBox(height: 16),
+
+                    if (!_isEditing)
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.attach_money),
+                          label: const Text('Collect Payment'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1A5C2A),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            textStyle: const TextStyle(
+                                fontSize: 15, fontWeight: FontWeight.w600),
+                          ),
+                          onPressed: _startEdit,
+                        ),
+                      ),
+
+                    if (!_isEditing) const SizedBox(height: 16),
 
                     _isEditing ? _buildEditForm(s) : _buildReadOnlyInfo(s),
 
@@ -740,6 +767,34 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             if (_memberPolicies.isNotEmpty) ...[
               const SizedBox(height: 12),
 
+              // Schedule Payment — month + year
+              DropdownButtonFormField<String>(
+                value: _scheduleMonth,
+                decoration: InputDecoration(
+                  labelText: 'Payment Period',
+                  prefixIcon: const Icon(Icons.calendar_month_outlined),
+                  isDense: true,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                items: () {
+                  const months = [
+                    'January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September', 'October', 'November', 'December',
+                  ];
+                  final now   = DateTime.now();
+                  final items = <DropdownMenuItem<String>>[];
+                  for (int offset = -6; offset <= 3; offset++) {
+                    final dt    = DateTime(now.year, now.month + offset);
+                    final label = '${months[dt.month - 1]} ${dt.year}';
+                    items.add(DropdownMenuItem(value: label, child: Text(label)));
+                  }
+                  return items;
+                }(),
+                onChanged: (v) => setState(() => _scheduleMonth = v),
+              ),
+              const SizedBox(height: 12),
+
               // Amount
               TextField(
                 controller: _paymentAmountCtrl,
@@ -952,6 +1007,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         memberId:        _member.memberId,
         amount:          amount,
         paymentMethod:   _paymentMethod,
+        paymentPeriod:   _scheduleMonth ?? '',
         externalRef:     externalRef,
         externalDetails: details,
       );

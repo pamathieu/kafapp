@@ -203,6 +203,8 @@ class AppStrings {
       'paymentReceivedDesc': 'Votre paiement de HTG {amount} a été collecté par un administrateur KAFA.',
       'gotItDismiss': 'Compris — Fermer',
       'dateLabel': 'Date',
+      'periodLabel': 'Période',
+      'collectedOnLabel': 'Collecté le',
       'methodLabel': 'Méthode',
       'referenceLabel': 'Référence',
 
@@ -418,6 +420,8 @@ class AppStrings {
       'paymentReceivedDesc': 'Your payment of HTG {amount} has been collected by a KAFA administrator.',
       'gotItDismiss': 'Got it — Dismiss',
       'dateLabel': 'Date',
+      'periodLabel': 'Period',
+      'collectedOnLabel': 'Collected On',
       'methodLabel': 'Method',
       'referenceLabel': 'Reference',
 
@@ -633,6 +637,8 @@ class AppStrings {
       'paymentReceivedDesc': 'Peman HTG {amount} ou te kolekte pa yon administratè KAFA.',
       'gotItDismiss': 'Konprann — Fèmen',
       'dateLabel': 'Dat',
+      'periodLabel': 'Peryòd',
+      'collectedOnLabel': 'Kolekte le',
       'methodLabel': 'Metòd',
       'referenceLabel': 'Referans',
 
@@ -848,6 +854,8 @@ class AppStrings {
       'paymentReceivedDesc': 'Su pago de HTG {amount} ha sido recolectado por un administrador KAFA.',
       'gotItDismiss': 'Entendido — Cerrar',
       'dateLabel': 'Fecha',
+      'periodLabel': 'Período',
+      'collectedOnLabel': 'Cobrado el',
       'methodLabel': 'Método',
       'referenceLabel': 'Referencia',
 
@@ -1063,6 +1071,8 @@ class AppStrings {
       'paymentReceivedDesc': 'Seu pagamento de HTG {amount} foi coletado por um administrador KAFA.',
       'gotItDismiss': 'Entendido — Fechar',
       'dateLabel': 'Data',
+      'periodLabel': 'Período',
+      'collectedOnLabel': 'Cobrado em',
       'methodLabel': 'Método',
       'referenceLabel': 'Referência',
 

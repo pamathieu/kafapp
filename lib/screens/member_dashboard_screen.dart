@@ -26,16 +26,44 @@ class MemberDashboardScreen extends StatefulWidget {
 
 class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
   int  _tab       = 0;
-  bool _hasPolicy = true; // optimistic — updated after first fetch
+  bool _hasPolicy = true;
+
+  // Live member data — refreshed from server on init so notifications are current
+  late Map<String, dynamic> _member;
+
+  static const _baseUrl =
+      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
 
   @override
   void initState() {
     super.initState();
+    _member = widget.member; // start with cached session immediately
     _checkPolicy();
+    _refreshMember();        // silently fetch fresh profile in background
+  }
+
+  /// Re-fetches the member profile from the server so payment_notification
+  /// and payment_access are always current, even when loaded from session cache.
+  Future<void> _refreshMember() async {
+    final memberId  = widget.member['memberId']  as String? ?? '';
+    final companyId = widget.member['companyId'] as String? ?? 'KAFA-001';
+    if (memberId.isEmpty) return;
+    try {
+      final uri = Uri.parse(
+          '$_baseUrl/member/profile?memberId=${Uri.encodeComponent(memberId)}'
+          '&companyId=${Uri.encodeComponent(companyId)}');
+      final response = await http.get(uri);
+      if (!mounted || response.statusCode != 200) return;
+      final data   = json.decode(response.body) as Map<String, dynamic>;
+      final fresh  = data['member'] as Map<String, dynamic>?;
+      if (fresh == null) return;
+      await SessionService.saveSession(fresh);
+      if (mounted) setState(() => _member = fresh);
+    } catch (_) {}
   }
 
   Future<void> _checkPolicy() async {
-    final memberId = widget.member['memberId'] as String? ?? '';
+    final memberId = _member['memberId'] as String? ?? '';
     if (memberId.isEmpty) return;
     try {
       final uri = Uri.parse(
@@ -57,16 +85,16 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
     final locale = langProvider.locale;
     String s(String key) => AppStrings.get(key, locale);
 
-    final member = widget.member;
+    final member = _member;
     final name = member['full_name'] as String? ?? '';
     final isActive =
         member['status'] == true || member['status'] == 'true';
 
     final tabs = [
-      _DashboardTab(member: member, onGoTransactions: () => _goTab(1)),
-      _TransactionsTab(member: member),
-      PolicyScreen(member: member, embedded: true),
-      ChatbotWidget(member: member),
+      _DashboardTab(member: _member, onGoTransactions: () => _goTab(1)),
+      _TransactionsTab(member: _member),
+      PolicyScreen(member: _member, embedded: true),
+      ChatbotWidget(member: _member),
     ];
 
     final navItems = [
@@ -176,6 +204,8 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Watch directly so AppBar always reflects the current locale
+    final locale = context.watch<LanguageProvider>().locale;
     String s(String key) => AppStrings.get(key, locale);
     final initials  = name.isNotEmpty ? name[0].toUpperCase() : '?';
     final currentLang = LanguageProvider.supportedLanguages
@@ -1350,12 +1380,13 @@ class _PaymentNotificationBannerState
     final seen = notif['seen'] == true || notif['seen'] == 'true';
     if (seen || _dismissed) return const SizedBox.shrink();
 
-    final amount    = notif['amountPaid']?.toString()  ?? '—';
-    final rawDate   = notif['paymentDate'] as String?  ?? '—';
-    final date      = AppStrings.formatDate(rawDate, widget.locale);
-    final ref       = notif['referenceNo'] as String?  ?? '—';
-    final policyNo  = notif['policyNo']    as String?  ?? '—';
-    final method    = notif['paymentMethod'] as String? ?? '—';
+    final amount        = notif['amountPaid']?.toString()  ?? '—';
+    final rawDate       = notif['paymentDate'] as String?  ?? '—';
+    final date          = AppStrings.formatDate(rawDate, widget.locale);
+    final ref           = notif['referenceNo']    as String? ?? '—';
+    final policyNo      = notif['policyNo']       as String? ?? '—';
+    final method        = notif['paymentMethod']  as String? ?? '—';
+    final paymentPeriod = notif['paymentPeriod']  as String? ?? '';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -1389,10 +1420,12 @@ class _PaymentNotificationBannerState
           style: TextStyle(fontSize: 13, color: Colors.green.shade800),
         ),
         const SizedBox(height: 8),
-        _NotifRow(s('dateLabel'),      date),
-        _NotifRow(s('policyPrefix'),   policyNo),
-        _NotifRow(s('methodLabel'),    method),
-        _NotifRow(s('referenceLabel'), ref),
+        if (paymentPeriod.isNotEmpty)
+          _NotifRow(s('periodLabel'),    paymentPeriod),
+        _NotifRow(s('collectedOnLabel'), date),
+        _NotifRow(s('policyPrefix'),     policyNo),
+        _NotifRow(s('methodLabel'),      method),
+        _NotifRow(s('referenceLabel'),   ref),
         const SizedBox(height: 10),
         SizedBox(
           width: double.infinity,

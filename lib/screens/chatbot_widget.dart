@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -757,16 +758,57 @@ class _MessageBubble extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Text(
-                message.text,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: isUser
-                      ? Colors.white
-                      : const Color(0xFF1A1A1A),
-                  height: 1.4,
-                ),
-              ),
+              child: isUser
+                  ? Text(
+                      message.text,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.white,
+                        height: 1.4,
+                      ),
+                    )
+                  : MarkdownBody(
+                      data: message.text,
+                      styleSheet: MarkdownStyleSheet(
+                        p: const TextStyle(
+                            fontSize: 14,
+                            color: Color(0xFF1A1A1A),
+                            height: 1.4),
+                        strong: const TextStyle(
+                            fontSize: 14,
+                            color: Color(0xFF1A1A1A),
+                            fontWeight: FontWeight.bold),
+                        em: const TextStyle(
+                            fontSize: 14,
+                            color: Color(0xFF1A1A1A),
+                            fontStyle: FontStyle.italic),
+                        code: TextStyle(
+                            fontSize: 13,
+                            backgroundColor: Colors.grey.shade100,
+                            color: const Color(0xFF1A5C2A)),
+                        tableHead: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1A1A1A)),
+                        tableBody: const TextStyle(
+                            fontSize: 13, color: Color(0xFF1A1A1A)),
+                        tableBorder: TableBorder.all(
+                            color: Colors.grey.shade300, width: 1),
+                        tableColumnWidth: const FlexColumnWidth(),
+                        tableCellsPadding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 6),
+                        blockquote: const TextStyle(
+                            fontSize: 14, color: Colors.grey),
+                        listBullet: const TextStyle(
+                            fontSize: 14, color: Color(0xFF1A1A1A)),
+                        h1: const TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.bold),
+                        h2: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.bold),
+                        h3: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.bold),
+                      ),
+                    ),
             ),
           ),
           if (isUser) ...[
