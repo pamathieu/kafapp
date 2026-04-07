@@ -54,6 +54,7 @@ API_BASE_URL    = os.environ["API_BASE_URL"]     # https://<id>.execute-api.<reg
 ADMIN_TABLE      = os.environ.get("ADMIN_TABLE", "kopera-admin")
 LOCALITIES_TABLE = os.environ.get("LOCALITIES_TABLE", "kopera-localities")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+LIFE_INSURANCE_TABLE = os.environ.get("LIFE_INSURANCE_TABLE", "kopera-life-insurance")
 
 ################################################################################
 # Router
@@ -148,6 +149,30 @@ def lambda_handler(event, context):
     # ── GET /localities — list all communes ──────────────────────────────────
     if method == "GET" and resource == "/localities":
         return _handle_list_localities()
+
+    # ── POST /members/set-payment-access — admin grants/revokes payment access ─
+    if method == "POST" and resource == "/members/set-payment-access":
+        return _handle_set_payment_access(event)
+
+    # ── GET /member/profile — fetch fresh member profile ─────────────────────
+    if method == "GET" and resource == "/member/profile":
+        return _handle_get_member_profile(event)
+
+    # ── POST /member/acknowledge-payment — member dismisses payment notification
+    if method == "POST" and resource == "/member/acknowledge-payment":
+        return _handle_acknowledge_payment(event)
+
+    # ── GET /member/policy — fetch member's policies ──────────────────────────
+    if method == "GET" and resource == "/member/policy":
+        return _handle_get_member_policy(event)
+
+    # ── POST /member/payment — record a premium payment ───────────────────────
+    if method == "POST" and resource == "/member/payment":
+        return _handle_make_payment(event)
+
+    # ── POST /member/claim — submit a new claim ───────────────────────────────
+    if method == "POST" and resource == "/member/claim":
+        return _handle_create_claim(event)
 
     # ── POST /member/chat — AI chatbot for member portal ──────────────────────
     if method == "POST" and resource == "/member/chat":
@@ -306,8 +331,13 @@ def _handle_generate_certificate(event: dict) -> dict:
         from certificate_engine import generate_pdf, generate_jpeg
 
         certificate_id = f"CERT-{uuid.uuid4().hex[:8].upper()}"
-        issued_date    = datetime.now(timezone.utc).strftime("%d / %m / %Y")
-        timestamp      = datetime.now(timezone.utc).isoformat()
+        now_utc = datetime.now(timezone.utc)
+        fr_months = [
+            "", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+            "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
+        ]
+        issued_date = f"{now_utc.day} {fr_months[now_utc.month]} {now_utc.year}"
+        timestamp   = now_utc.isoformat()
 
         pdf_bytes  = generate_pdf(member, company, certificate_id, issued_date)
         jpeg_bytes = generate_jpeg(pdf_bytes)
@@ -782,6 +812,219 @@ def _handle_update_member_v2(event: dict) -> dict:
     return _resp(200, {"message": "Member updated", "member": updated})
 
 ################################################################################
+# GET /member/policy — fetch all policies for a member
+################################################################################
+
+def _handle_get_member_policy(event: dict) -> dict:
+    params    = (event.get("queryStringParameters") or {})
+    member_id = params.get("memberId", "").strip()
+    if not member_id:
+        return _resp(400, {"error": "memberId is required"})
+
+    table = dynamodb.Table(LIFE_INSURANCE_TABLE)
+
+    # 1. Get policy references for this member
+    refs = table.query(
+        KeyConditionExpression="PK = :pk AND begins_with(SK, :sk)",
+        ExpressionAttributeValues={
+            ":pk": f"MEMBER#{member_id}",
+            ":sk": "POLICY#",
+        },
+    ).get("Items", [])
+
+    if not refs:
+        return _resp(200, {"policies": []})
+
+    policies = []
+    for ref in refs:
+        policy_no = ref.get("policyNo") or ref["SK"].replace("POLICY#", "")
+        pk = f"POLICY#{policy_no}"
+
+        # 2. Get policy METADATA
+        meta = table.get_item(Key={"PK": pk, "SK": "METADATA"}).get("Item", {})
+
+        # 3. Get last payment (most recent PAY# item)
+        pays = table.query(
+            KeyConditionExpression="PK = :pk AND begins_with(SK, :sk)",
+            ExpressionAttributeValues={":pk": pk, ":sk": "PAY#"},
+            ScanIndexForward=False,
+            Limit=1,
+        ).get("Items", [])
+        last_pay = pays[0] if pays else {}
+
+        # 4. Get next pending schedule
+        scheds = table.query(
+            KeyConditionExpression="PK = :pk AND begins_with(SK, :sk)",
+            FilterExpression="attribute_not_exists(paidDate) OR paidDate = :empty",
+            ExpressionAttributeValues={":pk": pk, ":sk": "SCHED#", ":empty": ""},
+            ScanIndexForward=True,
+            Limit=1,
+        ).get("Items", [])
+        next_sched = scheds[0] if scheds else {}
+
+        # 5. Get existing claims
+        claims = table.query(
+            KeyConditionExpression="PK = :pk AND begins_with(SK, :sk)",
+            ExpressionAttributeValues={":pk": pk, ":sk": "CLAIM#"},
+            ScanIndexForward=False,
+        ).get("Items", [])
+
+        policies.append({
+            "policy":    {k: str(v) if isinstance(v, Decimal) else v for k, v in meta.items()},
+            "lastPay":   {k: str(v) if isinstance(v, Decimal) else v for k, v in last_pay.items()},
+            "nextSched": {k: str(v) if isinstance(v, Decimal) else v for k, v in next_sched.items()},
+            "claims":    [{k: str(v) if isinstance(v, Decimal) else v for k, v in c.items()} for c in claims],
+        })
+
+    return _resp(200, {"policies": policies})
+
+
+################################################################################
+# POST /member/payment — record a premium payment
+################################################################################
+
+def _handle_make_payment(event: dict) -> dict:
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    policy_no      = body.get("policyNo", "").strip()
+    amount         = body.get("amount")
+    payment_method = body.get("paymentMethod", "CASH").strip()
+    sched_sk       = body.get("schedSK", "").strip()
+    member_id      = body.get("memberId", "").strip()
+    company_id     = body.get("companyId", "KAFA-001").strip()
+    external_ref   = body.get("externalRef", "").strip()
+    external_details = body.get("externalDetails", {})
+    payment_period = body.get("paymentPeriod", "").strip()  # e.g. "May 2026"
+
+    if not policy_no or not amount or not member_id:
+        return _resp(400, {"error": "policyNo, amount, and memberId are required"})
+
+    import uuid, datetime
+    now       = datetime.datetime.utcnow()
+    date_str  = now.strftime("%Y-%m-%d")
+    ref_no    = f"TXN-{now.strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
+    pay_sk    = f"PAY#{date_str}#{ref_no}"
+
+    ins_table = dynamodb.Table(LIFE_INSURANCE_TABLE)
+    mem_table = dynamodb.Table(MEMBERS_TABLE)
+
+    # Write payment record
+    ins_table.put_item(Item={
+        "PK":             f"POLICY#{policy_no}",
+        "SK":             pay_sk,
+        "GSI3PK":         ref_no,
+        "entity_type":    "PAYMENT",
+        "referenceNo":    ref_no,
+        "policyNo":       policy_no,
+        "schedSK":        sched_sk,
+        "paymentDate":    date_str,
+        "paymentPeriod":  payment_period,
+        "amountPaid":     Decimal(str(amount)),
+        "lateFee":        Decimal("0"),
+        "totalCollected": Decimal(str(amount)),
+        "paymentMethod":  payment_method,
+        "channel":        "ADMIN_WEB",
+        "externalRef":    external_ref,
+        "externalDetails": external_details,
+        "collectedBy":    "ADMIN",
+        "voided":         False,
+        "createdAt":      now.isoformat() + "Z",
+    })
+
+    # Mark schedule as paid if schedSK provided
+    if sched_sk:
+        ins_table.update_item(
+            Key={"PK": f"POLICY#{policy_no}", "SK": sched_sk},
+            UpdateExpression="SET #s = :paid, paidDate = :d, paidAmount = :a",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={
+                ":paid": "PAID",
+                ":d":    date_str,
+                ":a":    Decimal(str(amount)),
+            },
+        )
+
+    # Update policy last paid info
+    ins_table.update_item(
+        Key={"PK": f"POLICY#{policy_no}", "SK": "METADATA"},
+        UpdateExpression="SET lastPaidDate = :d, lastPaidAmount = :a, totalPaid = if_not_exists(totalPaid, :zero) + :a, updatedAt = :now",
+        ExpressionAttributeValues={
+            ":d":    date_str,
+            ":a":    Decimal(str(amount)),
+            ":zero": Decimal("0"),
+            ":now":  now.isoformat() + "Z",
+        },
+    )
+
+    # Write payment notification to kopera-member so member sees confirmation
+    try:
+        mem_table.update_item(
+            Key={"memberId": member_id, "companyId": company_id},
+            UpdateExpression="SET payment_notification = :n",
+            ExpressionAttributeValues={":n": {
+                "referenceNo":   ref_no,
+                "policyNo":      policy_no,
+                "amountPaid":    str(amount),
+                "paymentDate":   date_str,
+                "paymentPeriod": payment_period,
+                "paymentMethod": payment_method,
+                "seen":          False,
+            }},
+        )
+    except Exception as e:
+        logger.warning("Could not write payment notification to member: %s", str(e))
+
+    logger.info("Payment recorded: %s for policy %s", ref_no, policy_no)
+    return _resp(201, {"message": "Payment recorded successfully", "referenceNo": ref_no})
+
+
+################################################################################
+# POST /member/claim — submit a new claim
+################################################################################
+
+def _handle_create_claim(event: dict) -> dict:
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    policy_no   = body.get("policyNo", "").strip()
+    claim_type  = body.get("claimType", "").strip()
+    description = body.get("description", "").strip()
+    member_id   = body.get("memberId", "").strip()
+
+    if not policy_no or not claim_type or not member_id:
+        return _resp(400, {"error": "policyNo, claimType, and memberId are required"})
+
+    import uuid, datetime
+    now      = datetime.datetime.utcnow()
+    claim_no = f"CLM-{now.strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+    claim_sk = f"CLAIM#{claim_no}"
+
+    table = dynamodb.Table(LIFE_INSURANCE_TABLE)
+
+    table.put_item(Item={
+        "PK":          f"POLICY#{policy_no}",
+        "SK":          claim_sk,
+        "entity_type": "CLAIM",
+        "claimNo":     claim_no,
+        "policyNo":    policy_no,
+        "memberId":    member_id,
+        "claimType":   claim_type,
+        "description": description,
+        "claimStatus": "SUBMITTED",
+        "submittedAt": now.isoformat() + "Z",
+        "updatedAt":   now.isoformat() + "Z",
+    })
+
+    logger.info("Claim created: %s for policy %s", claim_no, policy_no)
+    return _resp(201, {"message": "Claim submitted successfully", "claimNo": claim_no})
+
+
+################################################################################
 # POST /member/chat — Claude-powered chatbot for the member portal
 ################################################################################
 
@@ -812,13 +1055,47 @@ def _handle_member_chat(event: dict) -> dict:
     if not messages:
         return _resp(400, {"error": "messages array is required"})
 
+    # ── Date formatter matching the 5 supported locales ───────────────────────
+    def fmt_date(raw: str) -> str:
+        """Convert ISO or DD/MM/YYYY to the locale's long date format."""
+        if not raw or raw in ("N/A", "None", ""):
+            return raw or "N/A"
+        try:
+            from datetime import datetime as dt
+            cleaned = raw.replace(" ", "")
+            if "/" in cleaned:
+                parts = cleaned.split("/")
+                if len(parts) == 3:
+                    raw = f"{parts[2]}-{parts[1].zfill(2)}-{parts[0].zfill(2)}"
+            d = dt.strptime(raw[:10], "%Y-%m-%d")
+            en = ["","January","February","March","April","May","June",
+                  "July","August","September","October","November","December"]
+            fr = ["","Janvier","Février","Mars","Avril","Mai","Juin",
+                  "Juillet","Août","Septembre","Octobre","Novembre","Décembre"]
+            es = ["","Enero","Febrero","Marzo","Abril","Mayo","Junio",
+                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
+            pt = ["","Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                  "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
+            if locale == "en":
+                return f"{en[d.month]} {d.day}, {d.year}"
+            elif locale in ("fr", "ht"):
+                return f"{d.day} {fr[d.month]} {d.year}"
+            elif locale == "es":
+                return f"{d.day} de {es[d.month]} de {d.year}"
+            elif locale == "pt":
+                return f"{d.day} de {pt[d.month]} de {d.year}"
+            else:
+                return f"{d.day} {fr[d.month]} {d.year}"
+        except Exception:
+            return raw
+
     # ── Build system prompt with full member context ──────────────────────────
     name       = member.get("full_name", "the member")
     member_id  = member.get("memberId", "")
     phone      = member.get("phone", "")
     email      = member.get("email", "")
     address    = member.get("address", "")
-    dob        = member.get("date_of_birth", "")
+    dob        = fmt_date(member.get("date_of_birth", ""))
     status     = member.get("status", True)
     is_active  = status is True or status == "true"
     locality   = member.get("locality") or {}
@@ -826,13 +1103,106 @@ def _handle_member_chat(event: dict) -> dict:
     id_number  = member.get("identification_number", "") or member.get("id_number", "")
     id_type    = member.get("identification_type", "")  or member.get("id_type", "")
     cert       = member.get("certificate") or {}
+    issued_date = fmt_date(cert.get("issued_date", ""))
 
-    if locale == "fr":
-        lang_instruction = "Réponds toujours en français, sauf si l'utilisateur écrit en anglais."
-        org_desc = "KAFA (Koperativ Asirans Fòs Ayiti) est une coopérative d'assurance haïtienne."
-    else:
-        lang_instruction = "Always reply in English, unless the user writes in French."
-        org_desc = "KAFA (Koperativ Asirans Fòs Ayiti) is a Haitian insurance cooperative."
+    # ── Fetch policy and payment history from kopera-life-insurance ───────────
+    policy_context = ""
+    try:
+        ins_table = dynamodb.Table(LIFE_INSURANCE_TABLE)
+        # 1. Get policy references for this member
+        refs = ins_table.query(
+            KeyConditionExpression="PK = :pk AND begins_with(SK, :sk)",
+            ExpressionAttributeValues={
+                ":pk": f"MEMBER#{member_id}",
+                ":sk": "POLICY#",
+            },
+        ).get("Items", [])
+
+        policy_lines = []
+        for ref in refs:
+            pol_no = ref.get("policyNo") or ref["SK"].replace("POLICY#", "")
+            pk     = f"POLICY#{pol_no}"
+
+            # Get policy metadata
+            meta = ins_table.get_item(Key={"PK": pk, "SK": "METADATA"}).get("Item", {})
+            status_pol    = meta.get("policyStatus", "—")
+            premium       = str(meta.get("premiumAmount", "—"))
+            sum_assured   = str(meta.get("sumAssured", "—"))
+            next_due      = fmt_date(meta.get("nextDueDate", ""))
+            last_paid_date = fmt_date(meta.get("lastPaidDate", ""))
+            last_paid_amt  = str(meta.get("lastPaidAmount", "—"))
+            total_paid     = str(meta.get("totalPaid", "0"))
+            product        = meta.get("productCode", "—")
+            frequency      = meta.get("frequency", "—")
+
+            # Get last 5 payments
+            pays = ins_table.query(
+                KeyConditionExpression="PK = :pk AND begins_with(SK, :sk)",
+                ExpressionAttributeValues={":pk": pk, ":sk": "PAY#"},
+                ScanIndexForward=False,
+                Limit=5,
+            ).get("Items", [])
+
+            pay_lines = []
+            for p in pays:
+                p_date   = fmt_date(str(p.get("paymentDate", "")))
+                p_amt    = str(p.get("amountPaid", "—"))
+                p_method = p.get("paymentMethod", "—")
+                p_period = p.get("paymentPeriod", "")
+                p_ref    = p.get("referenceNo", "—")
+                period_str = f" (period: {p_period})" if p_period else ""
+                pay_lines.append(
+                    f"    • {p_date}: HTG {p_amt} via {p_method}{period_str} — Ref: {p_ref}"
+                )
+
+            # Get next pending schedule
+            scheds = ins_table.query(
+                KeyConditionExpression="PK = :pk AND begins_with(SK, :sk)",
+                FilterExpression="attribute_not_exists(paidDate) OR paidDate = :empty",
+                ExpressionAttributeValues={":pk": pk, ":sk": "SCHED#", ":empty": ""},
+                ScanIndexForward=True,
+                Limit=1,
+            ).get("Items", [])
+            next_sched_due = fmt_date(scheds[0].get("dueDate", "")) if scheds else next_due
+            next_sched_amt = str(scheds[0].get("amountDue", premium)) if scheds else premium
+
+            policy_lines.append(
+                f"  Policy: {pol_no} | Product: {product} | Status: {status_pol} | "
+                f"Frequency: {frequency}\n"
+                f"  Premium: HTG {premium}/month | Sum Assured: HTG {sum_assured}\n"
+                f"  Last Payment: {last_paid_date} — HTG {last_paid_amt}\n"
+                f"  Next Payment Due: {next_sched_due} — HTG {next_sched_amt}\n"
+                f"  Total Paid To Date: HTG {total_paid}\n"
+                f"  Recent Payment History:\n" +
+                ("\n".join(pay_lines) if pay_lines else "    • No payments recorded yet")
+            )
+
+        if policy_lines:
+            policy_context = "\n\nINSURANCE POLICIES & PAYMENT HISTORY:\n" + \
+                             "\n\n".join(policy_lines)
+        else:
+            policy_context = "\n\nINSURANCE POLICIES: No policies found for this member."
+    except Exception as e:
+        logger.warning("Could not fetch policy data for chatbot: %s", str(e))
+        policy_context = "\n\nINSURANCE POLICIES: Unable to retrieve policy data."
+
+    lang_instruction = (
+        "Always detect the language of the user's most recent message and respond in that exact language. "
+        "If they write in Haitian Creole (Kreyòl), respond in Kreyòl. "
+        "If they write in French, respond in French. "
+        "If they write in English, respond in English. "
+        "If they write in Spanish, respond in Spanish. "
+        "If they write in Portuguese, respond in Portuguese. "
+        "Never switch languages unless the user switches first."
+    )
+    org_descs = {
+        "fr": "KAFA (Koperativ Asirans Fòs Ayiti) est une coopérative d'assurance haïtienne.",
+        "en": "KAFA (Koperativ Asirans Fòs Ayiti) is a Haitian insurance cooperative.",
+        "ht": "KAFA (Koperativ Asirans Fòs Ayiti) se yon kooperativ asirans ayisyen.",
+        "es": "KAFA (Koperativ Asirans Fòs Ayiti) es una cooperativa de seguros haitiana.",
+        "pt": "KAFA (Koperativ Asirans Fòs Ayiti) é uma cooperativa de seguros haitiana.",
+    }
+    org_desc = org_descs.get(locale, org_descs["fr"])
 
     system_prompt = f"""You are the KAFA member assistant — a friendly, helpful AI chatbot for {org_desc}
 {lang_instruction}
@@ -849,10 +1219,11 @@ You are speaking with a verified KAFA member. Here is their complete profile:
 - Email:         {email}
 - ID Type:       {id_type}
 - ID Number:     {id_number}
-- Certificate:   {cert.get("certificate_id", "None")} (issued: {cert.get("issued_date", "N/A")})
+- Certificate:   {cert.get("certificate_id", "None")} (issued: {issued_date})
+{policy_context}
 
 Your role:
-- Answer questions about their membership, status, and personal information using the profile above.
+- Answer questions about their membership, status, personal information, policies, and payment history using the data above.
 - Explain KAFA cooperative benefits and services warmly.
 - Keep replies concise and conversational (2–4 sentences unless more detail is requested).
 - Never make up information not in the profile. If you don't know something, say so honestly.
@@ -937,6 +1308,8 @@ def _handle_member_login(event: dict) -> dict:
 
     # Return member profile — never include credentials in the response
     safe_member = {k: v for k, v in member.items() if k != "credentials"}
+    # Ensure payment_access defaults to False if not set
+    safe_member.setdefault("payment_access", False)
     logger.info("Member login: %s", member.get("memberId"))
     return _resp(200, {"message": "Login successful", "member": safe_member})
 
@@ -975,6 +1348,83 @@ def _handle_set_member_credentials(event: dict) -> dict:
 
     logger.info("Credentials set for member: %s", member_id)
     return _resp(200, {"message": f"Password set successfully for member {member_id}"})
+
+
+################################################################################
+# POST /members/set-payment-access — admin grants/revokes payment access
+################################################################################
+
+def _handle_set_payment_access(event: dict) -> dict:
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    member_id  = body.get("memberId", "").strip()
+    company_id = body.get("companyId", "KAFA-001").strip()
+    enabled    = bool(body.get("enabled", False))
+
+    if not member_id:
+        return _resp(400, {"error": "memberId is required"})
+
+    dynamodb.Table(MEMBERS_TABLE).update_item(
+        Key={"memberId": member_id, "companyId": company_id},
+        UpdateExpression="SET payment_access = :v",
+        ExpressionAttributeValues={":v": enabled},
+    )
+    action = "granted" if enabled else "revoked"
+    logger.info("Payment access %s for member %s", action, member_id)
+    return _resp(200, {"message": f"Payment access {action} for {member_id}"})
+
+
+################################################################################
+# GET /member/profile — return fresh member profile (used on dashboard init)
+################################################################################
+
+def _handle_get_member_profile(event: dict) -> dict:
+    params     = (event.get("queryStringParameters") or {})
+    member_id  = params.get("memberId", "").strip()
+    company_id = params.get("companyId", "KAFA-001").strip()
+
+    if not member_id:
+        return _resp(400, {"error": "memberId is required"})
+
+    member = _db_get_member(member_id, company_id)
+    if not member:
+        return _resp(404, {"error": "Member not found"})
+
+    safe = {k: v for k, v in member.items() if k != "credentials"}
+    safe.setdefault("payment_access", False)
+    return _resp(200, {"member": safe})
+
+
+################################################################################
+# POST /member/acknowledge-payment — member dismisses payment notification
+################################################################################
+
+def _handle_acknowledge_payment(event: dict) -> dict:
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    member_id  = body.get("memberId", "").strip()
+    company_id = body.get("companyId", "KAFA-001").strip()
+
+    if not member_id:
+        return _resp(400, {"error": "memberId is required"})
+
+    try:
+        dynamodb.Table(MEMBERS_TABLE).update_item(
+            Key={"memberId": member_id, "companyId": company_id},
+            UpdateExpression="SET payment_notification.#seen = :t",
+            ExpressionAttributeNames={"#seen": "seen"},
+            ExpressionAttributeValues={":t": True},
+        )
+    except Exception:
+        pass  # Notification may not exist — safe to ignore
+
+    return _resp(200, {"message": "Acknowledged"})
 
 
 ################################################################################

@@ -1553,6 +1553,198 @@ resource "aws_api_gateway_integration_response" "member_claim_options" {
   depends_on = [aws_api_gateway_integration.member_claim_options]
 }
 
+# ── /members/set-payment-access  POST → admin grants/revokes payment access ───
+
+resource "aws_api_gateway_resource" "members_set_payment_access" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.members.id
+  path_part   = "set-payment-access"
+}
+
+resource "aws_api_gateway_method" "members_set_payment_access_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.members_set_payment_access.id
+  http_method   = "POST"
+  authorization = "AWS_IAM"
+}
+
+resource "aws_api_gateway_integration" "members_set_payment_access_post" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.members_set_payment_access.id
+  http_method             = aws_api_gateway_method.members_set_payment_access_post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.certificate_handler.invoke_arn
+}
+
+resource "aws_api_gateway_method" "members_set_payment_access_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.members_set_payment_access.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "members_set_payment_access_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.members_set_payment_access.id
+  http_method = aws_api_gateway_method.members_set_payment_access_options.http_method
+  type        = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+
+resource "aws_api_gateway_method_response" "members_set_payment_access_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.members_set_payment_access.id
+  http_method = aws_api_gateway_method.members_set_payment_access_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "members_set_payment_access_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.members_set_payment_access.id
+  http_method = aws_api_gateway_method.members_set_payment_access_options.http_method
+  status_code = aws_api_gateway_method_response.members_set_payment_access_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.members_set_payment_access_options]
+}
+
+# ── /member/acknowledge-payment  POST → member dismisses payment notification ─
+
+resource "aws_api_gateway_resource" "member_acknowledge_payment" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.member.id
+  path_part   = "acknowledge-payment"
+}
+
+resource "aws_api_gateway_method" "member_acknowledge_payment_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_acknowledge_payment.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_acknowledge_payment_post" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.member_acknowledge_payment.id
+  http_method             = aws_api_gateway_method.member_acknowledge_payment_post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.certificate_handler.invoke_arn
+}
+
+resource "aws_api_gateway_method" "member_acknowledge_payment_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_acknowledge_payment.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_acknowledge_payment_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_acknowledge_payment.id
+  http_method = aws_api_gateway_method.member_acknowledge_payment_options.http_method
+  type        = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+
+resource "aws_api_gateway_method_response" "member_acknowledge_payment_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_acknowledge_payment.id
+  http_method = aws_api_gateway_method.member_acknowledge_payment_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "member_acknowledge_payment_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_acknowledge_payment.id
+  http_method = aws_api_gateway_method.member_acknowledge_payment_options.http_method
+  status_code = aws_api_gateway_method_response.member_acknowledge_payment_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.member_acknowledge_payment_options]
+}
+
+# ── /member/profile  GET → fresh member profile for dashboard refresh ─────────
+
+resource "aws_api_gateway_resource" "member_profile" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.member.id
+  path_part   = "profile"
+}
+
+resource "aws_api_gateway_method" "member_profile_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_profile.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_profile_get" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.member_profile.id
+  http_method             = aws_api_gateway_method.member_profile_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.certificate_handler.invoke_arn
+}
+
+resource "aws_api_gateway_method" "member_profile_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_profile.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_profile_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_profile.id
+  http_method = aws_api_gateway_method.member_profile_options.http_method
+  type        = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+
+resource "aws_api_gateway_method_response" "member_profile_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_profile.id
+  http_method = aws_api_gateway_method.member_profile_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "member_profile_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_profile.id
+  http_method = aws_api_gateway_method.member_profile_options.http_method
+  status_code = aws_api_gateway_method_response.member_profile_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.member_profile_options]
+}
+
 # ── /members/set-credentials  POST → admin sets member password ──────────────
 
 resource "aws_api_gateway_resource" "members_set_credentials" {
@@ -1646,6 +1838,9 @@ resource "aws_api_gateway_deployment" "main" {
       aws_api_gateway_integration.member_policy_get.id,
       aws_api_gateway_integration.member_payment_post.id,
       aws_api_gateway_integration.member_claim_post.id,
+      aws_api_gateway_integration.members_set_payment_access_post.id,
+      aws_api_gateway_integration.member_acknowledge_payment_post.id,
+      aws_api_gateway_integration.member_profile_get.id,
     ]))
   }
 
@@ -1671,6 +1866,9 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_integration.member_policy_get,
     aws_api_gateway_integration.member_payment_post,
     aws_api_gateway_integration.member_claim_post,
+    aws_api_gateway_integration.members_set_payment_access_post,
+    aws_api_gateway_integration.member_acknowledge_payment_post,
+    aws_api_gateway_integration.member_profile_get,
   ]
 
   lifecycle {

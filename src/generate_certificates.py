@@ -23,7 +23,6 @@ Requirements:
 """
 
 import argparse
-from typing import Optional
 import io
 import json
 import sys
@@ -97,12 +96,12 @@ def get_all_members(company_id: str) -> list[dict]:
     return items
 
 
-def get_member(member_id: str, company_id: str) -> Optional[dict]:
+def get_member(member_id: str, company_id: str) -> dict | None:
     resp = members_table.get_item(Key={"memberId": member_id, "companyId": company_id})
     return resp.get("Item")
 
 
-def get_company(company_id: str) -> Optional[dict]:
+def get_company(company_id: str) -> dict | None:
     resp = companies_table.get_item(Key={"companyId": company_id})
     return resp.get("Item")
 
@@ -131,7 +130,7 @@ def upload(data: bytes, key: str, content_type: str) -> str:
     return f"s3://{CERTS_BUCKET}/{key}"
 
 
-def fetch_logo(s3_path: str) -> Optional[io.BytesIO]:
+def fetch_logo(s3_path: str) -> io.BytesIO | None:
     """Download logo from S3 and return as BytesIO, or None if unavailable."""
     if not s3_path or not s3_path.startswith("s3://"):
         return None
@@ -147,6 +146,22 @@ def fetch_logo(s3_path: str) -> Optional[io.BytesIO]:
 ################################################################################
 # PDF generation — exact KAFA certificate template
 ################################################################################
+
+def _ensure_mk_format(member_id: str) -> str:
+    """
+    Returns the member ID in MK format.
+    - Already MK → returned as-is.
+    - MBR-XXX or any other format → returned as-is with no conversion
+      (the original numeric sequence is not recoverable without the DB).
+    - If the ID looks like a raw MK without the prefix it adds it.
+    """
+    if not member_id or member_id.startswith("___"):
+        return member_id
+    if member_id.startswith("MK"):
+        return member_id
+    # Legacy MBR-style or unknown — show as-is so nothing is lost
+    return member_id
+
 
 def generate_pdf(member: dict, company: dict, certificate_id: str, issued_date: str) -> bytes:
     from reportlab.platypus import Image as RLImage
@@ -223,7 +238,7 @@ def generate_pdf(member: dict, company: dict, certificate_id: str, issued_date: 
     m_id    = member.get("id_number",   "___________________________")
     m_type  = member.get("id_type",     "_______________")
     m_addr  = member.get("address",     "___________________________")
-    m_num   = member.get("memberId",    "___________________________")
+    m_num   = _ensure_mk_format(member.get("memberId", "___________________________"))
     m_dom   = fmt_date(member.get("issued_date", issued_date))
 
     story = []
@@ -400,7 +415,7 @@ def generate_pdf(member: dict, company: dict, certificate_id: str, issued_date: 
     m_id    = member.get("id_number",   "___________________________")
     m_type  = member.get("id_type",     "_______________")
     m_addr  = member.get("address",     "___________________________")
-    m_num   = member.get("memberId",    "___________________________")
+    m_num   = _ensure_mk_format(member.get("memberId", "___________________________"))
     m_dom   = fmt_date(member.get("issued_date", issued_date))
 
     story = []
