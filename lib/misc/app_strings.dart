@@ -1081,45 +1081,70 @@ class AppStrings {
     return _data[locale]?[key] ?? _data['en']?[key] ?? key;
   }
 
-  static const _monthsEn = [
-    '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-  ];
-  static const _monthsFr = [
-    '', 'Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun',
-    'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'
-  ];
-  static const _monthsHt = [
-    '', 'Jan', 'Fev', 'Mas', 'Avr', 'Me', 'Jen',
-    'Jiy', 'Out', 'Sep', 'Okt', 'Nov', 'Des'
-  ];
-  static const _monthsEs = [
-    '', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
-    'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'
-  ];
-  static const _monthsPt = [
-    '', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
-    'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'
-  ];
-
-  /// Formats a YYYY-MM-DD date string into a short locale-aware label.
+  // ── Date formatting ──────────────────────────────────────────────────────────
+  //
+  // Handles two raw formats from the DB / API:
+  //   ISO:   "2026-04-14"
+  //   Slash: "09 / 03 / 2026"  (DD / MM / YYYY, stored by old certificate flow)
+  //
+  // Output per locale:
+  //   en  → April 14, 2026
+  //   fr  → 14 Avril 2026
+  //   ht  → 14 Avril 2026   (Kreyol uses French month names)
+  //   es  → 14 de Abril de 2026
+  //   pt  → 14 de Abril de 2026
+  // ─────────────────────────────────────────────────────────────────────────────
   static String formatDate(String raw, String locale) {
+    if (raw.isEmpty || raw == '—') return raw;
     try {
-      final parts = raw.split('-');
-      if (parts.length == 3) {
-        final months = switch (locale) {
-          'fr' => _monthsFr,
-          'ht' => _monthsHt,
-          'es' => _monthsEs,
-          'pt' => _monthsPt,
-          _    => _monthsEn,
-        };
-        final m = int.tryParse(parts[1]) ?? 0;
-        if (m >= 1 && m <= 12) {
-          return '${months[m]} ${parts[2]}, ${parts[0]}';
+      // Normalise slash format: "09 / 03 / 2026" → "2026-03-09"
+      final cleaned = raw.replaceAll(' ', '');
+      String iso = raw.trim();
+      if (cleaned.contains('/')) {
+        final p = cleaned.split('/');
+        if (p.length == 3) {
+          iso = '${p[2]}-${p[1].padLeft(2, '0')}-${p[0].padLeft(2, '0')}';
         }
       }
-    } catch (_) {}
-    return raw;
+
+      final parts = iso.split('-');
+      if (parts.length != 3) return raw;
+      final y = int.tryParse(parts[0]) ?? 0;
+      final m = int.tryParse(parts[1]) ?? 0;
+      final d = int.tryParse(parts[2]) ?? 0;
+      if (y == 0 || m == 0 || d == 0) return raw;
+
+      const en = [
+        '', 'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December',
+      ];
+      const fr = [
+        '', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+        'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre',
+      ];
+      const es = [
+        '', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+      ];
+      const pt = [
+        '', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+      ];
+
+      switch (locale) {
+        case 'en':
+          return '${en[m]} $d, $y';
+        case 'es':
+          return '$d de ${es[m]} de $y';
+        case 'pt':
+          return '$d de ${pt[m]} de $y';
+        case 'fr':
+        case 'ht':
+        default:
+          return '$d ${fr[m]} $y';
+      }
+    } catch (_) {
+      return raw;
+    }
   }
 }

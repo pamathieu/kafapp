@@ -66,7 +66,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
       _DashboardTab(member: member, onGoTransactions: () => _goTab(1)),
       _TransactionsTab(member: member),
       PolicyScreen(member: member, embedded: true),
-      ChatbotWidget(member: member, locale: locale),
+      ChatbotWidget(member: member),
     ];
 
     final navItems = [
@@ -92,9 +92,8 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
       backgroundColor: _bg,
       appBar: _KafaAppBar(
         name: name,
-        isActive: isActive,
         locale: locale,
-        s: s,
+        isActive: isActive,
         hasPolicy: _hasPolicy,
         onLogout: () async {
           await SessionService.clearSession();
@@ -128,18 +127,17 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
-  final String name, locale;
+  final String name;
+  final String locale;
   final bool isActive;
   final bool hasPolicy;
-  final String Function(String) s;
   final VoidCallback onLogout;
   final void Function(String) onLocaleChange;
 
   const _KafaAppBar({
     required this.name,
-    required this.isActive,
     required this.locale,
-    required this.s,
+    required this.isActive,
     required this.hasPolicy,
     required this.onLogout,
     required this.onLocaleChange,
@@ -150,6 +148,7 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
       hasPolicy ? kToolbarHeight : kToolbarHeight + 40);
 
   void _showContactAdminPopup(BuildContext context) {
+    String s(String key) => AppStrings.get(key, locale);
     showDialog(
       context: context,
       builder: (_) => Dialog(
@@ -177,7 +176,8 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    final initials = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    String s(String key) => AppStrings.get(key, locale);
+    final initials  = name.isNotEmpty ? name[0].toUpperCase() : '?';
     final currentLang = LanguageProvider.supportedLanguages
         .firstWhere((l) => l['code'] == locale,
             orElse: () => LanguageProvider.supportedLanguages.first);
@@ -1145,7 +1145,8 @@ class _AlertsCard extends StatelessWidget {
       alerts.add({
         'icon': Icons.notifications_active_outlined,
         'color': _green,
-        'text': s('alertNextPayment').replaceAll('{date}', nextPayDate),
+        'text': s('alertNextPayment').replaceAll(
+            '{date}', AppStrings.formatDate(nextPayDate, locale)),
       });
     }
 
@@ -1350,7 +1351,8 @@ class _PaymentNotificationBannerState
     if (seen || _dismissed) return const SizedBox.shrink();
 
     final amount    = notif['amountPaid']?.toString()  ?? '—';
-    final date      = notif['paymentDate'] as String?  ?? '—';
+    final rawDate   = notif['paymentDate'] as String?  ?? '—';
+    final date      = AppStrings.formatDate(rawDate, widget.locale);
     final ref       = notif['referenceNo'] as String?  ?? '—';
     final policyNo  = notif['policyNo']    as String?  ?? '—';
     final method    = notif['paymentMethod'] as String? ?? '—';
