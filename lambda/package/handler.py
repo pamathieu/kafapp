@@ -178,6 +178,14 @@ def lambda_handler(event, context):
     if method == "POST" and resource == "/member/chat":
         return _handle_member_chat(event)
 
+    # ── GET /member/beneficiaries — fetch beneficiaries for a member ──────────
+    if method == "GET" and resource == "/member/beneficiaries":
+        return _handle_get_member_beneficiaries(event)
+
+    # ── POST /member/beneficiaries — add or update a beneficiary ─────────────
+    if method == "POST" and resource == "/member/beneficiaries":
+        return _handle_save_member_beneficiary(event)
+
     # ── POST /member/login — member self-service login ────────────────────────
     if method == "POST" and resource == "/member/login":
         return _handle_member_login(event)
@@ -193,6 +201,26 @@ def lambda_handler(event, context):
     # ── POST /auth/login — validate admin credentials ────────────────────────
     if method == "POST" and resource == "/auth/login":
         return _handle_admin_login(event)
+
+    # ── GET /member/partners — funeral service partners directory ─────────────
+    if method == "GET" and resource == "/member/partners":
+        return _handle_get_partners(event)
+
+    # ── GET /member/documents — list documents for a member ──────────────────
+    if method == "GET" and resource == "/member/documents":
+        return _handle_get_documents(event)
+
+    # ── POST /member/documents/upload — request presigned PUT URL ────────────
+    if method == "POST" and resource == "/member/documents/upload":
+        return _handle_request_upload_url(event)
+
+    # ── POST /member/death-report — report death, send SES email ─────────────
+    if method == "POST" and resource == "/member/death-report":
+        return _handle_death_report(event)
+
+    # ── POST /member/enrollment — express enrollment request ──────────────────
+    if method == "POST" and resource == "/member/enrollment":
+        return _handle_enrollment(event)
 
     return _resp(404, {"error": f"Route not found: {method} {resource}"})
 
@@ -1430,6 +1458,389 @@ def _handle_acknowledge_payment(event: dict) -> dict:
 ################################################################################
 # HTTP response helper
 ################################################################################
+
+################################################################################
+# GET /member/beneficiaries — fetch all beneficiaries for a member
+################################################################################
+
+def _handle_get_member_beneficiaries(event: dict) -> dict:
+    params    = (event.get("queryStringParameters") or {})
+    member_id = params.get("memberId", "").strip()
+    if not member_id:
+        return _resp(400, {"error": "memberId is required"})
+
+    table = dynamodb.Table(LIFE_INSURANCE_TABLE)
+
+    # 1. Get the member's policy references (MEMBER#<id> → POLICY# items)
+    refs = table.query(
+        KeyConditionExpression="PK = :pk AND begins_with(SK, :sk)",
+        ExpressionAttributeValues={
+            ":pk": f"MEMBER#{member_id}",
+            ":sk": "POLICY#",
+        },
+    ).get("Items", [])
+
+    beneficiaries = []
+    for ref in refs:
+        policy_no = ref.get("policyNo") or ref["SK"].replace("POLICY#", "")
+        pk = f"POLICY#{policy_no}"
+
+        # 2. Query all BENEF# items under this policy
+        response = table.query(
+            KeyConditionExpression="PK = :pk AND begins_with(SK, :sk)",
+            ExpressionAttributeValues={":pk": pk, ":sk": "BENEF#"},
+        )
+        items = response.get("Items", [])
+        while "LastEvaluatedKey" in response:
+            response = table.query(
+                KeyConditionExpression="PK = :pk AND begins_with(SK, :sk)",
+                ExpressionAttributeValues={":pk": pk, ":sk": "BENEF#"},
+                ExclusiveStartKey=response["LastEvaluatedKey"],
+            )
+            items.extend(response.get("Items", []))
+
+        for b in items:
+            beneficiaries.append({
+                "beneficiaryId": b.get("SK", ""),
+                "policyNo":      policy_no,
+                "name":          b.get("fullName", b.get("name", "—")),
+                "relationship":  b.get("relationship", "—"),
+                "sharePercent":  int(b["sharePct"]) if "sharePct" in b else (
+                                 int(b["sharePercent"]) if "sharePercent" in b else None),
+                "isPrimary":     b.get("isPrimary", False),
+                "dateOfBirth":   b.get("dateOfBirth", ""),
+                "phone":         b.get("phone", ""),
+            })
+
+    return _resp(200, {"beneficiaries": beneficiaries, "count": len(beneficiaries)})
+
+
+################################################################################
+# POST /member/beneficiaries — add or update a beneficiary
+################################################################################
+
+def _handle_save_member_beneficiary(event: dict) -> dict:
+    import uuid, datetime
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    member_id     = body.get("memberId", "").strip()
+    policy_no     = body.get("policyNo", "").strip()
+    name          = body.get("name", "").strip()
+    relationship  = body.get("relationship", "").strip()
+    share_percent = body.get("sharePercent")
+    beneficiary_id = body.get("beneficiaryId", "").strip()  # empty = new record
+
+    if not member_id:
+        return _resp(400, {"error": "memberId is required"})
+    if not policy_no:
+        return _resp(400, {"error": "policyNo is required"})
+    if not name:
+        return _resp(400, {"error": "name is required"})
+    if not relationship:
+        return _resp(400, {"error": "relationship is required"})
+    if share_percent is None or not (1 <= int(share_percent) <= 100):
+        return _resp(400, {"error": "sharePercent must be between 1 and 100"})
+
+    # Derive SK — reuse existing or generate new
+    if beneficiary_id and beneficiary_id.startswith("BENEF#"):
+        sk = beneficiary_id
+    elif beneficiary_id:
+        sk = f"BENEF#{beneficiary_id}"
+    else:
+        sk = f"BENEF#{uuid.uuid4().hex[:8].upper()}"
+
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+    table = dynamodb.Table(LIFE_INSURANCE_TABLE)
+
+    item = {
+        "PK":           f"POLICY#{policy_no}",
+        "SK":           sk,
+        "entity_type":  "BENEFICIARY",
+        "policyNo":     policy_no,
+        "memberId":     member_id,
+        "fullName":     name,
+        "name":         name,          # keep both for compatibility
+        "relationship": relationship,
+        "sharePct":     int(share_percent),
+        "sharePercent": int(share_percent),
+        "updatedAt":    now,
+    }
+    # Preserve createdAt on update
+    if not beneficiary_id:
+        item["createdAt"] = now
+
+    table.put_item(Item=item)
+
+    logger.info("Saved beneficiary %s for policy %s member %s", sk, policy_no, member_id)
+    return _resp(201, {"beneficiaryId": sk, "message": "Beneficiary saved"})
+
+
+################################################################################
+# GET /member/partners — funeral service partner directory
+################################################################################
+
+def _handle_get_partners(event: dict) -> dict:
+    """Return hardcoded partner list (or from DynamoDB if PARTNERS table added later)."""
+    partners = [
+        {
+            "partnerId":  "PARTNER#001",
+            "name":       "Pompes Funèbres Nationale",
+            "phone":      "+509 2940-0000",
+            "email":      "contact@pfn.ht",
+            "address":    "Route de Delmas 75",
+            "city":       "Port-au-Prince",
+        },
+        {
+            "partnerId":  "PARTNER#002",
+            "name":       "Services Funéraires Caraïbes",
+            "phone":      "+509 3700-1111",
+            "email":      "info@sfcaraibes.ht",
+            "address":    "Blvd 15 Octobre",
+            "city":       "Cap-Haïtien",
+        },
+        {
+            "partnerId":  "PARTNER#003",
+            "name":       "Maison du Dernier Repos",
+            "phone":      "+509 2810-2222",
+            "email":      "mdr@funeraires.ht",
+            "address":    "Rue des Capois 12",
+            "city":       "Port-au-Prince",
+        },
+    ]
+    return _resp(200, {"partners": partners, "count": len(partners)})
+
+
+################################################################################
+# GET /member/documents — list member documents
+# POST /member/documents/upload — request presigned PUT URL
+################################################################################
+
+def _handle_get_documents(event: dict) -> dict:
+    params    = event.get("queryStringParameters") or {}
+    member_id = params.get("memberId", "").strip()
+    if not member_id:
+        return _resp(400, {"error": "memberId is required"})
+
+    table = dynamodb.Table(LIFE_INSURANCE_TABLE)
+    documents = []
+    kwargs = {
+        "KeyConditionExpression": "PK = :pk AND begins_with(SK, :sk)",
+        "ExpressionAttributeValues": {":pk": f"MEMBER#{member_id}", ":sk": "DOCUMENT#"},
+    }
+    while True:
+        response = table.query(**kwargs)
+        for item in response.get("Items", []):
+            documents.append({
+                "documentId": item.get("SK", ""),
+                "name":       item.get("name", "—"),
+                "docType":    item.get("docType", ""),
+                "uploadedAt": item.get("uploadedAt", ""),
+                "url":        item.get("downloadUrl", ""),
+            })
+        if "LastEvaluatedKey" not in response:
+            break
+        kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+
+    return _resp(200, {"documents": documents, "count": len(documents)})
+
+
+def _handle_request_upload_url(event: dict) -> dict:
+    import uuid, datetime
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    member_id = body.get("memberId", "").strip()
+    name      = body.get("name", "document").strip()
+    doc_type  = body.get("docType", "Autre").strip()
+
+    if not member_id:
+        return _resp(400, {"error": "memberId is required"})
+
+    doc_id  = f"DOC#{uuid.uuid4().hex[:8].upper()}"
+    now     = datetime.datetime.utcnow().isoformat() + "Z"
+    s3_key  = f"members/{member_id}/documents/{doc_id}/{name}"
+
+    # Generate presigned PUT URL (10-minute expiry)
+    upload_url = s3_client.generate_presigned_url(
+        "put_object",
+        Params={"Bucket": CERTS_BUCKET, "Key": s3_key, "ContentType": "application/octet-stream"},
+        ExpiresIn=600,
+    )
+
+    # Generate presigned GET URL for later download
+    download_url = s3_client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": CERTS_BUCKET, "Key": s3_key},
+        ExpiresIn=86400,
+    )
+
+    # Store document record in DynamoDB
+    dynamodb.Table(LIFE_INSURANCE_TABLE).put_item(Item={
+        "PK":          f"MEMBER#{member_id}",
+        "SK":          f"DOCUMENT#{doc_id}",
+        "entity_type": "DOCUMENT",
+        "memberId":    member_id,
+        "documentId":  doc_id,
+        "name":        name,
+        "docType":     doc_type,
+        "s3Key":       s3_key,
+        "downloadUrl": download_url,
+        "uploadedAt":  now,
+    })
+
+    return _resp(201, {"uploadUrl": upload_url, "documentId": doc_id})
+
+
+################################################################################
+# POST /member/death-report — report death + SES notification
+################################################################################
+
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@kafa.org")
+
+def _handle_death_report(event: dict) -> dict:
+    import uuid, datetime
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    member_id      = body.get("memberId", "").strip()
+    member_name    = body.get("memberName", "—")
+    policy_no      = body.get("policyNo", "—")
+    date_of_death  = body.get("dateOfDeath", "—")
+    declarant_name = body.get("declarantName", "—")
+    declarant_phone = body.get("declarantPhone", "")
+    relationship   = body.get("relationship", "—")
+    notes          = body.get("notes", "")
+
+    if not member_id:
+        return _resp(400, {"error": "memberId is required"})
+    if not date_of_death or date_of_death == "—":
+        return _resp(400, {"error": "dateOfDeath is required"})
+    if not declarant_name or declarant_name == "—":
+        return _resp(400, {"error": "declarantName is required"})
+
+    report_id = uuid.uuid4().hex[:8].upper()
+    now       = datetime.datetime.utcnow().isoformat() + "Z"
+
+    # Store report in DynamoDB
+    dynamodb.Table(LIFE_INSURANCE_TABLE).put_item(Item={
+        "PK":           f"MEMBER#{member_id}",
+        "SK":           f"DEATH#{report_id}",
+        "entity_type":  "DEATH_REPORT",
+        "memberId":     member_id,
+        "memberName":   member_name,
+        "policyNo":     policy_no,
+        "dateOfDeath":  date_of_death,
+        "declarantName": declarant_name,
+        "declarantPhone": declarant_phone,
+        "relationship": relationship,
+        "notes":        notes,
+        "reportedAt":   now,
+        "status":       "PENDING",
+    })
+
+    # Send SES email notification to admin
+    try:
+        ses_client = boto3.client("ses", region_name=AWS_REGION)
+        email_body = (
+            f"DEATH REPORT — {now}\n\n"
+            f"Assuré:        {member_name} ({member_id})\n"
+            f"Police:        {policy_no}\n"
+            f"Date décès:    {date_of_death}\n"
+            f"Déclarant:     {declarant_name}\n"
+            f"Téléphone:     {declarant_phone}\n"
+            f"Relation:      {relationship}\n"
+            f"Notes:         {notes}\n"
+            f"Report ID:     {report_id}\n"
+        )
+        ses_client.send_email(
+            Source=ADMIN_EMAIL,
+            Destination={"ToAddresses": [ADMIN_EMAIL]},
+            Message={
+                "Subject": {"Data": f"[KAFA] Déclaration de décès — {member_name}"},
+                "Body":    {"Text": {"Data": email_body}},
+            },
+        )
+        logger.info("Death report email sent for member %s report %s", member_id, report_id)
+    except Exception as e:
+        logger.error("SES send failed: %s", str(e))
+        # Don't fail the whole request if email fails — record is already stored
+
+    return _resp(201, {"reportId": report_id, "message": "Death report received"})
+
+
+################################################################################
+# POST /member/enrollment — express enrollment request
+################################################################################
+
+def _handle_enrollment(event: dict) -> dict:
+    import uuid, datetime
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    member_id = body.get("memberId", "").strip()
+    name      = body.get("name", "").strip()
+    phone     = body.get("phone", "").strip()
+    email     = body.get("email", "").strip()
+    address   = body.get("address", "").strip()
+    plan      = body.get("plan", "BASIC").strip().upper()
+
+    if not member_id:
+        return _resp(400, {"error": "memberId is required"})
+    if not name:
+        return _resp(400, {"error": "name is required"})
+
+    enrollment_id = uuid.uuid4().hex[:8].upper()
+    now           = datetime.datetime.utcnow().isoformat() + "Z"
+
+    dynamodb.Table(LIFE_INSURANCE_TABLE).put_item(Item={
+        "PK":           f"MEMBER#{member_id}",
+        "SK":           f"ENROLLMENT#{enrollment_id}",
+        "entity_type":  "ENROLLMENT",
+        "memberId":     member_id,
+        "name":         name,
+        "phone":        phone,
+        "email":        email,
+        "address":      address,
+        "plan":         plan,
+        "status":       "PENDING",
+        "submittedAt":  now,
+    })
+
+    # Notify admin via SES
+    try:
+        ses_client = boto3.client("ses", region_name=AWS_REGION)
+        email_body = (
+            f"EXPRESS ENROLLMENT — {now}\n\n"
+            f"Nom:       {name}\n"
+            f"ID:        {member_id}\n"
+            f"Téléphone: {phone}\n"
+            f"Email:     {email}\n"
+            f"Adresse:   {address}\n"
+            f"Formule:   {plan}\n"
+            f"Ref:       {enrollment_id}\n"
+        )
+        ses_client.send_email(
+            Source=ADMIN_EMAIL,
+            Destination={"ToAddresses": [ADMIN_EMAIL]},
+            Message={
+                "Subject": {"Data": f"[KAFA] Demande d'adhésion — {name}"},
+                "Body":    {"Text": {"Data": email_body}},
+            },
+        )
+    except Exception as e:
+        logger.error("SES send failed for enrollment: %s", str(e))
+
+    return _resp(201, {"enrollmentId": enrollment_id, "message": "Enrollment request received"})
+
 
 def _resp(status_code: int, body: dict) -> dict:
     return {

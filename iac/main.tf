@@ -1617,6 +1617,86 @@ resource "aws_api_gateway_integration_response" "members_set_payment_access_opti
   depends_on = [aws_api_gateway_integration.members_set_payment_access_options]
 }
 
+# ── /member/beneficiaries  GET+POST → fetch / save beneficiaries ─────────────
+
+resource "aws_api_gateway_resource" "member_beneficiaries" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.member.id
+  path_part   = "beneficiaries"
+}
+
+resource "aws_api_gateway_method" "member_beneficiaries_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_beneficiaries.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_beneficiaries_get" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.member_beneficiaries.id
+  http_method             = aws_api_gateway_method.member_beneficiaries_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.certificate_handler.invoke_arn
+}
+
+resource "aws_api_gateway_method" "member_beneficiaries_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_beneficiaries.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_beneficiaries_post" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.member_beneficiaries.id
+  http_method             = aws_api_gateway_method.member_beneficiaries_post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.certificate_handler.invoke_arn
+}
+
+resource "aws_api_gateway_method" "member_beneficiaries_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_beneficiaries.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_beneficiaries_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_beneficiaries.id
+  http_method = aws_api_gateway_method.member_beneficiaries_options.http_method
+  type        = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+
+resource "aws_api_gateway_method_response" "member_beneficiaries_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_beneficiaries.id
+  http_method = aws_api_gateway_method.member_beneficiaries_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "member_beneficiaries_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_beneficiaries.id
+  http_method = aws_api_gateway_method.member_beneficiaries_options.http_method
+  status_code = aws_api_gateway_method_response.member_beneficiaries_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.member_beneficiaries_options]
+}
+
 # ── /member/acknowledge-payment  POST → member dismisses payment notification ─
 
 resource "aws_api_gateway_resource" "member_acknowledge_payment" {
@@ -1809,6 +1889,326 @@ resource "aws_api_gateway_integration_response" "members_set_credentials_options
   depends_on = [aws_api_gateway_integration.members_set_credentials_options]
 }
 
+# ── /member/partners  GET → funeral service partner directory ─────────────────
+
+resource "aws_api_gateway_resource" "member_partners" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.member.id
+  path_part   = "partners"
+}
+
+resource "aws_api_gateway_method" "member_partners_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_partners.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_partners_get" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.member_partners.id
+  http_method             = aws_api_gateway_method.member_partners_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.certificate_handler.invoke_arn
+}
+
+resource "aws_api_gateway_method" "member_partners_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_partners.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_partners_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_partners.id
+  http_method = aws_api_gateway_method.member_partners_options.http_method
+  type        = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+
+resource "aws_api_gateway_method_response" "member_partners_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_partners.id
+  http_method = aws_api_gateway_method.member_partners_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "member_partners_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_partners.id
+  http_method = aws_api_gateway_method.member_partners_options.http_method
+  status_code = aws_api_gateway_method_response.member_partners_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.member_partners_options]
+}
+
+# ── /member/documents  GET → list member documents ────────────────────────────
+
+resource "aws_api_gateway_resource" "member_documents" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.member.id
+  path_part   = "documents"
+}
+
+resource "aws_api_gateway_method" "member_documents_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_documents.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_documents_get" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.member_documents.id
+  http_method             = aws_api_gateway_method.member_documents_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.certificate_handler.invoke_arn
+}
+
+resource "aws_api_gateway_method" "member_documents_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_documents.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_documents_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_documents.id
+  http_method = aws_api_gateway_method.member_documents_options.http_method
+  type        = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+
+resource "aws_api_gateway_method_response" "member_documents_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_documents.id
+  http_method = aws_api_gateway_method.member_documents_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "member_documents_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_documents.id
+  http_method = aws_api_gateway_method.member_documents_options.http_method
+  status_code = aws_api_gateway_method_response.member_documents_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.member_documents_options]
+}
+
+# ── /member/documents/upload  POST → request presigned PUT URL ───────────────
+
+resource "aws_api_gateway_resource" "member_documents_upload" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.member_documents.id
+  path_part   = "upload"
+}
+
+resource "aws_api_gateway_method" "member_documents_upload_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_documents_upload.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_documents_upload_post" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.member_documents_upload.id
+  http_method             = aws_api_gateway_method.member_documents_upload_post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.certificate_handler.invoke_arn
+}
+
+resource "aws_api_gateway_method" "member_documents_upload_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_documents_upload.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_documents_upload_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_documents_upload.id
+  http_method = aws_api_gateway_method.member_documents_upload_options.http_method
+  type        = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+
+resource "aws_api_gateway_method_response" "member_documents_upload_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_documents_upload.id
+  http_method = aws_api_gateway_method.member_documents_upload_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "member_documents_upload_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_documents_upload.id
+  http_method = aws_api_gateway_method.member_documents_upload_options.http_method
+  status_code = aws_api_gateway_method_response.member_documents_upload_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.member_documents_upload_options]
+}
+
+# ── /member/death-report  POST → SES death notification ──────────────────────
+
+resource "aws_api_gateway_resource" "member_death_report" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.member.id
+  path_part   = "death-report"
+}
+
+resource "aws_api_gateway_method" "member_death_report_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_death_report.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_death_report_post" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.member_death_report.id
+  http_method             = aws_api_gateway_method.member_death_report_post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.certificate_handler.invoke_arn
+}
+
+resource "aws_api_gateway_method" "member_death_report_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_death_report.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_death_report_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_death_report.id
+  http_method = aws_api_gateway_method.member_death_report_options.http_method
+  type        = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+
+resource "aws_api_gateway_method_response" "member_death_report_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_death_report.id
+  http_method = aws_api_gateway_method.member_death_report_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "member_death_report_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_death_report.id
+  http_method = aws_api_gateway_method.member_death_report_options.http_method
+  status_code = aws_api_gateway_method_response.member_death_report_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.member_death_report_options]
+}
+
+# ── /member/enrollment  POST → express enrollment request ────────────────────
+
+resource "aws_api_gateway_resource" "member_enrollment" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.member.id
+  path_part   = "enrollment"
+}
+
+resource "aws_api_gateway_method" "member_enrollment_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_enrollment.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_enrollment_post" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.member_enrollment.id
+  http_method             = aws_api_gateway_method.member_enrollment_post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.certificate_handler.invoke_arn
+}
+
+resource "aws_api_gateway_method" "member_enrollment_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.member_enrollment.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "member_enrollment_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_enrollment.id
+  http_method = aws_api_gateway_method.member_enrollment_options.http_method
+  type        = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+
+resource "aws_api_gateway_method_response" "member_enrollment_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_enrollment.id
+  http_method = aws_api_gateway_method.member_enrollment_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "member_enrollment_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.member_enrollment.id
+  http_method = aws_api_gateway_method.member_enrollment_options.http_method
+  status_code = aws_api_gateway_method_response.member_enrollment_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+  depends_on = [aws_api_gateway_integration.member_enrollment_options]
+}
+
 # ── Deployment & Stage ────────────────────────────────────────────────────────
 
 resource "aws_api_gateway_deployment" "main" {
@@ -1841,6 +2241,13 @@ resource "aws_api_gateway_deployment" "main" {
       aws_api_gateway_integration.members_set_payment_access_post.id,
       aws_api_gateway_integration.member_acknowledge_payment_post.id,
       aws_api_gateway_integration.member_profile_get.id,
+      aws_api_gateway_integration.member_beneficiaries_get.id,
+      aws_api_gateway_integration.member_beneficiaries_post.id,
+      aws_api_gateway_integration.member_partners_get.id,
+      aws_api_gateway_integration.member_documents_get.id,
+      aws_api_gateway_integration.member_documents_upload_post.id,
+      aws_api_gateway_integration.member_death_report_post.id,
+      aws_api_gateway_integration.member_enrollment_post.id,
     ]))
   }
 
@@ -1869,6 +2276,13 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_integration.members_set_payment_access_post,
     aws_api_gateway_integration.member_acknowledge_payment_post,
     aws_api_gateway_integration.member_profile_get,
+    aws_api_gateway_integration.member_beneficiaries_get,
+    aws_api_gateway_integration.member_beneficiaries_post,
+    aws_api_gateway_integration.member_partners_get,
+    aws_api_gateway_integration.member_documents_get,
+    aws_api_gateway_integration.member_documents_upload_post,
+    aws_api_gateway_integration.member_death_report_post,
+    aws_api_gateway_integration.member_enrollment_post,
   ]
 
   lifecycle {
