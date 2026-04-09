@@ -8,6 +8,11 @@ import '../services/session_service.dart';
 import 'member_login_screen.dart';
 import 'chatbot_widget.dart';
 import 'policy_screen.dart';
+import 'plans_screen.dart';
+import 'funeral_services_screen.dart';
+import 'documents_screen.dart';
+import 'death_report_screen.dart';
+import 'enrollment_form_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Colour palette
@@ -90,30 +95,39 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
     final isActive =
         member['status'] == true || member['status'] == 'true';
 
+    Future<void> handleLogout() async {
+      await SessionService.clearSession();
+      if (!context.mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const MemberLoginScreen()),
+        (_) => false,
+      );
+    }
+
     final tabs = [
-      _DashboardTab(member: _member, onGoTransactions: () => _goTab(1)),
-      _TransactionsTab(member: _member),
+      _DashboardTab(member: _member, onGoPolicies: () => _goTab(1)),
       PolicyScreen(member: _member, embedded: true),
-      ChatbotWidget(member: _member),
+      _ServicesTab(member: _member, locale: locale),
+      _ProfileTab(member: _member, locale: locale, onLogout: handleLogout),
     ];
 
     final navItems = [
       BottomNavigationBarItem(
-          icon: const Icon(Icons.dashboard_outlined),
-          activeIcon: const Icon(Icons.dashboard),
+          icon: const Icon(Icons.home_outlined),
+          activeIcon: const Icon(Icons.home),
           label: s('navDashboard')),
-      BottomNavigationBarItem(
-          icon: const Icon(Icons.receipt_long_outlined),
-          activeIcon: const Icon(Icons.receipt_long),
-          label: s('navPayments')),
       BottomNavigationBarItem(
           icon: const Icon(Icons.policy_outlined),
           activeIcon: const Icon(Icons.policy),
           label: s('navPolicies')),
       BottomNavigationBarItem(
-          icon: const Icon(Icons.chat_bubble_outline),
-          activeIcon: const Icon(Icons.chat_bubble),
-          label: s('navAssistant')),
+          icon: const Icon(Icons.room_service_outlined),
+          activeIcon: const Icon(Icons.room_service),
+          label: s('navServices')),
+      BottomNavigationBarItem(
+          icon: const Icon(Icons.person_outline),
+          activeIcon: const Icon(Icons.person),
+          label: s('navProfile')),
     ];
 
     return Scaffold(
@@ -395,11 +409,11 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
 
 class _DashboardTab extends StatefulWidget {
   final Map<String, dynamic> member;
-  final VoidCallback onGoTransactions;
+  final VoidCallback onGoPolicies;
 
   const _DashboardTab(
       {required this.member,
-      required this.onGoTransactions});
+      required this.onGoPolicies});
 
   @override
   State<_DashboardTab> createState() => _DashboardTabState();
@@ -493,6 +507,52 @@ class _DashboardTabState extends State<_DashboardTab> {
                 fontSize: 13,
                 color: isActive ? Colors.green.shade700 : Colors.grey.shade600),
           ),
+          const SizedBox(height: 16),
+
+          // ── Death Emergency button ────────────────────────────────────────
+          GestureDetector(
+            onTap: () {
+              final firstPolicy = _policies.isNotEmpty
+                  ? _policies.first['policy'] as Map<String, dynamic>?
+                  : null;
+              final policyNo = firstPolicy?['policyNo'] as String? ?? '';
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => DeathReportScreen(
+                    memberId:   memberId,
+                    memberName: name,
+                    policyNo:   policyNo,
+                  ),
+                ),
+              );
+            },
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFB71C1C),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(children: [
+                const Icon(Icons.crisis_alert, color: Colors.white, size: 22),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(s('deathEmergency'),
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14)),
+                    Text(s('deathEmergencySub'),
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 12)),
+                  ]),
+                ),
+                const Icon(Icons.chevron_right, color: Colors.white70),
+              ]),
+            ),
+          ),
           const SizedBox(height: 20),
 
           // ── 2 × 2 card grid ───────────────────────────────────────────────
@@ -582,7 +642,7 @@ class _DashboardTabState extends State<_DashboardTab> {
                 color: _green,
                 isFirst: true,
                 isLast: false,
-                onTap: widget.onGoTransactions,
+                onTap: widget.onGoPolicies,
               ),
               _QuickAction(
                 icon: Icons.description,
@@ -600,7 +660,7 @@ class _DashboardTabState extends State<_DashboardTab> {
                 color: const Color(0xFF7B1FA2),
                 isFirst: false,
                 isLast: false,
-                onTap: widget.onGoTransactions,
+                onTap: widget.onGoPolicies,
               ),
               _QuickAction(
                 icon: Icons.headset_mic,
@@ -1465,6 +1525,400 @@ class _NotifRow extends StatelessWidget {
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
                 color: Colors.green.shade900)),
+      ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Services Tab
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ServicesTab extends StatelessWidget {
+  final Map<String, dynamic> member;
+  final String locale;
+
+  const _ServicesTab({required this.member, required this.locale});
+
+  String s(String k) => AppStrings.get(k, locale);
+
+  void _openSupportSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.support_agent, color: _green, size: 48),
+          const SizedBox(height: 12),
+          Text(s('assistance24h'),
+              style: const TextStyle(
+                  fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          _SupportTile(
+              icon: Icons.phone,
+              label: s('callUs'),
+              value: '+509 XXXX-XXXX'),
+          const Divider(),
+          _SupportTile(
+              icon: Icons.email,
+              label: s('email'),
+              value: 'support@kafa.org'),
+          const Divider(),
+          _SupportTile(
+              icon: Icons.access_time,
+              label: s('hours'),
+              value: s('hoursValue')),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.chat_bubble_outline),
+            label: Text(s('openChat')),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: _green,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 48),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12))),
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => ChatbotWidget(member: member)),
+              );
+            },
+          ),
+        ]),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Derive member's current plan code from member data if available
+    final String? currentPlanCode =
+        (member['product_code'] ?? member['productCode']) as String?;
+    final memberId = member['memberId'] as String? ?? '';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(s('servicesTitle'),
+            style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1A1A1A))),
+        const SizedBox(height: 20),
+
+        // Plans & Coverage card
+        _ServiceCard(
+          icon: Icons.shield_outlined,
+          iconColor: _green,
+          accentColor: const Color(0xFFE8F5E9),
+          title: s('viewPlans'),
+          subtitle: s('viewPlansSub'),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PlansScreen(
+                  memberId: memberId,
+                  currentPlanCode: currentPlanCode),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // 24/7 Assistance card
+        _ServiceCard(
+          icon: Icons.headset_mic_outlined,
+          iconColor: const Color(0xFF7B1FA2),
+          accentColor: const Color(0xFFF3E5F5),
+          title: s('assistance24h'),
+          subtitle: s('assistance24hSub'),
+          onTap: () => _openSupportSheet(context),
+        ),
+        const SizedBox(height: 12),
+
+        // Funeral Services card
+        _ServiceCard(
+          icon: Icons.local_florist_outlined,
+          iconColor: const Color(0xFF4A148C),
+          accentColor: const Color(0xFFEDE7F6),
+          title: s('funeralServicesCard'),
+          subtitle: s('funeralServicesCardSub'),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const FuneralServicesScreen()),
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // Documents & Wishes card
+        _ServiceCard(
+          icon: Icons.folder_outlined,
+          iconColor: const Color(0xFF0277BD),
+          accentColor: const Color(0xFFE1F5FE),
+          title: s('documentsCard'),
+          subtitle: s('documentsCardSub'),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => DocumentsScreen(memberId: memberId),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // Death Emergency card
+        _ServiceCard(
+          icon: Icons.crisis_alert,
+          iconColor: const Color(0xFFB71C1C),
+          accentColor: const Color(0xFFFFEBEE),
+          title: s('deathEmergency'),
+          subtitle: s('deathEmergencySub'),
+          onTap: () {
+            final policies = member['policies'] as List<dynamic>?;
+            final policyNo = policies != null && policies.isNotEmpty
+                ? (policies.first as Map<String, dynamic>)['policyNo'] as String? ?? ''
+                : '';
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => DeathReportScreen(
+                  memberId:   memberId,
+                  memberName: member['fullName'] as String? ?? '',
+                  policyNo:   policyNo,
+                ),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+
+        // Express Enrollment card
+        _ServiceCard(
+          icon: Icons.assignment_outlined,
+          iconColor: const Color(0xFF1A5C2A),
+          accentColor: const Color(0xFFE8F5E9),
+          title: s('expressEnrollment'),
+          subtitle: s('expressEnrollmentSub'),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => EnrollmentFormScreen(
+                memberId:   memberId,
+                memberName: member['fullName'] as String? ?? '',
+                phone:      member['phone'] as String?,
+                email:      member['email'] as String?,
+              ),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _ServiceCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor, accentColor;
+  final String title, subtitle;
+  final VoidCallback onTap;
+
+  const _ServiceCard({
+    required this.icon,
+    required this.iconColor,
+    required this.accentColor,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 8,
+                offset: const Offset(0, 2)),
+          ],
+        ),
+        child: Row(children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+                color: accentColor, shape: BoxShape.circle),
+            child: Icon(icon, color: iconColor, size: 26),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 3),
+                  Text(subtitle,
+                      style: TextStyle(
+                          fontSize: 13, color: Colors.grey.shade500)),
+                ]),
+          ),
+          Icon(Icons.arrow_forward_ios,
+              size: 14, color: Colors.grey.shade400),
+        ]),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Profile Tab
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ProfileTab extends StatelessWidget {
+  final Map<String, dynamic> member;
+  final String locale;
+  final Future<void> Function() onLogout;
+
+  const _ProfileTab({
+    required this.member,
+    required this.locale,
+    required this.onLogout,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final locale = context.watch<LanguageProvider>().locale;
+    String s(String k) => AppStrings.get(k, locale);
+
+    final name       = member['full_name']   as String? ?? '—';
+    final phone      = member['phone']       as String? ?? '—';
+    final email      = member['email']       as String? ?? '—';
+    final address    = member['address']     as String? ?? '—';
+    final dob        = member['date_of_birth'] as String?
+                    ?? member['dateOfBirth']   as String? ?? '—';
+    final idNumber   = member['identification_number'] as String?
+                    ?? member['identificationNumber'] as String? ?? '—';
+    final idType     = member['identification_type'] as String?
+                    ?? member['identificationType'] as String? ?? '—';
+    final memberId   = member['memberId']    as String? ?? '—';
+    final commune    = (member['locality'] as Map<String, dynamic>?)?['commune'] as String? ?? '—';
+    final issuedDate = member['issued_date'] as String?
+                    ?? member['issuedDate']   as String? ?? '';
+    final isActive   = member['status'] == true || member['status'] == 'true';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+        // Avatar + name header
+        Center(
+          child: Column(children: [
+            CircleAvatar(
+              radius: 40,
+              backgroundColor: _green,
+              child: Text(
+                name.isNotEmpty ? name[0].toUpperCase() : '?',
+                style: const TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(name,
+                style: const TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+              decoration: BoxDecoration(
+                color: isActive
+                    ? Colors.green.shade100
+                    : Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.circle,
+                    size: 8,
+                    color: isActive
+                        ? Colors.green.shade700
+                        : Colors.grey.shade500),
+                const SizedBox(width: 6),
+                Text(
+                  isActive ? s('activeMember') : s('inactiveMember'),
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isActive
+                          ? Colors.green.shade700
+                          : Colors.grey.shade600),
+                ),
+              ]),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 24),
+
+        // Personal info
+        _SectionCard(
+          title: s('profileInfo'),
+          icon: Icons.person_outline,
+          child: Column(children: [
+            _OverviewRow(icon: Icons.badge_outlined,       label: s('memberId'),    value: memberId),
+            _OverviewRow(icon: Icons.location_on_outlined, label: s('commune'),     value: commune),
+            _OverviewRow(icon: Icons.home_outlined,        label: s('address'),     value: address),
+            _OverviewRow(icon: Icons.phone_outlined,       label: s('phone'),       value: phone),
+            _OverviewRow(icon: Icons.email_outlined,       label: s('email'),       value: email),
+            _OverviewRow(icon: Icons.cake_outlined,        label: s('dateOfBirth'), value: AppStrings.formatDate(dob, locale)),
+            if (issuedDate.isNotEmpty)
+              _OverviewRow(
+                  icon: Icons.verified_outlined,
+                  label: s('memberSince'),
+                  value: AppStrings.formatDate(issuedDate, locale)),
+          ]),
+        ),
+        const SizedBox(height: 16),
+
+        // Identification
+        _SectionCard(
+          title: s('identification'),
+          icon: Icons.fingerprint,
+          child: Column(children: [
+            _OverviewRow(icon: Icons.credit_card, label: s('idType'),   value: idType),
+            _OverviewRow(icon: Icons.numbers,     label: s('idNumber'), value: idNumber),
+          ]),
+        ),
+        const SizedBox(height: 24),
+
+        // Logout button
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            icon: const Icon(Icons.logout, color: Colors.red),
+            label: Text(s('logout'),
+                style: const TextStyle(color: Colors.red)),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 50),
+              side: const BorderSide(color: Colors.red),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: onLogout,
+          ),
+        ),
       ]),
     );
   }

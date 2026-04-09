@@ -32,6 +32,9 @@ dependencies:
   # Markdown rendering for chat responses
   flutter_markdown_plus: ^1.0.7
 
+  # Launch phone/email/URLs
+  url_launcher: ^6.3.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

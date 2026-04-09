@@ -216,6 +216,110 @@ class AppStrings {
 
       // No-policy banner
       'contactKafaForAuth': "Vous n'avez pas encore de contrat avec KAFA. Veuillez nous contacter",
+
+      // Beneficiaries
+      'beneficiaries': 'Bénéficiaires',
+      'noBeneficiaries': 'Aucun bénéficiaire enregistré.',
+      'loadingBeneficiaries': 'Chargement des bénéficiaires...',
+      'relationship': 'Lien',
+      'sharePercent': 'Part',
+
+      // Navigation (phase 2)
+      'navServices': 'Services',
+      'navProfile': 'Profil',
+
+      // Plans & Coverage
+      'plansTitle': "Formules d'assurance",
+      'plansSubtitle': 'Choisissez la couverture adaptée à votre famille',
+      'planBasic': 'Basique',
+      'planPlus': 'Plus',
+      'planPremium': 'Premium',
+      'premiumPerMonth': '/mois',
+      'coverageLabel': 'Couverture',
+      'loadingPlans': 'Chargement des formules...',
+      'plansError': 'Impossible de charger les formules. Veuillez réessayer.',
+      'choosePlan': 'Choisir cette formule',
+      'planContactAdmin': 'Contactez votre administrateur KAFA pour changer de formule.',
+      'planFeatures': 'Inclus',
+      'yourCurrentPlan': 'Votre formule actuelle',
+
+      // Beneficiaries management (phase 2)
+      'editBeneficiaries': 'Gérer les bénéficiaires',
+      'addBeneficiary': 'Ajouter un bénéficiaire',
+      'editBeneficiary': 'Modifier',
+      'deleteBeneficiary': 'Supprimer',
+      'beneficiaryName': 'Nom complet',
+      'beneficiaryRelationship': 'Lien de parenté',
+      'beneficiaryShare': 'Part (%)',
+      'saveBeneficiary': 'Enregistrer',
+      'beneficiaryNameRequired': 'Le nom est requis.',
+      'beneficiaryRelationshipRequired': 'Le lien de parenté est requis.',
+      'beneficiaryShareRequired': 'La part est requise (1–100).',
+      'beneficiarySaved': 'Bénéficiaire enregistré.',
+      'beneficiaryDeleted': 'Bénéficiaire supprimé.',
+      'totalShareWarning': 'La somme des parts doit être égale à 100 %.',
+
+      // Services tab
+      'servicesTitle': 'Services',
+      'viewPlans': 'Formules & Couvertures',
+      'viewPlansSub': 'Voir les options de couverture disponibles',
+      'assistance24h': 'Assistance 24h/24',
+      'assistance24hSub': 'Appelez ou discutez avec notre équipe en tout temps',
+      'openChat': 'Ouvrir le chat',
+
+      // Profile tab
+      'myProfile': 'Mon Profil',
+      'profileInfo': 'Informations du membre',
+      'identification': 'Identification',
+      'memberStatus': 'Statut',
+
+      // Services tab (phase 3)
+      'funeralServicesCard': 'Services Funèbres',
+      'funeralServicesCardSub': 'Trouver un prestataire partenaire',
+      'documentsCard': 'Documents & Volontés',
+      'documentsCardSub': 'Gérer vos documents importants',
+      'deathEmergency': 'Urgence Décès',
+      'deathEmergencySub': 'Déclarer un décès assuré',
+      'expressEnrollment': 'Inscription Rapide',
+      'expressEnrollmentSub': 'Soumettre une demande d\'adhésion',
+
+      // Funeral Services screen (phase 3)
+      'funeralServicesTitle': 'Services Funèbres',
+      'funeralServicesSubtitle': 'Prestataires partenaires KAFA',
+      'noPartners': 'Aucun prestataire disponible pour le moment.',
+      'loadingPartners': 'Chargement des prestataires...',
+      'contactPartner': 'Contacter',
+      'partnerPhone': 'Téléphone',
+      'partnerEmail': 'Email',
+
+      // Documents & Wishes screen (phase 3)
+      'documentsTitle': 'Documents & Volontés',
+      'documentsSubtitle': 'Gérez vos documents importants',
+      'uploadDocument': 'Ajouter un document',
+      'noDocuments': 'Aucun document enregistré.',
+      'loadingDocuments': 'Chargement des documents...',
+      'downloadDocument': 'Télécharger',
+      'uploadInProgress': 'Envoi en cours...',
+      'uploadSuccess': 'Document envoyé avec succès.',
+      'uploadError': 'Erreur lors de l\'envoi du document.',
+      'documentType': 'Type de document',
+
+      // Death Emergency screen (phase 3)
+      'deathReportTitle': 'Déclaration de Décès',
+      'deathReportSubtitle': 'Signalez le décès d\'un assuré KAFA',
+      'dateOfDeath': 'Date du décès',
+      'reportDeathConfirm': 'Soumettre la déclaration',
+      'deathReportSent': 'Déclaration envoyée. L\'équipe KAFA vous contactera.',
+      'deathReportError': 'Erreur lors de l\'envoi de la déclaration.',
+      'declarantRelationship': 'Votre lien avec l\'assuré',
+
+      // Express Enrollment screen (phase 3)
+      'enrollmentTitle': 'Inscription Rapide',
+      'enrollmentSubtitle': 'Demandez à rejoindre KAFA',
+      'enrollmentSubmit': 'Soumettre la demande',
+      'enrollmentSent': 'Demande envoyée. Nous vous contacterons prochainement.',
+      'selectPlan': 'Choisir une formule',
+      'enrollmentNote': 'Un administrateur KAFA finalisera votre inscription.',
     },
     'en': {
       // Login
@@ -433,6 +537,110 @@ class AppStrings {
 
       // No-policy banner
       'contactKafaForAuth': 'You do not have a contract with KAFA yet. Please contact us',
+
+      // Beneficiaries
+      'beneficiaries': 'Beneficiaries',
+      'noBeneficiaries': 'No beneficiaries on file.',
+      'loadingBeneficiaries': 'Loading beneficiaries...',
+      'relationship': 'Relationship',
+      'sharePercent': 'Share',
+
+      // Navigation (phase 2)
+      'navServices': 'Services',
+      'navProfile': 'Profile',
+
+      // Plans & Coverage
+      'plansTitle': 'Plans & Coverage',
+      'plansSubtitle': 'Choose the coverage that fits your family',
+      'planBasic': 'Basic',
+      'planPlus': 'Plus',
+      'planPremium': 'Premium',
+      'premiumPerMonth': '/mo',
+      'coverageLabel': 'Coverage',
+      'loadingPlans': 'Loading plans...',
+      'plansError': 'Could not load plans. Please try again.',
+      'choosePlan': 'Choose this plan',
+      'planContactAdmin': 'Contact your KAFA administrator to change your plan.',
+      'planFeatures': "What's included",
+      'yourCurrentPlan': 'Your current plan',
+
+      // Beneficiaries management (phase 2)
+      'editBeneficiaries': 'Manage Beneficiaries',
+      'addBeneficiary': 'Add Beneficiary',
+      'editBeneficiary': 'Edit',
+      'deleteBeneficiary': 'Delete',
+      'beneficiaryName': 'Full Name',
+      'beneficiaryRelationship': 'Relationship',
+      'beneficiaryShare': 'Share (%)',
+      'saveBeneficiary': 'Save',
+      'beneficiaryNameRequired': 'Name is required.',
+      'beneficiaryRelationshipRequired': 'Relationship is required.',
+      'beneficiaryShareRequired': 'Share is required (1–100).',
+      'beneficiarySaved': 'Beneficiary saved.',
+      'beneficiaryDeleted': 'Beneficiary deleted.',
+      'totalShareWarning': 'Total shares must equal 100%.',
+
+      // Services tab
+      'servicesTitle': 'Services',
+      'viewPlans': 'Plans & Coverage',
+      'viewPlansSub': 'View available coverage options',
+      'assistance24h': '24/7 Assistance',
+      'assistance24hSub': 'Call or chat with our team anytime',
+      'openChat': 'Open Chat',
+
+      // Profile tab
+      'myProfile': 'My Profile',
+      'profileInfo': 'Member Information',
+      'identification': 'Identification',
+      'memberStatus': 'Status',
+
+      // Services tab (phase 3)
+      'funeralServicesCard': 'Funeral Services',
+      'funeralServicesCardSub': 'Find a partner funeral provider',
+      'documentsCard': 'Documents & Wishes',
+      'documentsCardSub': 'Manage your important documents',
+      'deathEmergency': 'Death Emergency',
+      'deathEmergencySub': 'Report a policyholder death',
+      'expressEnrollment': 'Express Enrollment',
+      'expressEnrollmentSub': 'Submit a membership application',
+
+      // Funeral Services screen (phase 3)
+      'funeralServicesTitle': 'Funeral Services',
+      'funeralServicesSubtitle': 'KAFA partner providers',
+      'noPartners': 'No partners available at this time.',
+      'loadingPartners': 'Loading partners...',
+      'contactPartner': 'Contact',
+      'partnerPhone': 'Phone',
+      'partnerEmail': 'Email',
+
+      // Documents & Wishes screen (phase 3)
+      'documentsTitle': 'Documents & Wishes',
+      'documentsSubtitle': 'Manage your important documents',
+      'uploadDocument': 'Upload Document',
+      'noDocuments': 'No documents on file.',
+      'loadingDocuments': 'Loading documents...',
+      'downloadDocument': 'Download',
+      'uploadInProgress': 'Uploading...',
+      'uploadSuccess': 'Document uploaded successfully.',
+      'uploadError': 'Error uploading document.',
+      'documentType': 'Document type',
+
+      // Death Emergency screen (phase 3)
+      'deathReportTitle': 'Death Report',
+      'deathReportSubtitle': 'Report the death of a KAFA policyholder',
+      'dateOfDeath': 'Date of death',
+      'reportDeathConfirm': 'Submit report',
+      'deathReportSent': 'Report submitted. The KAFA team will contact you.',
+      'deathReportError': 'Error submitting the death report.',
+      'declarantRelationship': 'Your relationship to the deceased',
+
+      // Express Enrollment screen (phase 3)
+      'enrollmentTitle': 'Express Enrollment',
+      'enrollmentSubtitle': 'Apply to join KAFA',
+      'enrollmentSubmit': 'Submit application',
+      'enrollmentSent': 'Application submitted. We will contact you shortly.',
+      'selectPlan': 'Select a plan',
+      'enrollmentNote': 'A KAFA administrator will finalize your enrollment.',
     },
     'ht': {
       // Login
@@ -650,6 +858,110 @@ class AppStrings {
 
       // No-policy banner
       'contactKafaForAuth': "Ou pa gen yon kontra ak KAFA toujou. Tanpri kontakte nou",
+
+      // Beneficiaries
+      'beneficiaries': 'Benefisyè',
+      'noBeneficiaries': 'Pa gen benefisyè anrejistreman.',
+      'loadingBeneficiaries': 'Chajman benefisyè...',
+      'relationship': 'Relasyon',
+      'sharePercent': 'Pati',
+
+      // Navigation (phase 2)
+      'navServices': 'Sèvis',
+      'navProfile': 'Pwofil',
+
+      // Plans & Coverage
+      'plansTitle': 'Fòmil Asirans',
+      'plansSubtitle': 'Chwazi kouvèti ki adapte pou fanmi ou',
+      'planBasic': 'Debaz',
+      'planPlus': 'Plis',
+      'planPremium': 'Premium',
+      'premiumPerMonth': '/mwa',
+      'coverageLabel': 'Kouvèti',
+      'loadingPlans': 'Chajman fòmil...',
+      'plansError': 'Pa kapab chaje fòmil yo. Eseye ankò.',
+      'choosePlan': 'Chwazi fòmil sa a',
+      'planContactAdmin': 'Kontakte administratè KAFA ou pou chanje fòmil.',
+      'planFeatures': 'Sa ki enkli',
+      'yourCurrentPlan': 'Fòmil ou kounye a',
+
+      // Beneficiaries management (phase 2)
+      'editBeneficiaries': 'Jere Benefisyè',
+      'addBeneficiary': 'Ajoute Benefisyè',
+      'editBeneficiary': 'Modifye',
+      'deleteBeneficiary': 'Efase',
+      'beneficiaryName': 'Non Konplè',
+      'beneficiaryRelationship': 'Relasyon',
+      'beneficiaryShare': 'Pati (%)',
+      'saveBeneficiary': 'Anrejistre',
+      'beneficiaryNameRequired': 'Non obligatwa.',
+      'beneficiaryRelationshipRequired': 'Relasyon obligatwa.',
+      'beneficiaryShareRequired': 'Pati obligatwa (1–100).',
+      'beneficiarySaved': 'Benefisyè anrejistre.',
+      'beneficiaryDeleted': 'Benefisyè efase.',
+      'totalShareWarning': 'Total pati yo dwe egal 100%.',
+
+      // Services tab
+      'servicesTitle': 'Sèvis',
+      'viewPlans': 'Fòmil & Kouvèti',
+      'viewPlansSub': 'Wè opsyon kouvèti disponib yo',
+      'assistance24h': 'Asistans 24h/24',
+      'assistance24hSub': 'Rele oswa diskite ak ekip nou an nenpòt kilè',
+      'openChat': 'Louvri Chat',
+
+      // Profile tab
+      'myProfile': 'Pwofil Mwen',
+      'profileInfo': 'Enfòmasyon Manm',
+      'identification': 'Idantifikasyon',
+      'memberStatus': 'Estati',
+
+      // Services tab (phase 3)
+      'funeralServicesCard': 'Sèvis Fineray',
+      'funeralServicesCardSub': 'Jwenn yon antrepriz patnè',
+      'documentsCard': 'Dokiman & Volonte',
+      'documentsCardSub': 'Jere dokiman enpòtan ou yo',
+      'deathEmergency': 'Ijans Lanmò',
+      'deathEmergencySub': 'Deklare lanmò yon asire',
+      'expressEnrollment': 'Enskripsyon Rapid',
+      'expressEnrollmentSub': 'Soumèt yon demann adhezyon',
+
+      // Funeral Services screen (phase 3)
+      'funeralServicesTitle': 'Sèvis Fineray',
+      'funeralServicesSubtitle': 'Patnè KAFA yo',
+      'noPartners': 'Pa gen patnè disponib kounye a.',
+      'loadingPartners': 'Chajman patnè yo...',
+      'contactPartner': 'Kontakte',
+      'partnerPhone': 'Telefòn',
+      'partnerEmail': 'Imèl',
+
+      // Documents & Wishes screen (phase 3)
+      'documentsTitle': 'Dokiman & Volonte',
+      'documentsSubtitle': 'Jere dokiman enpòtan ou yo',
+      'uploadDocument': 'Ajoute Dokiman',
+      'noDocuments': 'Pa gen dokiman anrejistreman.',
+      'loadingDocuments': 'Chajman dokiman yo...',
+      'downloadDocument': 'Telechaje',
+      'uploadInProgress': 'Telechajman ap fèt...',
+      'uploadSuccess': 'Dokiman voye avèk siksè.',
+      'uploadError': 'Erè pandan voye dokiman an.',
+      'documentType': 'Tip dokiman',
+
+      // Death Emergency screen (phase 3)
+      'deathReportTitle': 'Deklarasyon Lanmò',
+      'deathReportSubtitle': 'Rapòte lanmò yon asire KAFA',
+      'dateOfDeath': 'Dat lanmò a',
+      'reportDeathConfirm': 'Soumèt deklarasyon an',
+      'deathReportSent': 'Deklarasyon voye. Ekip KAFA a pral kontakte ou.',
+      'deathReportError': 'Erè pandan voye deklarasyon an.',
+      'declarantRelationship': 'Relasyon ou ak moun ki mouri a',
+
+      // Express Enrollment screen (phase 3)
+      'enrollmentTitle': 'Enskripsyon Rapid',
+      'enrollmentSubtitle': 'Aplike pou rejwenn KAFA',
+      'enrollmentSubmit': 'Soumèt demann lan',
+      'enrollmentSent': 'Demann voye. Nou pral kontakte ou byento.',
+      'selectPlan': 'Chwazi yon fòmil',
+      'enrollmentNote': 'Yon administratè KAFA pral finalize enskripsyon ou.',
     },
     'es': {
       // Login
@@ -867,6 +1179,110 @@ class AppStrings {
 
       // No-policy banner
       'contactKafaForAuth': "Aún no tiene un contrato con KAFA. Por favor contáctenos",
+
+      // Beneficiaries
+      'beneficiaries': 'Beneficiarios',
+      'noBeneficiaries': 'No hay beneficiarios registrados.',
+      'loadingBeneficiaries': 'Cargando beneficiarios...',
+      'relationship': 'Parentesco',
+      'sharePercent': 'Parte',
+
+      // Navigation (phase 2)
+      'navServices': 'Servicios',
+      'navProfile': 'Perfil',
+
+      // Plans & Coverage
+      'plansTitle': 'Planes & Cobertura',
+      'plansSubtitle': 'Elija la cobertura adecuada para su familia',
+      'planBasic': 'Básico',
+      'planPlus': 'Plus',
+      'planPremium': 'Premium',
+      'premiumPerMonth': '/mes',
+      'coverageLabel': 'Cobertura',
+      'loadingPlans': 'Cargando planes...',
+      'plansError': 'No se pudieron cargar los planes. Intente de nuevo.',
+      'choosePlan': 'Elegir este plan',
+      'planContactAdmin': 'Contacte a su administrador KAFA para cambiar de plan.',
+      'planFeatures': 'Qué incluye',
+      'yourCurrentPlan': 'Su plan actual',
+
+      // Beneficiaries management (phase 2)
+      'editBeneficiaries': 'Gestionar Beneficiarios',
+      'addBeneficiary': 'Agregar Beneficiario',
+      'editBeneficiary': 'Editar',
+      'deleteBeneficiary': 'Eliminar',
+      'beneficiaryName': 'Nombre Completo',
+      'beneficiaryRelationship': 'Parentesco',
+      'beneficiaryShare': 'Parte (%)',
+      'saveBeneficiary': 'Guardar',
+      'beneficiaryNameRequired': 'El nombre es obligatorio.',
+      'beneficiaryRelationshipRequired': 'El parentesco es obligatorio.',
+      'beneficiaryShareRequired': 'La parte es obligatoria (1–100).',
+      'beneficiarySaved': 'Beneficiario guardado.',
+      'beneficiaryDeleted': 'Beneficiario eliminado.',
+      'totalShareWarning': 'La suma de partes debe ser igual al 100%.',
+
+      // Services tab
+      'servicesTitle': 'Servicios',
+      'viewPlans': 'Planes & Cobertura',
+      'viewPlansSub': 'Ver las opciones de cobertura disponibles',
+      'assistance24h': 'Asistencia 24h',
+      'assistance24hSub': 'Llame o chatee con nuestro equipo en cualquier momento',
+      'openChat': 'Abrir Chat',
+
+      // Profile tab
+      'myProfile': 'Mi Perfil',
+      'profileInfo': 'Información del Miembro',
+      'identification': 'Identificación',
+      'memberStatus': 'Estado',
+
+      // Services tab (phase 3)
+      'funeralServicesCard': 'Servicios Funerarios',
+      'funeralServicesCardSub': 'Encontrar un proveedor asociado',
+      'documentsCard': 'Documentos & Deseos',
+      'documentsCardSub': 'Gestione sus documentos importantes',
+      'deathEmergency': 'Emergencia de Fallecimiento',
+      'deathEmergencySub': 'Reportar el fallecimiento de un asegurado',
+      'expressEnrollment': 'Inscripción Rápida',
+      'expressEnrollmentSub': 'Enviar una solicitud de membresía',
+
+      // Funeral Services screen (phase 3)
+      'funeralServicesTitle': 'Servicios Funerarios',
+      'funeralServicesSubtitle': 'Proveedores asociados de KAFA',
+      'noPartners': 'No hay proveedores disponibles en este momento.',
+      'loadingPartners': 'Cargando proveedores...',
+      'contactPartner': 'Contactar',
+      'partnerPhone': 'Teléfono',
+      'partnerEmail': 'Email',
+
+      // Documents & Wishes screen (phase 3)
+      'documentsTitle': 'Documentos & Deseos',
+      'documentsSubtitle': 'Gestione sus documentos importantes',
+      'uploadDocument': 'Subir Documento',
+      'noDocuments': 'No hay documentos registrados.',
+      'loadingDocuments': 'Cargando documentos...',
+      'downloadDocument': 'Descargar',
+      'uploadInProgress': 'Subiendo...',
+      'uploadSuccess': 'Documento subido con éxito.',
+      'uploadError': 'Error al subir el documento.',
+      'documentType': 'Tipo de documento',
+
+      // Death Emergency screen (phase 3)
+      'deathReportTitle': 'Declaración de Fallecimiento',
+      'deathReportSubtitle': 'Reporte el fallecimiento de un asegurado KAFA',
+      'dateOfDeath': 'Fecha de fallecimiento',
+      'reportDeathConfirm': 'Enviar declaración',
+      'deathReportSent': 'Declaración enviada. El equipo KAFA le contactará.',
+      'deathReportError': 'Error al enviar la declaración.',
+      'declarantRelationship': 'Su relación con el fallecido',
+
+      // Express Enrollment screen (phase 3)
+      'enrollmentTitle': 'Inscripción Rápida',
+      'enrollmentSubtitle': 'Solicite unirse a KAFA',
+      'enrollmentSubmit': 'Enviar solicitud',
+      'enrollmentSent': 'Solicitud enviada. Le contactaremos pronto.',
+      'selectPlan': 'Seleccionar un plan',
+      'enrollmentNote': 'Un administrador KAFA finalizará su inscripción.',
     },
     'pt': {
       // Login
@@ -1084,6 +1500,110 @@ class AppStrings {
 
       // No-policy banner
       'contactKafaForAuth': "Você ainda não tem um contrato com a KAFA. Por favor entre em contato conosco",
+
+      // Beneficiaries
+      'beneficiaries': 'Beneficiários',
+      'noBeneficiaries': 'Nenhum beneficiário cadastrado.',
+      'loadingBeneficiaries': 'Carregando beneficiários...',
+      'relationship': 'Parentesco',
+      'sharePercent': 'Parte',
+
+      // Navigation (phase 2)
+      'navServices': 'Serviços',
+      'navProfile': 'Perfil',
+
+      // Plans & Coverage
+      'plansTitle': 'Planos & Cobertura',
+      'plansSubtitle': 'Escolha a cobertura certa para sua família',
+      'planBasic': 'Básico',
+      'planPlus': 'Plus',
+      'planPremium': 'Premium',
+      'premiumPerMonth': '/mês',
+      'coverageLabel': 'Cobertura',
+      'loadingPlans': 'Carregando planos...',
+      'plansError': 'Não foi possível carregar os planos. Tente novamente.',
+      'choosePlan': 'Escolher este plano',
+      'planContactAdmin': 'Contate seu administrador KAFA para mudar de plano.',
+      'planFeatures': 'O que está incluído',
+      'yourCurrentPlan': 'Seu plano atual',
+
+      // Beneficiaries management (phase 2)
+      'editBeneficiaries': 'Gerenciar Beneficiários',
+      'addBeneficiary': 'Adicionar Beneficiário',
+      'editBeneficiary': 'Editar',
+      'deleteBeneficiary': 'Excluir',
+      'beneficiaryName': 'Nome Completo',
+      'beneficiaryRelationship': 'Parentesco',
+      'beneficiaryShare': 'Parte (%)',
+      'saveBeneficiary': 'Salvar',
+      'beneficiaryNameRequired': 'O nome é obrigatório.',
+      'beneficiaryRelationshipRequired': 'O parentesco é obrigatório.',
+      'beneficiaryShareRequired': 'A parte é obrigatória (1–100).',
+      'beneficiarySaved': 'Beneficiário salvo.',
+      'beneficiaryDeleted': 'Beneficiário excluído.',
+      'totalShareWarning': 'A soma das partes deve ser igual a 100%.',
+
+      // Services tab
+      'servicesTitle': 'Serviços',
+      'viewPlans': 'Planos & Cobertura',
+      'viewPlansSub': 'Ver as opções de cobertura disponíveis',
+      'assistance24h': 'Assistência 24h',
+      'assistance24hSub': 'Ligue ou converse com nossa equipe a qualquer hora',
+      'openChat': 'Abrir Chat',
+
+      // Profile tab
+      'myProfile': 'Meu Perfil',
+      'profileInfo': 'Informações do Membro',
+      'identification': 'Identificação',
+      'memberStatus': 'Status',
+
+      // Services tab (phase 3)
+      'funeralServicesCard': 'Serviços Funerários',
+      'funeralServicesCardSub': 'Encontrar um prestador parceiro',
+      'documentsCard': 'Documentos & Desejos',
+      'documentsCardSub': 'Gerencie seus documentos importantes',
+      'deathEmergency': 'Emergência de Óbito',
+      'deathEmergencySub': 'Declarar o óbito de um segurado',
+      'expressEnrollment': 'Inscrição Rápida',
+      'expressEnrollmentSub': 'Enviar uma solicitação de adesão',
+
+      // Funeral Services screen (phase 3)
+      'funeralServicesTitle': 'Serviços Funerários',
+      'funeralServicesSubtitle': 'Parceiros credenciados KAFA',
+      'noPartners': 'Nenhum parceiro disponível no momento.',
+      'loadingPartners': 'Carregando parceiros...',
+      'contactPartner': 'Contatar',
+      'partnerPhone': 'Telefone',
+      'partnerEmail': 'Email',
+
+      // Documents & Wishes screen (phase 3)
+      'documentsTitle': 'Documentos & Desejos',
+      'documentsSubtitle': 'Gerencie seus documentos importantes',
+      'uploadDocument': 'Enviar Documento',
+      'noDocuments': 'Nenhum documento cadastrado.',
+      'loadingDocuments': 'Carregando documentos...',
+      'downloadDocument': 'Baixar',
+      'uploadInProgress': 'Enviando...',
+      'uploadSuccess': 'Documento enviado com sucesso.',
+      'uploadError': 'Erro ao enviar o documento.',
+      'documentType': 'Tipo de documento',
+
+      // Death Emergency screen (phase 3)
+      'deathReportTitle': 'Declaração de Óbito',
+      'deathReportSubtitle': 'Informe o óbito de um segurado KAFA',
+      'dateOfDeath': 'Data do óbito',
+      'reportDeathConfirm': 'Enviar declaração',
+      'deathReportSent': 'Declaração enviada. A equipe KAFA entrará em contato.',
+      'deathReportError': 'Erro ao enviar a declaração.',
+      'declarantRelationship': 'Seu parentesco com o falecido',
+
+      // Express Enrollment screen (phase 3)
+      'enrollmentTitle': 'Inscrição Rápida',
+      'enrollmentSubtitle': 'Solicite aderir à KAFA',
+      'enrollmentSubmit': 'Enviar solicitação',
+      'enrollmentSent': 'Solicitação enviada. Entraremos em contato em breve.',
+      'selectPlan': 'Selecionar um plano',
+      'enrollmentNote': 'Um administrador KAFA finalizará sua inscrição.',
     },
   };
 

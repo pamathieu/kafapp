@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../providers/language_provider.dart';
 import '../misc/app_strings.dart';
+import 'beneficiaries_screen.dart';
 
 class PolicyScreen extends StatefulWidget {
   final Map<String, dynamic> member;
@@ -49,7 +50,6 @@ class _PolicyScreenState extends State<PolicyScreen> {
 
   Widget _buildBody() {
     final locale = context.watch<LanguageProvider>().locale;
-    String s(String k) => AppStrings.get(k, locale);
 
     if (_loading) {
       return const Center(
@@ -123,6 +123,38 @@ class _PolicyCardState extends State<_PolicyCard> {
 
   bool _payExpanded   = false;
   bool _claimExpanded = false;
+
+  List<Map<String, dynamic>> _beneficiaries    = [];
+  bool                       _loadingBenefits  = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBeneficiaries();
+  }
+
+  Future<void> _loadBeneficiaries() async {
+    final memberId = widget.member['memberId'] as String? ?? '';
+    if (memberId.isEmpty) { setState(() => _loadingBenefits = false); return; }
+    try {
+      final uri = Uri.parse(
+          '$_baseUrl/member/beneficiaries?memberId=${Uri.encodeComponent(memberId)}');
+      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        setState(() {
+          _beneficiaries = List<Map<String, dynamic>>.from(
+              data['beneficiaries'] as List? ?? []);
+          _loadingBenefits = false;
+        });
+      } else {
+        setState(() => _loadingBenefits = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingBenefits = false);
+    }
+  }
 
   String s(String k) => AppStrings.get(k, widget.locale);
 
@@ -549,6 +581,62 @@ class _PolicyCardState extends State<_PolicyCard> {
                     return _ClaimTile(claim: claim);
                   }),
                 ],
+
+                // ── Beneficiaries ─────────────────────────────────────────────
+                const Divider(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _SectionTitle(s('beneficiaries')),
+                    GestureDetector(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => BeneficiariesScreen(
+                            memberId: widget.member['memberId'] as String? ?? '',
+                            policyNo: _policy['policyNo'] as String? ?? '',
+                          ),
+                        ),
+                      ).then((_) => _loadBeneficiaries()),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        const Icon(Icons.edit_outlined,
+                            size: 13, color: Color(0xFF1A5C2A)),
+                        const SizedBox(width: 4),
+                        Text(s('editBeneficiaries'),
+                            style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF1A5C2A),
+                                fontWeight: FontWeight.w600)),
+                      ]),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (_loadingBenefits)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(children: [
+                      const SizedBox(
+                        width: 14, height: 14,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Color(0xFF1A5C2A)),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(s('loadingBeneficiaries'),
+                          style: TextStyle(
+                              fontSize: 13, color: Colors.grey.shade500)),
+                    ]),
+                  )
+                else if (_beneficiaries.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text(s('noBeneficiaries'),
+                        style: TextStyle(
+                            fontSize: 13, color: Colors.grey.shade500)),
+                  )
+                else
+                  ..._beneficiaries.map((b) => _BeneficiaryTile(
+                      data: b, locale: widget.locale)),
               ],
             ),
           ),
@@ -640,7 +728,7 @@ class _ClaimTile extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: _statusColor(status).withOpacity(0.12),
+              color: _statusColor(status).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
@@ -653,6 +741,61 @@ class _ClaimTile extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _BeneficiaryTile extends StatelessWidget {
+  final Map<String, dynamic> data;
+  final String locale;
+  const _BeneficiaryTile({required this.data, required this.locale});
+
+  @override
+  Widget build(BuildContext context) {
+    final name         = data['name']         as String? ?? '—';
+    final relationship = data['relationship'] as String? ?? '—';
+    final share        = data['sharePercent'];
+    final shareStr     = share != null ? '$share%' : '—';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A5C2A).withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF1A5C2A).withValues(alpha: 0.15)),
+      ),
+      child: Row(children: [
+        CircleAvatar(
+          radius: 18,
+          backgroundColor: const Color(0xFF1A5C2A).withValues(alpha: 0.12),
+          child: const Icon(Icons.person, size: 18, color: Color(0xFF1A5C2A)),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(name,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w600, fontSize: 13)),
+            Text(relationship,
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+          ]),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: const Color(0xFFC8A96E).withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            shareStr,
+            style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF8B6914)),
+          ),
+        ),
+      ]),
     );
   }
 }
