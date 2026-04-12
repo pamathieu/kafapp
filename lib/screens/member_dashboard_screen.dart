@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import '../providers/language_provider.dart';
 import '../misc/app_strings.dart';
 import '../services/session_service.dart';
 import 'member_login_screen.dart';
-import 'chatbot_widget.dart';
 import 'policy_screen.dart';
 import 'plans_screen.dart';
 import 'funeral_services_screen.dart';
@@ -30,7 +30,7 @@ class MemberDashboardScreen extends StatefulWidget {
 }
 
 class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
-  int  _tab       = 0;
+  int _tab = 0;
   bool _hasPolicy = true;
 
   // Live member data — refreshed from server on init so notifications are current
@@ -44,13 +44,13 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
     super.initState();
     _member = widget.member; // start with cached session immediately
     _checkPolicy();
-    _refreshMember();        // silently fetch fresh profile in background
+    _refreshMember(); // silently fetch fresh profile in background
   }
 
   /// Re-fetches the member profile from the server so payment_notification
   /// and payment_access are always current, even when loaded from session cache.
   Future<void> _refreshMember() async {
-    final memberId  = widget.member['memberId']  as String? ?? '';
+    final memberId = widget.member['memberId'] as String? ?? '';
     final companyId = widget.member['companyId'] as String? ?? 'KAFA-001';
     if (memberId.isEmpty) return;
     try {
@@ -59,8 +59,8 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
           '&companyId=${Uri.encodeComponent(companyId)}');
       final response = await http.get(uri);
       if (!mounted || response.statusCode != 200) return;
-      final data   = json.decode(response.body) as Map<String, dynamic>;
-      final fresh  = data['member'] as Map<String, dynamic>?;
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      final fresh = data['member'] as Map<String, dynamic>?;
       if (fresh == null) return;
       await SessionService.saveSession(fresh);
       if (mounted) setState(() => _member = fresh);
@@ -76,8 +76,9 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
           '/member/policy?memberId=${Uri.encodeComponent(memberId)}');
       final response = await http.get(uri);
       if (!mounted) return;
-      final data     = json.decode(response.body) as Map<String, dynamic>;
-      final policies = (data['policies'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      final policies =
+          (data['policies'] as List?)?.cast<Map<String, dynamic>>() ?? [];
       setState(() => _hasPolicy = policies.isNotEmpty);
     } catch (_) {}
   }
@@ -92,8 +93,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
 
     final member = _member;
     final name = member['full_name'] as String? ?? '';
-    final isActive =
-        member['status'] == true || member['status'] == 'true';
+    final isActive = member['status'] == true || member['status'] == 'true';
 
     Future<void> handleLogout() async {
       await SessionService.clearSession();
@@ -145,20 +145,31 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
             (_) => false,
           );
         },
-        onLocaleChange: (code) => context.read<LanguageProvider>().setLocale(code),
+        onLocaleChange: (code) =>
+            context.read<LanguageProvider>().setLocale(code),
+        member: _member,
       ),
       body: IndexedStack(index: _tab, children: tabs),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _tab,
-        onTap: _goTab,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: _green,
-        unselectedItemColor: Colors.grey.shade500,
-        backgroundColor: Colors.white,
-        elevation: 12,
-        selectedFontSize: 11,
-        unselectedFontSize: 11,
-        items: navItems,
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Offstage(
+            offstage: _tab != 0,
+            child: _DashboardChatPanel(member: _member, locale: locale),
+          ),
+          BottomNavigationBar(
+            currentIndex: _tab,
+            onTap: _goTab,
+            type: BottomNavigationBarType.fixed,
+            selectedItemColor: _green,
+            unselectedItemColor: Colors.grey.shade500,
+            backgroundColor: Colors.white,
+            elevation: 12,
+            selectedFontSize: 11,
+            unselectedFontSize: 11,
+            items: navItems,
+          ),
+        ],
       ),
     );
   }
@@ -175,6 +186,7 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
   final bool hasPolicy;
   final VoidCallback onLogout;
   final void Function(String) onLocaleChange;
+  final Map<String, dynamic> member;
 
   const _KafaAppBar({
     required this.name,
@@ -183,11 +195,12 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.hasPolicy,
     required this.onLogout,
     required this.onLocaleChange,
+    required this.member,
   });
 
   @override
-  Size get preferredSize => Size.fromHeight(
-      hasPolicy ? kToolbarHeight : kToolbarHeight + 40);
+  Size get preferredSize =>
+      Size.fromHeight(hasPolicy ? kToolbarHeight : kToolbarHeight + 40);
 
   void _showContactAdminPopup(BuildContext context) {
     String s(String key) => AppStrings.get(key, locale);
@@ -201,14 +214,21 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
             const Icon(Icons.support_agent, color: _green, size: 48),
             const SizedBox(height: 8),
             Text(s('contactSupport'),
-                style: const TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.bold)),
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
-            _SupportTile(icon: Icons.phone, label: s('callUs'), value: '+509 XXXX-XXXX'),
+            _SupportTile(
+                icon: Icons.phone, label: s('callUs'), value: '+509 XXXX-XXXX'),
             const Divider(),
-            _SupportTile(icon: Icons.email, label: s('email'), value: 'support@kafa.org'),
+            _SupportTile(
+                icon: Icons.email,
+                label: s('email'),
+                value: 'support@kafa.org'),
             const Divider(),
-            _SupportTile(icon: Icons.access_time, label: s('hours'), value: s('hoursValue')),
+            _SupportTile(
+                icon: Icons.access_time,
+                label: s('hours'),
+                value: s('hoursValue')),
             const SizedBox(height: 8),
           ]),
         ),
@@ -221,10 +241,10 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
     // Watch directly so AppBar always reflects the current locale
     final locale = context.watch<LanguageProvider>().locale;
     String s(String key) => AppStrings.get(key, locale);
-    final initials  = name.isNotEmpty ? name[0].toUpperCase() : '?';
-    final currentLang = LanguageProvider.supportedLanguages
-        .firstWhere((l) => l['code'] == locale,
-            orElse: () => LanguageProvider.supportedLanguages.first);
+    final initials = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    final currentLang = LanguageProvider.supportedLanguages.firstWhere(
+        (l) => l['code'] == locale,
+        orElse: () => LanguageProvider.supportedLanguages.first);
 
     return AppBar(
       backgroundColor: _green,
@@ -236,9 +256,12 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
           borderRadius: BorderRadius.circular(6),
           child: Image.asset(
             'assets/images/kafa_logo.png',
-            width: 34, height: 34, fit: BoxFit.cover,
+            width: 34,
+            height: 34,
+            fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => Container(
-              width: 34, height: 34,
+              width: 34,
+              height: 34,
               decoration: BoxDecoration(
                   color: _gold, borderRadius: BorderRadius.circular(6)),
               child: const Icon(Icons.shield, color: Colors.white, size: 20),
@@ -254,95 +277,74 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
                 letterSpacing: 3)),
       ]),
       // ── No-policy warning banner ──────────────────────────────────────────
-      bottom: hasPolicy ? null : PreferredSize(
-        preferredSize: const Size.fromHeight(40),
-        child: Container(
-          width: double.infinity,
-          color: const Color(0xFFFFF3CD),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(children: [
-            const Icon(Icons.info_outline, size: 16, color: Color(0xFF856404)),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                s('contactKafaForAuth'),
-                style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF856404)),
-              ),
-            ),
-            TextButton(
-              onPressed: () => _showContactAdminPopup(context),
-              style: TextButton.styleFrom(
-                backgroundColor: const Color(0xFF856404),
-                foregroundColor: Colors.white,
+      bottom: hasPolicy
+          ? null
+          : PreferredSize(
+              preferredSize: const Size.fromHeight(40),
+              child: Container(
+                width: double.infinity,
+                color: const Color(0xFFFFF3CD),
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(6)),
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(children: [
+                  const Icon(Icons.info_outline,
+                      size: 16, color: Color(0xFF856404)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      s('contactKafaForAuth'),
+                      style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF856404)),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => _showContactAdminPopup(context),
+                    style: TextButton.styleFrom(
+                      backgroundColor: const Color(0xFF856404),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6)),
+                    ),
+                    child: const Text('Contact Admin',
+                        style: TextStyle(
+                            fontSize: 11, fontWeight: FontWeight.bold)),
+                  ),
+                ]),
               ),
-              child: const Text('Contact Admin',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
             ),
-          ]),
-        ),
-      ),
       actions: [
-        // ── Language dropdown ─────────────────────────────────────────────
-        PopupMenuButton<String>(
-          offset: const Offset(0, 48),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          onSelected: onLocaleChange,
-          itemBuilder: (_) => LanguageProvider.supportedLanguages
-              .map((lang) => PopupMenuItem<String>(
-                    value: lang['code'],
-                    child: Row(children: [
-                      Text(lang['label']!,
-                          style: TextStyle(
-                              fontWeight: lang['code'] == locale
-                                  ? FontWeight.bold
-                                  : FontWeight.normal)),
-                      if (lang['code'] == locale) ...[
-                        const Spacer(),
-                        const Icon(Icons.check, size: 16, color: _green),
-                      ],
-                    ]),
-                  ))
-              .toList(),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.language, color: Colors.white70, size: 18),
-              const SizedBox(width: 4),
-              Text(currentLang['label']!.split(' ').first,
-                  style: const TextStyle(color: Colors.white70, fontSize: 12)),
-              const Icon(Icons.arrow_drop_down, color: Colors.white70, size: 18),
-            ]),
-          ),
-        ),
-        // ── Profile menu ──────────────────────────────────────────────────
+        // ── Alerts bell ───────────────────────────────────────────────────
+        _AlertsBellButton(member: member, locale: locale),
+
+        // ── Profile menu (includes language) ─────────────────────────────
         PopupMenuButton<String>(
           offset: const Offset(0, 48),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           onSelected: (v) {
-            if (v == 'logout') onLogout();
+            if (v == 'logout') {
+              onLogout();
+            } else {
+              onLocaleChange(v);
+            }
           },
           itemBuilder: (_) => [
+            // Status badge
             PopupMenuItem<String>(
               enabled: false,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               child: Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: isActive
-                      ? Colors.green.shade100
-                      : Colors.grey.shade200,
+                  color:
+                      isActive ? Colors.green.shade100 : Colors.grey.shade200,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -353,9 +355,7 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
                           : Colors.grey.shade500),
                   const SizedBox(width: 6),
                   Text(
-                    isActive
-                        ? s('activeMember')
-                        : s('inactiveMember'),
+                    isActive ? s('activeMember') : s('inactiveMember'),
                     style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -367,13 +367,44 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
               ),
             ),
             const PopupMenuDivider(),
+            // Language submenu header (non-interactive label)
+            PopupMenuItem<String>(
+              enabled: false,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(children: [
+                const Icon(Icons.language, size: 16, color: Colors.grey),
+                const SizedBox(width: 8),
+                Text(s('navAssistant').isNotEmpty ? currentLang['label']! : '',
+                    style:
+                        TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+              ]),
+            ),
+            // One item per language
+            ...LanguageProvider.supportedLanguages
+                .map((lang) => PopupMenuItem<String>(
+                      value: lang['code'],
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 4),
+                      child: Row(children: [
+                        Text(lang['label']!,
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: lang['code'] == locale
+                                    ? FontWeight.bold
+                                    : FontWeight.normal)),
+                        if (lang['code'] == locale) ...[
+                          const Spacer(),
+                          const Icon(Icons.check, size: 15, color: _green),
+                        ],
+                      ]),
+                    )),
+            const PopupMenuDivider(),
             PopupMenuItem<String>(
               value: 'logout',
               child: Row(children: [
                 Icon(Icons.logout, size: 18, color: Colors.red.shade400),
                 const SizedBox(width: 12),
-                Text(s('logout'),
-                    style: TextStyle(color: Colors.red.shade400)),
+                Text(s('logout'), style: TextStyle(color: Colors.red.shade400)),
               ]),
             ),
           ],
@@ -404,6 +435,109 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Bell button — shows alerts badge + bottom sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _AlertsBellButton extends StatelessWidget {
+  final Map<String, dynamic> member;
+  final String locale;
+
+  const _AlertsBellButton({required this.member, required this.locale});
+
+  List<Map<String, dynamic>> _buildAlerts(String Function(String) s) {
+    final isActive = member['status'] == true || member['status'] == 'true';
+    final alerts = <Map<String, dynamic>>[];
+
+    if (!isActive) {
+      alerts.add({
+        'icon': Icons.warning_amber_rounded,
+        'color': Colors.orange,
+        'text': s('alertInactive'),
+      });
+    }
+    alerts.add({
+      'icon': Icons.info_outline,
+      'color': const Color(0xFF1565C0),
+      'text': s('alertContactInfo'),
+    });
+    return alerts;
+  }
+
+  void _show(BuildContext context) {
+    String s(String k) => AppStrings.get(k, locale);
+    final alerts = _buildAlerts(s);
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Row(children: [
+            const Icon(Icons.notifications_outlined, color: _green, size: 22),
+            const SizedBox(width: 10),
+            Text(s('alertsReminders'),
+                style:
+                    const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+          ]),
+          const SizedBox(height: 16),
+          ...alerts.map((a) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(a['icon'] as IconData,
+                          color: a['color'] as Color, size: 20),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(a['text'] as String,
+                            style: const TextStyle(
+                                fontSize: 14, color: Color(0xFF333333))),
+                      ),
+                    ]),
+              )),
+        ]),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    String s(String k) => AppStrings.get(k, locale);
+    final count = _buildAlerts(s).length;
+    final hasWarn = member['status'] != true && member['status'] != 'true';
+
+    return IconButton(
+      onPressed: () => _show(context),
+      icon: Stack(clipBehavior: Clip.none, children: [
+        const Icon(Icons.notifications_outlined, color: Colors.white, size: 24),
+        Positioned(
+          top: -4,
+          right: -4,
+          child: Container(
+            width: 16,
+            height: 16,
+            decoration: BoxDecoration(
+              color: hasWarn ? Colors.orange : Colors.green.shade600,
+              shape: BoxShape.circle,
+              border: Border.all(color: _green, width: 1.5),
+            ),
+            child: Center(
+              child: Text('$count',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Dashboard Tab — BofA-style card grid
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -411,17 +545,20 @@ class _DashboardTab extends StatefulWidget {
   final Map<String, dynamic> member;
   final VoidCallback onGoPolicies;
 
-  const _DashboardTab(
-      {required this.member,
-      required this.onGoPolicies});
+  const _DashboardTab({required this.member, required this.onGoPolicies});
 
   @override
   State<_DashboardTab> createState() => _DashboardTabState();
 }
 
-class _DashboardTabState extends State<_DashboardTab> {
+class _DashboardTabState extends State<_DashboardTab>
+    with SingleTickerProviderStateMixin {
   List<Map<String, dynamic>> _policies = [];
   bool _loadingPolicies = true;
+  bool _quickActExpanded = true;
+
+  late final AnimationController _qaCtrl;
+  late final Animation<double> _qaAnim;
 
   static const String _baseUrl =
       'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
@@ -429,7 +566,28 @@ class _DashboardTabState extends State<_DashboardTab> {
   @override
   void initState() {
     super.initState();
+    _qaCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 280),
+      value: 1.0, // starts expanded
+    );
+    _qaAnim = CurvedAnimation(parent: _qaCtrl, curve: Curves.easeInOut);
     _fetchPolicies();
+  }
+
+  @override
+  void dispose() {
+    _qaCtrl.dispose();
+    super.dispose();
+  }
+
+  void _toggleQuickActions() {
+    setState(() => _quickActExpanded = !_quickActExpanded);
+    if (_quickActExpanded) {
+      _qaCtrl.forward();
+    } else {
+      _qaCtrl.reverse();
+    }
   }
 
   Future<void> _fetchPolicies() async {
@@ -443,8 +601,7 @@ class _DashboardTabState extends State<_DashboardTab> {
         final data = json.decode(response.body);
         if (mounted) {
           setState(() {
-            _policies =
-                List<Map<String, dynamic>>.from(data['policies'] ?? []);
+            _policies = List<Map<String, dynamic>>.from(data['policies'] ?? []);
             _loadingPolicies = false;
           });
         }
@@ -464,253 +621,194 @@ class _DashboardTabState extends State<_DashboardTab> {
     final member = widget.member;
     final name = member['full_name'] as String? ?? '';
     final memberId = member['memberId'] as String? ?? '';
-    final isActive =
-        member['status'] == true || member['status'] == 'true';
-    final issuedDate = member['issued_date'] as String? ??
-        member['issuedDate'] as String? ?? '';
-
+    final isActive = member['status'] == true || member['status'] == 'true';
+    final totalPolicies = _policies.length;
     final activePolicies = _policies.where((p) {
       final pol = p['policy'] as Map<String, dynamic>? ?? {};
       return (pol['policyStatus'] as String? ?? '').toUpperCase() == 'ACTIVE';
     }).length;
-    final totalPolicies = _policies.length;
 
     // Derive next premium from first active policy if available
-    final firstEntry = _policies.isNotEmpty ? _policies.first : null;
-    final firstPolicy = firstEntry?['policy'] as Map<String, dynamic>?;
-    final premiumAmount = firstPolicy?['premiumAmount']?.toString() ?? '—';
-    final nextPayDate   = firstPolicy?['nextDueDate']  as String? ?? '—';
+    final firstPolicyMap = _policies.isNotEmpty
+        ? _policies.first['policy'] as Map<String, dynamic>?
+        : null;
+    final premiumAmount = firstPolicyMap?['premiumAmount']?.toString() ?? '—';
+    final nextPayDate = firstPolicyMap?['nextDueDate'] as String? ?? '—';
+    final deathReportPolicyNo = firstPolicyMap?['policyNo'] as String? ?? '';
 
     final firstName = name.split(' ').first;
 
-    return RefreshIndicator(
-      onRefresh: _fetchPolicies,
-      color: _green,
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    return Column(
+      children: [
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _fetchPolicies,
+            color: _green,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 92),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── Payment notification banner ───────────────────────────────────
+                    _PaymentNotificationBanner(
+                        member: widget.member, locale: locale),
 
-          // ── Payment notification banner ───────────────────────────────────
-          _PaymentNotificationBanner(member: widget.member, locale: locale),
-
-          // ── Greeting ──────────────────────────────────────────────────────
-          Text('${s('helloGreeting')}, $firstName 👋',
-              style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF1A1A1A))),
-          const SizedBox(height: 2),
-          Text(
-            isActive ? s('membershipActive') : s('membershipInactive'),
-            style: TextStyle(
-                fontSize: 13,
-                color: isActive ? Colors.green.shade700 : Colors.grey.shade600),
-          ),
-          const SizedBox(height: 16),
-
-          // ── Death Emergency button ────────────────────────────────────────
-          GestureDetector(
-            onTap: () {
-              final firstPolicy = _policies.isNotEmpty
-                  ? _policies.first['policy'] as Map<String, dynamic>?
-                  : null;
-              final policyNo = firstPolicy?['policyNo'] as String? ?? '';
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => DeathReportScreen(
-                    memberId:   memberId,
-                    memberName: name,
-                    policyNo:   policyNo,
-                  ),
-                ),
-              );
-            },
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFB71C1C),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Row(children: [
-                const Icon(Icons.crisis_alert, color: Colors.white, size: 22),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(s('deathEmergency'),
+                    // ── Greeting ──────────────────────────────────────────────────────
+                    Text('${s('helloGreeting')}, $firstName 👋',
                         style: const TextStyle(
-                            color: Colors.white,
+                            fontSize: 22,
                             fontWeight: FontWeight.bold,
-                            fontSize: 14)),
-                    Text(s('deathEmergencySub'),
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 12)),
+                            color: Color(0xFF1A1A1A))),
+                    const SizedBox(height: 2),
+                    Text(
+                      isActive
+                          ? s('membershipActive')
+                          : s('membershipInactive'),
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: isActive
+                              ? Colors.green.shade700
+                              : Colors.grey.shade600),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // ── Summary cards row ─────────────────────────────────────────────
+                    // Card 1: Member ID + status + total policies (combined)
+                    // Card 2: Next payment (date + amount) + Pay Now button
+                    Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: _MemberSummaryCard(
+                              isActive: isActive,
+                              activePolicies:
+                                  _loadingPolicies ? null : activePolicies,
+                              totalPolicies:
+                                  _loadingPolicies ? null : totalPolicies,
+                              locale: locale,
+                              memberId: memberId,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _NextPaymentCard(
+                              nextPayDate: nextPayDate,
+                              premiumAmount: premiumAmount,
+                              locale: locale,
+                              onPayNow: () => _showSupportSheet(context, s),
+                              payLoading: false,
+                            ),
+                          ),
+                        ]),
+                    const SizedBox(height: 20),
+
+                    // ── Quick Actions (collapsible, animated) ─────────────────────────
+                    GestureDetector(
+                      onTap: _toggleQuickActions,
+                      child: Row(children: [
+                        Text(s('quickActions'),
+                            style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF1A1A1A))),
+                        const Spacer(),
+                        AnimatedRotation(
+                          turns: _quickActExpanded ? 0.0 : 0.5,
+                          duration: const Duration(milliseconds: 280),
+                          curve: Curves.easeInOut,
+                          child: Icon(Icons.keyboard_arrow_up,
+                              color: Colors.grey.shade500, size: 22),
+                        ),
+                      ]),
+                    ),
+                    SizeTransition(
+                      sizeFactor: _qaAnim,
+                      axisAlignment: -1,
+                      child: Column(children: [
+                        const SizedBox(height: 12),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.06),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2))
+                            ],
+                          ),
+                          child: Column(children: [
+                            _QuickAction(
+                              icon: Icons.credit_card,
+                              label: s('payPremium'),
+                              subtitle: s('payPremiumSub'),
+                              color: _green,
+                              isFirst: true,
+                              isLast: false,
+                              onTap: widget.onGoPolicies,
+                            ),
+                            _QuickAction(
+                              icon: Icons.description,
+                              label: s('myCertificate'),
+                              subtitle: s('myCertificateSub'),
+                              color: const Color(0xFF1565C0),
+                              isFirst: false,
+                              isLast: false,
+                              onTap: () =>
+                                  _showCertificateSheet(context, member, s),
+                            ),
+                            _QuickAction(
+                              icon: Icons.receipt_long,
+                              label: s('paymentHistory'),
+                              subtitle: s('paymentHistorySub'),
+                              color: const Color(0xFF7B1FA2),
+                              isFirst: false,
+                              isLast: false,
+                              onTap: widget.onGoPolicies,
+                            ),
+                            _QuickAction(
+                              icon: Icons.headset_mic,
+                              label: s('contactSupport'),
+                              subtitle: s('contactSupportSub'),
+                              color: const Color(0xFFE65100),
+                              isFirst: false,
+                              isLast: false,
+                              onTap: () => _showSupportSheet(context, s),
+                            ),
+                            _QuickAction(
+                              icon: Icons.crisis_alert,
+                              label: s('deathEmergency'),
+                              subtitle: s('deathEmergencySub'),
+                              color: const Color(0xFFB71C1C),
+                              isFirst: false,
+                              isLast: true,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => DeathReportScreen(
+                                    memberId: memberId,
+                                    memberName: name,
+                                    policyNo: deathReportPolicyNo,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ]),
+                        ),
+                      ]),
+                    ),
                   ]),
-                ),
-                const Icon(Icons.chevron_right, color: Colors.white70),
-              ]),
             ),
           ),
-          const SizedBox(height: 20),
-
-          // ── 2 × 2 card grid ───────────────────────────────────────────────
-          Row(children: [
-            Expanded(
-              child: _DashCard(
-                icon: Icons.badge_outlined,
-                iconColor: _green,
-                accentColor: const Color(0xFFE8F5E9),
-                label: s('memberId'),
-                value: memberId.isNotEmpty
-                    ? memberId.length > 12
-                        ? '…${memberId.substring(memberId.length - 8)}'
-                        : memberId
-                    : '—',
-                sub: isActive ? s('active') : s('inactive'),
-                subColor: isActive ? Colors.green.shade700 : Colors.grey,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _DashCard(
-                icon: Icons.policy_outlined,
-                iconColor: const Color(0xFF1565C0),
-                accentColor: const Color(0xFFE3F2FD),
-                label: s('policiesLabel'),
-                value: _loadingPolicies ? '…' : '$activePolicies ${s('active').toLowerCase()}',
-                sub: _loadingPolicies ? '' : '$totalPolicies total',
-                subColor: Colors.grey.shade600,
-              ),
-            ),
-          ]),
-          const SizedBox(height: 12),
-
-          Row(children: [
-            Expanded(
-              child: _DashCard(
-                icon: Icons.payments_outlined,
-                iconColor: const Color(0xFF7B1FA2),
-                accentColor: const Color(0xFFF3E5F5),
-                label: s('premiumLabel'),
-                value: premiumAmount != '—' ? 'HTG $premiumAmount' : '—',
-                sub: s('monthlyDue'),
-                subColor: Colors.grey.shade600,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _DashCard(
-                icon: Icons.calendar_month_outlined,
-                iconColor: const Color(0xFFE65100),
-                accentColor: const Color(0xFFFFF3E0),
-                label: s('nextPaymentLabel'),
-                value: nextPayDate != '—'
-                    ? AppStrings.formatDate(nextPayDate, locale)
-                    : '—',
-                sub: s('dueDate'),
-                subColor: Colors.grey.shade600,
-              ),
-            ),
-          ]),
-          const SizedBox(height: 24),
-
-          // ── Quick actions ─────────────────────────────────────────────────
-          Text(s('quickActions'),
-              style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF1A1A1A))),
-          const SizedBox(height: 12),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2))
-              ],
-            ),
-            child: Column(children: [
-              _QuickAction(
-                icon: Icons.credit_card,
-                label: s('payPremium'),
-                subtitle: s('payPremiumSub'),
-                color: _green,
-                isFirst: true,
-                isLast: false,
-                onTap: widget.onGoPolicies,
-              ),
-              _QuickAction(
-                icon: Icons.description,
-                label: s('myCertificate'),
-                subtitle: s('myCertificateSub'),
-                color: const Color(0xFF1565C0),
-                isFirst: false,
-                isLast: false,
-                onTap: () => _showCertificateSheet(context, member, s),
-              ),
-              _QuickAction(
-                icon: Icons.receipt_long,
-                label: s('paymentHistory'),
-                subtitle: s('paymentHistorySub'),
-                color: const Color(0xFF7B1FA2),
-                isFirst: false,
-                isLast: false,
-                onTap: widget.onGoPolicies,
-              ),
-              _QuickAction(
-                icon: Icons.headset_mic,
-                label: s('contactSupport'),
-                subtitle: s('contactSupportSub'),
-                color: const Color(0xFFE65100),
-                isFirst: false,
-                isLast: true,
-                onTap: () => _showSupportSheet(context, s),
-              ),
-            ]),
-          ),
-          const SizedBox(height: 24),
-
-          // ── Member info card ──────────────────────────────────────────────
-          _SectionCard(
-            title: s('memberOverview'),
-            icon: Icons.person_outline,
-            child: Column(children: [
-              _OverviewRow(icon: Icons.person, label: s('fullName'), value: name),
-              _OverviewRow(
-                  icon: Icons.location_on_outlined,
-                  label: s('commune'),
-                  value: (member['locality'] as Map<String, dynamic>?)?['commune'] as String? ?? '—'),
-              _OverviewRow(
-                  icon: Icons.phone_outlined,
-                  label: s('phone'),
-                  value: member['phone'] as String? ?? '—'),
-              _OverviewRow(
-                  icon: Icons.email_outlined,
-                  label: s('email'),
-                  value: member['email'] as String? ?? '—'),
-              if (issuedDate.isNotEmpty)
-                _OverviewRow(
-                    icon: Icons.verified_outlined,
-                    label: s('memberSince'),
-                    value: AppStrings.formatDate(issuedDate, locale)),
-            ]),
-          ),
-          const SizedBox(height: 16),
-
-          // ── Alerts card ───────────────────────────────────────────────────
-          _AlertsCard(isActive: isActive, nextPayDate: nextPayDate, locale: locale),
-        ]),
-      ),
+        ),
+      ],
     );
   }
 
-  void _showCertificateSheet(
-      BuildContext context, Map<String, dynamic> member, String Function(String) s) {
+
+  void _showCertificateSheet(BuildContext context, Map<String, dynamic> member,
+      String Function(String) s) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -721,7 +819,8 @@ class _DashboardTabState extends State<_DashboardTab> {
           const Icon(Icons.description, color: _green, size: 48),
           const SizedBox(height: 12),
           Text(s('memberCertificateTitle'),
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              style:
+                  const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Text(s('downloadCertificateDesc'),
               textAlign: TextAlign.center,
@@ -761,15 +860,445 @@ class _DashboardTabState extends State<_DashboardTab> {
           const Icon(Icons.support_agent, color: _green, size: 48),
           const SizedBox(height: 12),
           Text(s('contactSupport'),
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              style:
+                  const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
-          _SupportTile(icon: Icons.phone, label: s('callUs'), value: '+509 XXXX-XXXX'),
+          _SupportTile(
+              icon: Icons.phone, label: s('callUs'), value: '+509 XXXX-XXXX'),
           const Divider(),
-          _SupportTile(icon: Icons.email, label: s('email'), value: 'support@kafa.org'),
+          _SupportTile(
+              icon: Icons.email, label: s('email'), value: 'support@kafa.org'),
           const Divider(),
-          _SupportTile(icon: Icons.access_time, label: s('hours'), value: s('hoursValue')),
+          _SupportTile(
+              icon: Icons.access_time,
+              label: s('hours'),
+              value: s('hoursValue')),
         ]),
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Dashboard Chat Panel — Claude Code-style persistent input bar
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DashboardChatPanel extends StatefulWidget {
+  final Map<String, dynamic> member;
+  final String locale;
+
+  const _DashboardChatPanel({required this.member, required this.locale});
+
+  @override
+  State<_DashboardChatPanel> createState() => _DashboardChatPanelState();
+}
+
+class _DashboardChatPanelState extends State<_DashboardChatPanel>
+    with SingleTickerProviderStateMixin {
+  static const _chatUrl =
+      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod/member/chat';
+
+  final _textCtrl = TextEditingController();
+  final _scrollCtrl = ScrollController();
+  final List<Map<String, String>> _history = [];
+  final List<_ChatMsg> _messages = [];
+
+  bool _expanded = false;
+  bool _thinking = false;
+
+  late final AnimationController _animCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _animCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+    );
+  }
+
+  @override
+  void dispose() {
+    _textCtrl.dispose();
+    _scrollCtrl.dispose();
+    _animCtrl.dispose();
+    super.dispose();
+  }
+
+  String get _locale => widget.locale;
+
+  void _expand() {
+    if (!_expanded) {
+      setState(() => _expanded = true);
+      _animCtrl.forward();
+    }
+  }
+
+  void _collapse() {
+    setState(() => _expanded = false);
+    _animCtrl.reverse();
+  }
+
+  Future<void> _send(String text) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty || _thinking) return;
+    _textCtrl.clear();
+    _expand();
+
+    setState(() {
+      _messages.add(_ChatMsg(text: trimmed, isUser: true));
+      _thinking = true;
+    });
+    _scrollToBottom();
+    _history.add({'role': 'user', 'content': trimmed});
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse(_chatUrl),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({
+              'messages': _history,
+              'member': widget.member,
+              'locale': _locale,
+            }),
+          )
+          .timeout(const Duration(seconds: 35));
+
+      if (!mounted) return;
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      final reply = data['reply'] as String? ?? '…';
+      _history.add({'role': 'assistant', 'content': reply});
+      setState(() {
+        _thinking = false;
+        _messages.add(_ChatMsg(text: reply, isUser: false));
+      });
+    } catch (_) {
+      if (!mounted) return;
+      _history.removeLast();
+      setState(() {
+        _thinking = false;
+        _messages.add(_ChatMsg(
+          text: AppStrings.get('chatbotDefaultReply', _locale),
+          isUser: false,
+        ));
+      });
+    }
+    _scrollToBottom();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollCtrl.hasClients) {
+        _scrollCtrl.animateTo(
+          _scrollCtrl.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final panelH = MediaQuery.of(context).size.height * 0.55;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeInOut,
+      height: _expanded ? panelH : 52,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.10),
+            blurRadius: 16,
+            offset: const Offset(0, -3),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        child: Column(children: [
+        // ── Handle / header ──────────────────────────────────────────────────
+        GestureDetector(
+          onTap: () => _expanded ? _collapse() : _expand(),
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox(
+            height: 52,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration:
+                      const BoxDecoration(color: _green, shape: BoxShape.circle),
+                  child: const Icon(Icons.support_agent,
+                      color: Colors.white, size: 15),
+                ),
+                const SizedBox(width: 10),
+                const Text(
+                  'KAFA Assistant',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1A1A)),
+                ),
+                const Spacer(),
+                AnimatedRotation(
+                  turns: _expanded ? 0.5 : 0.0,
+                  duration: const Duration(milliseconds: 320),
+                  child: const Icon(Icons.keyboard_arrow_up,
+                      size: 20, color: Colors.grey),
+                ),
+              ]),
+            ),
+          ),
+        ),
+
+        // ── Messages list ────────────────────────────────────────────────────
+        if (_expanded) ...[
+          Expanded(
+            child: ListView.builder(
+              controller: _scrollCtrl,
+              padding: const EdgeInsets.fromLTRB(14, 4, 14, 6),
+              itemCount: _messages.length + (_thinking ? 1 : 0),
+              itemBuilder: (_, i) {
+                if (_thinking && i == _messages.length) {
+                  return const _PanelThinkingBubble();
+                }
+                return _PanelBubble(msg: _messages[i]);
+              },
+            ),
+          ),
+
+        // ── Input bar ────────────────────────────────────────────────────────
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+                12, 4, 12, MediaQuery.of(context).viewInsets.bottom > 0 ? 4 : 12),
+            child: Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: _textCtrl,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: _send,
+                  enabled: !_thinking,
+                  decoration: InputDecoration(
+                    hintText: AppStrings.get('chatbotInputHint', _locale),
+                    hintStyle:
+                        TextStyle(color: Colors.grey.shade400, fontSize: 14),
+                    filled: true,
+                    fillColor: const Color(0xFFF3F4F6),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(22),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(22),
+                      borderSide:
+                          const BorderSide(color: Color(0xFF1A5C2A), width: 1.5),
+                    ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: _thinking ? null : () => _send(_textCtrl.text),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _thinking ? Colors.grey.shade300 : _green,
+                ),
+                child: _thinking
+                    ? const Padding(
+                        padding: EdgeInsets.all(10),
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.arrow_upward_rounded,
+                        color: Colors.white, size: 18),
+              ),
+            ),
+          ]),
+          ),
+        ],
+      ]),
+      ),
+    );
+  }
+}
+
+// ── Chat panel message model ──────────────────────────────────────────────────
+
+class _ChatMsg {
+  final String text;
+  final bool isUser;
+  const _ChatMsg({required this.text, required this.isUser});
+}
+
+// ── Bubble widget ─────────────────────────────────────────────────────────────
+
+class _PanelBubble extends StatelessWidget {
+  final _ChatMsg msg;
+  const _PanelBubble({required this.msg});
+
+  @override
+  Widget build(BuildContext context) {
+    final isUser = msg.isUser;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment:
+            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (!isUser) ...[
+            const CircleAvatar(
+              radius: 13,
+              backgroundColor: _green,
+              child: Icon(Icons.support_agent, color: Colors.white, size: 13),
+            ),
+            const SizedBox(width: 6),
+          ],
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: isUser ? _green : Colors.grey.shade100,
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(16),
+                  topRight: const Radius.circular(16),
+                  bottomLeft: Radius.circular(isUser ? 16 : 4),
+                  bottomRight: Radius.circular(isUser ? 4 : 16),
+                ),
+              ),
+              child: isUser
+                  ? Text(
+                      msg.text,
+                      style: const TextStyle(
+                          fontSize: 13, color: Colors.white, height: 1.4),
+                    )
+                  : MarkdownBody(
+                      data: msg.text,
+                      styleSheet: MarkdownStyleSheet(
+                        p: const TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF1A1A1A),
+                            height: 1.4),
+                        strong: const TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF1A1A1A),
+                            fontWeight: FontWeight.bold,
+                            height: 1.4),
+                        em: const TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF1A1A1A),
+                            fontStyle: FontStyle.italic,
+                            height: 1.4),
+                        listBullet: const TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF1A1A1A),
+                            height: 1.4),
+                        blockSpacing: 6,
+                      ),
+                    ),
+            ),
+          ),
+          if (isUser) ...[
+            const SizedBox(width: 6),
+            CircleAvatar(
+              radius: 13,
+              backgroundColor: _green.withValues(alpha: 0.20),
+              child: const Icon(Icons.person, color: _green, size: 13),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── Thinking bubble ───────────────────────────────────────────────────────────
+
+class _PanelThinkingBubble extends StatefulWidget {
+  const _PanelThinkingBubble();
+
+  @override
+  State<_PanelThinkingBubble> createState() => _PanelThinkingBubbleState();
+}
+
+class _PanelThinkingBubbleState extends State<_PanelThinkingBubble>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1000))
+      ..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(children: [
+        const CircleAvatar(
+          radius: 13,
+          backgroundColor: _green,
+          child: Icon(Icons.support_agent, color: Colors.white, size: 13),
+        ),
+        const SizedBox(width: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(16),
+              topRight: Radius.circular(16),
+              bottomRight: Radius.circular(16),
+              bottomLeft: Radius.circular(4),
+            ),
+          ),
+          child: AnimatedBuilder(
+            animation: _ctrl,
+            builder: (_, __) => Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(3, (i) {
+                final offset = ((_ctrl.value * 3 - i) % 1.0).clamp(0.0, 1.0);
+                final dy = offset < 0.5
+                    ? -6.0 * (offset * 2)
+                    : -6.0 * (1 - (offset - 0.5) * 2);
+                return Padding(
+                  padding: EdgeInsets.only(right: i < 2 ? 4.0 : 0),
+                  child: Transform.translate(
+                    offset: Offset(0, dy),
+                    child: Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                          shape: BoxShape.circle, color: _green),
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+        ),
+      ]),
     );
   }
 }
@@ -813,8 +1342,7 @@ class _TransactionsTabState extends State<_TransactionsTab> {
         final data = json.decode(response.body);
         if (mounted) {
           setState(() {
-            _policies =
-                List<Map<String, dynamic>>.from(data['policies'] ?? []);
+            _policies = List<Map<String, dynamic>>.from(data['policies'] ?? []);
             _loading = false;
           });
         }
@@ -831,14 +1359,15 @@ class _TransactionsTabState extends State<_TransactionsTab> {
     final locale = context.watch<LanguageProvider>().locale;
     String s(String key) => AppStrings.get(key, locale);
 
-    final firstEntry    = _policies.isNotEmpty ? _policies.first : null;
-    final firstPolicy   = firstEntry?['policy']  as Map<String, dynamic>?;
-    final firstLastPay  = firstEntry?['lastPay']  as Map<String, dynamic>?;
+    final firstEntry = _policies.isNotEmpty ? _policies.first : null;
+    final firstPolicy = firstEntry?['policy'] as Map<String, dynamic>?;
+    final firstLastPay = firstEntry?['lastPay'] as Map<String, dynamic>?;
     final premiumAmount = firstPolicy?['premiumAmount']?.toString() ?? '—';
-    final lastPayDate   = firstLastPay?['paymentDate']  as String? ??
-                          firstPolicy?['lastPaidDate']   as String? ?? '—';
-    final nextPayDate   = firstPolicy?['nextDueDate']    as String? ?? '—';
-    final policyNo      = firstPolicy?['policyNo']       as String? ?? '—';
+    final lastPayDate = firstLastPay?['paymentDate'] as String? ??
+        firstPolicy?['lastPaidDate'] as String? ??
+        '—';
+    final nextPayDate = firstPolicy?['nextDueDate'] as String? ?? '—';
+    final policyNo = firstPolicy?['policyNo'] as String? ?? '—';
 
     final paymentAccess = widget.member['payment_access'] == true;
 
@@ -858,9 +1387,9 @@ class _TransactionsTabState extends State<_TransactionsTab> {
           Text(s('managePayments'),
               style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
           const SizedBox(height: 20),
-
           if (_loading)
-            const Center(child: Padding(
+            const Center(
+                child: Padding(
               padding: EdgeInsets.all(32),
               child: CircularProgressIndicator(color: _green),
             ))
@@ -891,64 +1420,76 @@ class _TransactionsTabState extends State<_TransactionsTab> {
               ),
             ]),
             const SizedBox(height: 20),
-
             _SectionCard(
               title: s('payPremium'),
               icon: Icons.credit_card,
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                if (policyNo != '—') ...[
-                  Text('${s('policyPrefix')}: $policyNo',
-                      style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
-                  const SizedBox(height: 4),
-                ],
-                if (premiumAmount != '—') ...[
-                  RichText(
-                    text: TextSpan(children: [
-                      TextSpan(
-                          text: s('amountDue'),
-                          style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
-                      TextSpan(
-                          text: 'HTG $premiumAmount',
-                          style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold, color: _green)),
-                    ]),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-                ElevatedButton.icon(
-                  icon: _payLoading
-                      ? const SizedBox(
-                          width: 18, height: 18,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Icon(Icons.payment),
-                  label: Text(_payLoading ? s('processing') : s('payNow')),
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: paymentAccess ? _green : Colors.grey.shade400,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(double.infinity, 52),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                  onPressed: (!paymentAccess || _payLoading)
-                      ? null
-                      : () => _handlePayNow(context, s),
-                ),
-                if (!paymentAccess) ...[
-                  const SizedBox(height: 8),
-                  Row(children: [
-                    Icon(Icons.lock_outline, size: 14, color: Colors.grey.shade500),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(s('paymentAccessDisabled'),
-                          style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (policyNo != '—') ...[
+                      Text('${s('policyPrefix')}: $policyNo',
+                          style: TextStyle(
+                              fontSize: 13, color: Colors.grey.shade600)),
+                      const SizedBox(height: 4),
+                    ],
+                    if (premiumAmount != '—') ...[
+                      RichText(
+                        text: TextSpan(children: [
+                          TextSpan(
+                              text: s('amountDue'),
+                              style: TextStyle(
+                                  fontSize: 13, color: Colors.grey.shade600)),
+                          TextSpan(
+                              text: 'HTG $premiumAmount',
+                              style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: _green)),
+                        ]),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    ElevatedButton.icon(
+                      icon: _payLoading
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                  color: Colors.white, strokeWidth: 2))
+                          : const Icon(Icons.payment),
+                      label: Text(_payLoading ? s('processing') : s('payNow')),
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor:
+                              paymentAccess ? _green : Colors.grey.shade400,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(double.infinity, 52),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12))),
+                      onPressed: (!paymentAccess || _payLoading)
+                          ? null
+                          : () => _handlePayNow(context, s),
                     ),
+                    if (!paymentAccess) ...[
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        Icon(Icons.lock_outline,
+                            size: 14, color: Colors.grey.shade500),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(s('paymentAccessDisabled'),
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey.shade500)),
+                        ),
+                      ]),
+                    ],
+                    const SizedBox(height: 8),
+                    Center(
+                        child: Text(s('securePayment'),
+                            style: TextStyle(
+                                fontSize: 11, color: Colors.grey.shade500))),
                   ]),
-                ],
-                const SizedBox(height: 8),
-                Center(child: Text(s('securePayment'),
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade500))),
-              ]),
             ),
             const SizedBox(height: 20),
-
             _SectionCard(
               title: s('paymentHistory'),
               icon: Icons.history,
@@ -956,11 +1497,13 @@ class _TransactionsTabState extends State<_TransactionsTab> {
                   ? Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       child: Text(s('noPaymentRecords'),
-                          style: TextStyle(color: Colors.grey.shade500, fontSize: 13)),
+                          style: TextStyle(
+                              color: Colors.grey.shade500, fontSize: 13)),
                     )
                   : Column(
                       children: _policies
-                          .map((p) => _PaymentHistoryTile(policy: p, locale: locale))
+                          .map((p) =>
+                              _PaymentHistoryTile(policy: p, locale: locale))
                           .toList()),
             ),
           ],
@@ -969,12 +1512,14 @@ class _TransactionsTabState extends State<_TransactionsTab> {
     );
   }
 
-  Future<void> _handlePayNow(BuildContext context, String Function(String) s) async {
+  Future<void> _handlePayNow(
+      BuildContext context, String Function(String) s) async {
     setState(() => _payLoading = true);
     await Future.delayed(const Duration(seconds: 1));
     if (!mounted) return;
     setState(() => _payLoading = false);
-    showModalBottomSheet( // ignore: use_build_context_synchronously
+    showModalBottomSheet(
+      // ignore: use_build_context_synchronously
       context: this.context,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -982,13 +1527,17 @@ class _TransactionsTabState extends State<_TransactionsTab> {
         padding: const EdgeInsets.all(24),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(
-            width: 56, height: 56,
-            decoration: BoxDecoration(color: Colors.green.shade50, shape: BoxShape.circle),
-            child: Icon(Icons.check_circle, color: Colors.green.shade600, size: 36),
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+                color: Colors.green.shade50, shape: BoxShape.circle),
+            child: Icon(Icons.check_circle,
+                color: Colors.green.shade600, size: 36),
           ),
           const SizedBox(height: 16),
           Text(s('paymentPortal'),
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              style:
+                  const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Text(s('paymentComingSoon'),
               textAlign: TextAlign.center,
@@ -1000,7 +1549,8 @@ class _TransactionsTabState extends State<_TransactionsTab> {
                 backgroundColor: _green,
                 foregroundColor: Colors.white,
                 minimumSize: const Size(double.infinity, 48),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12))),
             child: Text(s('ok')),
           ),
         ]),
@@ -1013,53 +1563,177 @@ class _TransactionsTabState extends State<_TransactionsTab> {
 //  Reusable small widgets
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _DashCard extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor, accentColor;
-  final String label, value, sub;
-  final Color subColor;
+// ── Member ID + status + policy count ────────────────────────────────────────
 
-  const _DashCard({
-    required this.icon,
-    required this.iconColor,
-    required this.accentColor,
-    required this.label,
-    required this.value,
-    required this.sub,
-    required this.subColor,
+class _MemberSummaryCard extends StatelessWidget {
+  final bool isActive;
+  final int? activePolicies; // null while loading
+  final int? totalPolicies;
+  final String locale;
+  final String memberId;
+
+  const _MemberSummaryCard({
+    required this.isActive,
+    required this.activePolicies,
+    required this.totalPolicies,
+    required this.locale,
+    required this.memberId,
   });
 
   @override
   Widget build(BuildContext context) {
+    String s(String k) => AppStrings.get(k, locale);
+
+    final policyText = activePolicies == null
+        ? '…'
+        : '$activePolicies/${totalPolicies ?? activePolicies} total ${s('policiesLabel').toLowerCase()}';
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 8,
-                offset: const Offset(0, 2))
-          ]),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2))
+        ],
+      ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Container(
           width: 36,
           height: 36,
-          decoration:
-              BoxDecoration(color: accentColor, shape: BoxShape.circle),
-          child: Icon(icon, color: iconColor, size: 20),
+          decoration: const BoxDecoration(
+              color: Color(0xFFE8F5E9), shape: BoxShape.circle),
+          child: const Icon(Icons.badge_outlined, color: _green, size: 20),
         ),
-        const SizedBox(height: 12),
-        Text(label,
-            style:
-                TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+        const SizedBox(height: 10),
+        // Status badge
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: isActive ? Colors.green.shade50 : Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            isActive ? s('active') : s('inactive'),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: isActive ? Colors.green.shade700 : Colors.grey.shade600,
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        // Member ID
+        Text(
+          memberId,
+          style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey.shade500,
+              fontFamily: 'monospace'),
+        ),
+        const SizedBox(height: 6),
+        // Policy count: "1/1 total policies"
+        Text(
+          policyText,
+          style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF1A1A1A)),
+        ),
+      ]),
+    );
+  }
+}
+
+// ── Next payment: date + amount + Pay Now button ──────────────────────────────
+
+class _NextPaymentCard extends StatelessWidget {
+  final String nextPayDate;
+  final String premiumAmount;
+  final String locale;
+  final VoidCallback onPayNow;
+  final bool payLoading;
+
+  const _NextPaymentCard({
+    required this.nextPayDate,
+    required this.premiumAmount,
+    required this.locale,
+    required this.onPayNow,
+    this.payLoading = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    String s(String k) => AppStrings.get(k, locale);
+    final hasDate = nextPayDate != '—' && nextPayDate.isNotEmpty;
+    final hasAmount = premiumAmount != '—' && premiumAmount.isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2))
+        ],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: const BoxDecoration(
+              color: Color(0xFFFFF3E0), shape: BoxShape.circle),
+          child: const Icon(Icons.calendar_month_outlined,
+              color: Color(0xFFE65100), size: 20),
+        ),
+        const SizedBox(height: 10),
+        Text(s('nextPaymentLabel'),
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
         const SizedBox(height: 2),
-        Text(value,
-            style: const TextStyle(
-                fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
-        const SizedBox(height: 2),
-        Text(sub, style: TextStyle(fontSize: 11, color: subColor)),
+        Text(
+          hasDate ? AppStrings.formatDate(nextPayDate, locale) : '—',
+          style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF1A1A1A)),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          hasAmount ? 'HTG $premiumAmount' : '—',
+          style: TextStyle(
+              fontSize: 12,
+              color: hasAmount ? const Color(0xFFE65100) : Colors.grey.shade400,
+              fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: payLoading ? null : onPayNow,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _green,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+              textStyle:
+                  const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+            child: payLoading
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2))
+                : Text(s('payNow')),
+          ),
+        ),
       ]),
     );
   }
@@ -1129,7 +1803,10 @@ class _QuickAction extends StatelessWidget {
           ),
         ),
         if (!isLast)
-          Divider(height: 1, indent: 72, endIndent: 16,
+          Divider(
+              height: 1,
+              indent: 72,
+              endIndent: 16,
               color: Colors.grey.shade100),
       ],
     );
@@ -1164,9 +1841,7 @@ class _SectionCard extends StatelessWidget {
           const SizedBox(width: 8),
           Text(title,
               style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: _green)),
+                  fontSize: 14, fontWeight: FontWeight.bold, color: _green)),
         ]),
         const Divider(height: 20),
         child,
@@ -1199,75 +1874,9 @@ class _OverviewRow extends StatelessWidget {
         ),
         Expanded(
           child: Text(value,
-              style:
-                  const TextStyle(fontSize: 13, color: Color(0xFF1A1A1A))),
+              style: const TextStyle(fontSize: 13, color: Color(0xFF1A1A1A))),
         ),
       ]),
-    );
-  }
-}
-
-class _AlertsCard extends StatelessWidget {
-  final bool isActive;
-  final String nextPayDate;
-  final String locale;
-
-  const _AlertsCard({
-    required this.isActive,
-    required this.nextPayDate,
-    required this.locale,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    String s(String key) => AppStrings.get(key, locale);
-    final alerts = <Map<String, dynamic>>[];
-
-    if (!isActive) {
-      alerts.add({
-        'icon': Icons.warning_amber_rounded,
-        'color': Colors.orange,
-        'text': s('alertInactive'),
-      });
-    }
-
-    if (nextPayDate != '—') {
-      alerts.add({
-        'icon': Icons.notifications_active_outlined,
-        'color': _green,
-        'text': s('alertNextPayment').replaceAll(
-            '{date}', AppStrings.formatDate(nextPayDate, locale)),
-      });
-    }
-
-    alerts.add({
-      'icon': Icons.info_outline,
-      'color': const Color(0xFF1565C0),
-      'text': s('alertContactInfo'),
-    });
-
-    return _SectionCard(
-      title: s('alertsReminders'),
-      icon: Icons.notifications_outlined,
-      child: Column(
-        children: alerts
-            .map((a) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(a['icon'] as IconData,
-                            color: a['color'] as Color, size: 18),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(a['text'] as String,
-                              style: const TextStyle(
-                                  fontSize: 13, color: Color(0xFF333333))),
-                        ),
-                      ]),
-                ))
-            .toList(),
-      ),
     );
   }
 }
@@ -1330,12 +1939,12 @@ class _PaymentHistoryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     String s(String key) => AppStrings.get(key, locale);
-    final pol       = policy['policy'] as Map<String, dynamic>? ?? {};
-    final policyNo  = pol['policyNo']      as String? ?? '—';
-    final premium   = pol['premiumAmount']?.toString() ?? '—';
-    final startDate = pol['startDate']     as String? ?? '—';
-    final status    = (pol['policyStatus'] as String? ?? '').toUpperCase();
-    final isActive  = status == 'ACTIVE';
+    final pol = policy['policy'] as Map<String, dynamic>? ?? {};
+    final policyNo = pol['policyNo'] as String? ?? '—';
+    final premium = pol['premiumAmount']?.toString() ?? '—';
+    final startDate = pol['startDate'] as String? ?? '—';
+    final status = (pol['policyStatus'] as String? ?? '').toUpperCase();
+    final isActive = status == 'ACTIVE';
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1354,7 +1963,8 @@ class _PaymentHistoryTile extends StatelessWidget {
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('${s('policyPrefix')} $policyNo',
                 style: const TextStyle(
                     fontSize: 13,
@@ -1368,17 +1978,12 @@ class _PaymentHistoryTile extends StatelessWidget {
           if (premium != '—')
             Text('HTG $premium',
                 style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: _green)),
+                    fontSize: 13, fontWeight: FontWeight.bold, color: _green)),
           Container(
             margin: const EdgeInsets.only(top: 2),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: isActive
-                  ? Colors.green.shade100
-                  : Colors.grey.shade200,
+              color: isActive ? Colors.green.shade100 : Colors.grey.shade200,
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(
@@ -1386,9 +1991,8 @@ class _PaymentHistoryTile extends StatelessWidget {
               style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w600,
-                  color: isActive
-                      ? Colors.green.shade700
-                      : Colors.grey.shade600),
+                  color:
+                      isActive ? Colors.green.shade700 : Colors.grey.shade600),
             ),
           ),
         ]),
@@ -1404,7 +2008,8 @@ class _PaymentHistoryTile extends StatelessWidget {
 class _PaymentNotificationBanner extends StatefulWidget {
   final Map<String, dynamic> member;
   final String locale;
-  const _PaymentNotificationBanner({required this.member, required this.locale});
+  const _PaymentNotificationBanner(
+      {required this.member, required this.locale});
 
   @override
   State<_PaymentNotificationBanner> createState() =>
@@ -1440,13 +2045,13 @@ class _PaymentNotificationBannerState
     final seen = notif['seen'] == true || notif['seen'] == 'true';
     if (seen || _dismissed) return const SizedBox.shrink();
 
-    final amount        = notif['amountPaid']?.toString()  ?? '—';
-    final rawDate       = notif['paymentDate'] as String?  ?? '—';
-    final date          = AppStrings.formatDate(rawDate, widget.locale);
-    final ref           = notif['referenceNo']    as String? ?? '—';
-    final policyNo      = notif['policyNo']       as String? ?? '—';
-    final method        = notif['paymentMethod']  as String? ?? '—';
-    final paymentPeriod = notif['paymentPeriod']  as String? ?? '';
+    final amount = notif['amountPaid']?.toString() ?? '—';
+    final rawDate = notif['paymentDate'] as String? ?? '—';
+    final date = AppStrings.formatDate(rawDate, widget.locale);
+    final ref = notif['referenceNo'] as String? ?? '—';
+    final policyNo = notif['policyNo'] as String? ?? '—';
+    final method = notif['paymentMethod'] as String? ?? '—';
+    final paymentPeriod = notif['paymentPeriod'] as String? ?? '';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -1481,11 +2086,11 @@ class _PaymentNotificationBannerState
         ),
         const SizedBox(height: 8),
         if (paymentPeriod.isNotEmpty)
-          _NotifRow(s('periodLabel'),    paymentPeriod),
+          _NotifRow(s('periodLabel'), paymentPeriod),
         _NotifRow(s('collectedOnLabel'), date),
-        _NotifRow(s('policyPrefix'),     policyNo),
-        _NotifRow(s('methodLabel'),      method),
-        _NotifRow(s('referenceLabel'),   ref),
+        _NotifRow(s('policyPrefix'), policyNo),
+        _NotifRow(s('methodLabel'), method),
+        _NotifRow(s('referenceLabel'), ref),
         const SizedBox(height: 10),
         SizedBox(
           width: double.infinity,
@@ -1517,8 +2122,7 @@ class _NotifRow extends StatelessWidget {
         SizedBox(
           width: 80,
           child: Text(label,
-              style: TextStyle(
-                  fontSize: 12, color: Colors.green.shade600)),
+              style: TextStyle(fontSize: 12, color: Colors.green.shade600)),
         ),
         Text(value,
             style: TextStyle(
@@ -1553,42 +2157,19 @@ class _ServicesTab extends StatelessWidget {
           const Icon(Icons.support_agent, color: _green, size: 48),
           const SizedBox(height: 12),
           Text(s('assistance24h'),
-              style: const TextStyle(
-                  fontSize: 18, fontWeight: FontWeight.bold)),
+              style:
+                  const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
           _SupportTile(
-              icon: Icons.phone,
-              label: s('callUs'),
-              value: '+509 XXXX-XXXX'),
+              icon: Icons.phone, label: s('callUs'), value: '+509 XXXX-XXXX'),
           const Divider(),
           _SupportTile(
-              icon: Icons.email,
-              label: s('email'),
-              value: 'support@kafa.org'),
+              icon: Icons.email, label: s('email'), value: 'support@kafa.org'),
           const Divider(),
           _SupportTile(
               icon: Icons.access_time,
               label: s('hours'),
               value: s('hoursValue')),
-          const SizedBox(height: 16),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.chat_bubble_outline),
-            label: Text(s('openChat')),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: _green,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(double.infinity, 48),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12))),
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => ChatbotWidget(member: member)),
-              );
-            },
-          ),
         ]),
       ),
     );
@@ -1622,8 +2203,7 @@ class _ServicesTab extends StatelessWidget {
             context,
             MaterialPageRoute(
               builder: (_) => PlansScreen(
-                  memberId: memberId,
-                  currentPlanCode: currentPlanCode),
+                  memberId: memberId, currentPlanCode: currentPlanCode),
             ),
           ),
         ),
@@ -1680,15 +2260,17 @@ class _ServicesTab extends StatelessWidget {
           onTap: () {
             final policies = member['policies'] as List<dynamic>?;
             final policyNo = policies != null && policies.isNotEmpty
-                ? (policies.first as Map<String, dynamic>)['policyNo'] as String? ?? ''
+                ? (policies.first as Map<String, dynamic>)['policyNo']
+                        as String? ??
+                    ''
                 : '';
             Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (_) => DeathReportScreen(
-                  memberId:   memberId,
+                  memberId: memberId,
                   memberName: member['fullName'] as String? ?? '',
-                  policyNo:   policyNo,
+                  policyNo: policyNo,
                 ),
               ),
             );
@@ -1707,10 +2289,10 @@ class _ServicesTab extends StatelessWidget {
             context,
             MaterialPageRoute(
               builder: (_) => EnrollmentFormScreen(
-                memberId:   memberId,
+                memberId: memberId,
                 memberName: member['fullName'] as String? ?? '',
-                phone:      member['phone'] as String?,
-                email:      member['email'] as String?,
+                phone: member['phone'] as String?,
+                email: member['email'] as String?,
               ),
             ),
           ),
@@ -1756,26 +2338,23 @@ class _ServiceCard extends StatelessWidget {
           Container(
             width: 52,
             height: 52,
-            decoration: BoxDecoration(
-                color: accentColor, shape: BoxShape.circle),
+            decoration:
+                BoxDecoration(color: accentColor, shape: BoxShape.circle),
             child: Icon(icon, color: iconColor, size: 26),
           ),
           const SizedBox(width: 16),
           Expanded(
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                      style: const TextStyle(
-                          fontSize: 15, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 3),
-                  Text(subtitle,
-                      style: TextStyle(
-                          fontSize: 13, color: Colors.grey.shade500)),
-                ]),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 3),
+              Text(subtitle,
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
+            ]),
           ),
-          Icon(Icons.arrow_forward_ios,
-              size: 14, color: Colors.grey.shade400),
+          Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey.shade400),
         ]),
       ),
     );
@@ -1802,26 +2381,31 @@ class _ProfileTab extends StatelessWidget {
     final locale = context.watch<LanguageProvider>().locale;
     String s(String k) => AppStrings.get(k, locale);
 
-    final name       = member['full_name']   as String? ?? '—';
-    final phone      = member['phone']       as String? ?? '—';
-    final email      = member['email']       as String? ?? '—';
-    final address    = member['address']     as String? ?? '—';
-    final dob        = member['date_of_birth'] as String?
-                    ?? member['dateOfBirth']   as String? ?? '—';
-    final idNumber   = member['identification_number'] as String?
-                    ?? member['identificationNumber'] as String? ?? '—';
-    final idType     = member['identification_type'] as String?
-                    ?? member['identificationType'] as String? ?? '—';
-    final memberId   = member['memberId']    as String? ?? '—';
-    final commune    = (member['locality'] as Map<String, dynamic>?)?['commune'] as String? ?? '—';
-    final issuedDate = member['issued_date'] as String?
-                    ?? member['issuedDate']   as String? ?? '';
-    final isActive   = member['status'] == true || member['status'] == 'true';
+    final name = member['full_name'] as String? ?? '—';
+    final phone = member['phone'] as String? ?? '—';
+    final email = member['email'] as String? ?? '—';
+    final address = member['address'] as String? ?? '—';
+    final dob = member['date_of_birth'] as String? ??
+        member['dateOfBirth'] as String? ??
+        '—';
+    final idNumber = member['identification_number'] as String? ??
+        member['identificationNumber'] as String? ??
+        '—';
+    final idType = member['identification_type'] as String? ??
+        member['identificationType'] as String? ??
+        '—';
+    final memberId = member['memberId'] as String? ?? '—';
+    final commune =
+        (member['locality'] as Map<String, dynamic>?)?['commune'] as String? ??
+            '—';
+    final issuedDate = member['issued_date'] as String? ??
+        member['issuedDate'] as String? ??
+        '';
+    final isActive = member['status'] == true || member['status'] == 'true';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-
         // Avatar + name header
         Center(
           child: Column(children: [
@@ -1838,16 +2422,13 @@ class _ProfileTab extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(name,
-                style: const TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.bold)),
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 6),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
               decoration: BoxDecoration(
-                color: isActive
-                    ? Colors.green.shade100
-                    : Colors.grey.shade200,
+                color: isActive ? Colors.green.shade100 : Colors.grey.shade200,
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1877,12 +2458,24 @@ class _ProfileTab extends StatelessWidget {
           title: s('profileInfo'),
           icon: Icons.person_outline,
           child: Column(children: [
-            _OverviewRow(icon: Icons.badge_outlined,       label: s('memberId'),    value: memberId),
-            _OverviewRow(icon: Icons.location_on_outlined, label: s('commune'),     value: commune),
-            _OverviewRow(icon: Icons.home_outlined,        label: s('address'),     value: address),
-            _OverviewRow(icon: Icons.phone_outlined,       label: s('phone'),       value: phone),
-            _OverviewRow(icon: Icons.email_outlined,       label: s('email'),       value: email),
-            _OverviewRow(icon: Icons.cake_outlined,        label: s('dateOfBirth'), value: AppStrings.formatDate(dob, locale)),
+            _OverviewRow(
+                icon: Icons.badge_outlined,
+                label: s('memberId'),
+                value: memberId),
+            _OverviewRow(
+                icon: Icons.location_on_outlined,
+                label: s('commune'),
+                value: commune),
+            _OverviewRow(
+                icon: Icons.home_outlined, label: s('address'), value: address),
+            _OverviewRow(
+                icon: Icons.phone_outlined, label: s('phone'), value: phone),
+            _OverviewRow(
+                icon: Icons.email_outlined, label: s('email'), value: email),
+            _OverviewRow(
+                icon: Icons.cake_outlined,
+                label: s('dateOfBirth'),
+                value: AppStrings.formatDate(dob, locale)),
             if (issuedDate.isNotEmpty)
               _OverviewRow(
                   icon: Icons.verified_outlined,
@@ -1897,8 +2490,10 @@ class _ProfileTab extends StatelessWidget {
           title: s('identification'),
           icon: Icons.fingerprint,
           child: Column(children: [
-            _OverviewRow(icon: Icons.credit_card, label: s('idType'),   value: idType),
-            _OverviewRow(icon: Icons.numbers,     label: s('idNumber'), value: idNumber),
+            _OverviewRow(
+                icon: Icons.credit_card, label: s('idType'), value: idType),
+            _OverviewRow(
+                icon: Icons.numbers, label: s('idNumber'), value: idNumber),
           ]),
         ),
         const SizedBox(height: 24),
@@ -1908,8 +2503,7 @@ class _ProfileTab extends StatelessWidget {
           width: double.infinity,
           child: OutlinedButton.icon(
             icon: const Icon(Icons.logout, color: Colors.red),
-            label: Text(s('logout'),
-                style: const TextStyle(color: Colors.red)),
+            label: Text(s('logout'), style: const TextStyle(color: Colors.red)),
             style: OutlinedButton.styleFrom(
               minimumSize: const Size(double.infinity, 50),
               side: const BorderSide(color: Colors.red),
@@ -1940,13 +2534,13 @@ class _SupportTile extends StatelessWidget {
         Icon(icon, color: _green, size: 20),
         const SizedBox(width: 12),
         Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(label,
-                style: TextStyle(
-                    fontSize: 12, color: Colors.grey.shade500)),
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
             Text(value,
-                style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w600)),
+                style:
+                    const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
           ]),
         ),
       ]),
