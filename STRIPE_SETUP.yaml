@@ -1,0 +1,72 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# KAFA Flutter — Stripe Payment Dependencies
+# Add these to your existing pubspec.yaml
+# ──────────────────────────────────────────────────────────────────────────────
+
+dependencies:
+  flutter_stripe: ^10.2.0      # Stripe Flutter SDK (card UI + payment confirmation)
+  http: ^1.2.0                 # HTTP client for Lambda API calls
+  url_launcher: ^6.2.0         # Opens Stripe receipt URLs in browser
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Stripe Initialization (add to your main.dart BEFORE runApp)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# void main() async {
+#   WidgetsFlutterBinding.ensureInitialized();
+#
+#   // TODO: Move to environment config / .env — never commit live keys
+#   Stripe.publishableKey = 'pk_test_...';   // or pk_live_... in production
+#
+#   await Stripe.instance.applySettings();
+#   runApp(const KafaApp());
+# }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Android setup (android/app/build.gradle)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# android {
+#   defaultConfig {
+#     minSdkVersion 21     # flutter_stripe requires minSdk 21
+#   }
+# }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# iOS setup (ios/Runner/Info.plist) — no special config needed for card payments
+# Stripe handles PCI compliance via their secure CardField widget
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# How to navigate to PaymentScreen from a policy detail page
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Navigator.push(
+#   context,
+#   MaterialPageRoute(
+#     builder: (_) => PaymentScreen(
+#       args: PaymentArgs(
+#         memberId:    'M-001',
+#         policyId:    'POL-2024-001',
+#         memberName:  'Jean-Pierre Mathieu',
+#         amountCents: 2500,             // $25.00
+#         periodStart: '2026-04-01',
+#         periodEnd:   '2026-04-30',
+#       ),
+#     ),
+#   ),
+# );
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Stripe test card numbers (use during development)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Success:          4242 4242 4242 4242  | any future exp | any CVC
+# Requires auth:    4000 0025 0000 3155  | (tests 3D Secure)
+# Declined:         4000 0000 0000 9995  | (insufficient funds)
+# Incorrect CVC:    4000 0000 0000 0101
