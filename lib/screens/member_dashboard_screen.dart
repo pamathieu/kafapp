@@ -34,6 +34,8 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
   int _tab = 0;
   bool _hasPolicy = true;
 
+  final _chatPanelKey = GlobalKey<_DashboardChatPanelState>();
+
   // Live member data — refreshed from server on init so notifications are current
   late Map<String, dynamic> _member;
 
@@ -106,7 +108,11 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
     }
 
     final tabs = [
-      _DashboardTab(member: _member, onGoPolicies: () => _goTab(1)),
+      _DashboardTab(
+        member: _member,
+        onGoPolicies: () => _goTab(1),
+        onOpenChat: () => _chatPanelKey.currentState?.expand(),
+      ),
       PolicyScreen(member: _member, embedded: true),
       _ServicesTab(member: _member, locale: locale),
       _ProfileTab(member: _member, locale: locale, onLogout: handleLogout),
@@ -156,7 +162,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
         children: [
           Offstage(
             offstage: _tab != 0,
-            child: _DashboardChatPanel(member: _member, locale: locale),
+            child: _DashboardChatPanel(key: _chatPanelKey, member: _member, locale: locale),
           ),
           BottomNavigationBar(
             currentIndex: _tab,
@@ -516,8 +522,13 @@ class _AlertsBellButton extends StatelessWidget {
 class _DashboardTab extends StatefulWidget {
   final Map<String, dynamic> member;
   final VoidCallback onGoPolicies;
+  final VoidCallback onOpenChat;
 
-  const _DashboardTab({required this.member, required this.onGoPolicies});
+  const _DashboardTab({
+    required this.member,
+    required this.onGoPolicies,
+    required this.onOpenChat,
+  });
 
   @override
   State<_DashboardTab> createState() => _DashboardTabState();
@@ -528,6 +539,7 @@ class _DashboardTabState extends State<_DashboardTab>
   List<Map<String, dynamic>> _policies = [];
   bool _loadingPolicies = true;
   bool _quickActExpanded = true;
+  bool _optionsOpen = false;
 
   late final AnimationController _qaCtrl;
   late final Animation<double> _qaAnim;
@@ -553,53 +565,7 @@ class _DashboardTabState extends State<_DashboardTab>
     super.dispose();
   }
 
-  void _showViewOptions(BuildContext context, String locale) {
-    String s(String k) => AppStrings.get(k, locale);
-    final member     = widget.member;
-    final memberId   = member['memberId']  as String? ?? '';
-    final memberName = member['full_name'] as String? ?? '';
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text(s('viewOptions'),
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 20),
-          _OptionsButton(
-            icon: Icons.request_quote_outlined,
-            label: s('viewQuote'),
-            color: _green,
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(context, MaterialPageRoute(
-                builder: (_) => QuickQuoteScreen(
-                  memberId:   memberId,
-                  memberName: memberName,
-                  phone:      member['phone'] as String?,
-                  email:      member['email'] as String?,
-                ),
-              ));
-            },
-          ),
-          const SizedBox(height: 12),
-          _OptionsButton(
-            icon: Icons.shield_outlined,
-            label: s('viewPlansAndCoverage'),
-            color: const Color(0xFF1565C0),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(context, MaterialPageRoute(
-                builder: (_) => PlansScreen(memberId: memberId),
-              ));
-            },
-          ),
-        ]),
-      ),
-    );
-  }
+  void _openChat() => widget.onOpenChat();
 
   void _toggleQuickActions() {
     setState(() => _quickActExpanded = !_quickActExpanded);
@@ -687,7 +653,7 @@ class _DashboardTabState extends State<_DashboardTab>
                               ? Colors.green.shade700
                               : Colors.grey.shade600),
                     ),
-                    // ── No-policy inline warning ──────────────────────────────────────
+                    // ── No-policy inline warning + options dropdown ───────────────────
                     if (!_loadingPolicies && _policies.isEmpty) ...[
                       const SizedBox(height: 8),
                       Container(
@@ -696,11 +662,16 @@ class _DashboardTabState extends State<_DashboardTab>
                             horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
                           color: const Color(0xFFFFF3CD),
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.only(
+                            topLeft: const Radius.circular(10),
+                            topRight: const Radius.circular(10),
+                            bottomLeft: Radius.circular(_optionsOpen ? 0 : 10),
+                            bottomRight: Radius.circular(_optionsOpen ? 0 : 10),
+                          ),
                         ),
                         child: Row(children: [
-                          const Icon(Icons.info_outline,
-                              size: 15, color: Color(0xFF856404)),
+                          const Icon(Icons.crisis_alert,
+                              size: 18, color: Colors.red),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
@@ -713,9 +684,10 @@ class _DashboardTabState extends State<_DashboardTab>
                           ),
                           const SizedBox(width: 8),
                           TextButton(
-                            onPressed: () => _showViewOptions(context, locale),
+                            onPressed: () =>
+                                setState(() => _optionsOpen = !_optionsOpen),
                             style: TextButton.styleFrom(
-                              backgroundColor: const Color(0xFF856404),
+                              backgroundColor: Colors.orange,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 10, vertical: 4),
@@ -724,12 +696,93 @@ class _DashboardTabState extends State<_DashboardTab>
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(6)),
                             ),
-                            child: Text(s('viewOptions'),
-                                style: const TextStyle(
-                                    fontSize: 11, fontWeight: FontWeight.bold)),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              Text(s('viewOptions'),
+                                  style: const TextStyle(
+                                      fontSize: 11, fontWeight: FontWeight.bold)),
+                              const SizedBox(width: 4),
+                              Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  splashColor: Colors.white38,
+                                  highlightColor: Colors.white24,
+                                  onTap: () => setState(() => _optionsOpen = !_optionsOpen),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(2),
+                                    child: AnimatedRotation(
+                                      turns: _optionsOpen ? 0.5 : 0.0,
+                                      duration: const Duration(milliseconds: 200),
+                                      child: const Icon(Icons.keyboard_arrow_down,
+                                          size: 14),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ]),
                           ),
                         ]),
                       ),
+                      // ── Inline dropdown ─────────────────────────────────────────────
+                      if (_optionsOpen)
+                        Container(
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: const BorderRadius.only(
+                              bottomLeft: Radius.circular(10),
+                              bottomRight: Radius.circular(10),
+                            ),
+                            border: Border.all(
+                                color: const Color(0xFFE5C96B), width: 1),
+                            boxShadow: [
+                              BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.07),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 4)),
+                            ],
+                          ),
+                          child: Column(children: [
+                            _OptionsButton(
+                              icon: Icons.request_quote_outlined,
+                              label: s('createQuote'),
+                              color: _green,
+                              onTap: () {
+                                setState(() => _optionsOpen = false);
+                                Navigator.push(context, MaterialPageRoute(
+                                  builder: (_) => QuickQuoteScreen(
+                                    memberId:   memberId,
+                                    memberName: name,
+                                    phone: member['phone'] as String?,
+                                    email: member['email'] as String?,
+                                  ),
+                                ));
+                              },
+                            ),
+                            const Divider(height: 1),
+                            _OptionsButton(
+                              icon: Icons.shield_outlined,
+                              label: s('viewPlansAndCoverage'),
+                              color: const Color(0xFF1565C0),
+                              onTap: () {
+                                setState(() => _optionsOpen = false);
+                                Navigator.push(context, MaterialPageRoute(
+                                  builder: (_) => PlansScreen(memberId: memberId),
+                                ));
+                              },
+                            ),
+                            const Divider(height: 1),
+                            _OptionsButton(
+                              icon: Icons.chat_bubble_outline,
+                              label: s('talkToAssistant'),
+                              color: _gold,
+                              onTap: () {
+                                setState(() => _optionsOpen = false);
+                                _openChat();
+                              },
+                            ),
+                          ]),
+                        ),
                     ],
                     const SizedBox(height: 16),
 
@@ -800,34 +853,36 @@ class _DashboardTabState extends State<_DashboardTab>
                             ],
                           ),
                           child: Column(children: [
-                            _QuickAction(
-                              icon: Icons.credit_card,
-                              label: s('payPremium'),
-                              subtitle: s('payPremiumSub'),
-                              color: _green,
-                              isFirst: true,
-                              isLast: false,
-                              onTap: widget.onGoPolicies,
-                            ),
+                            if (_policies.isNotEmpty)
+                              _QuickAction(
+                                icon: Icons.credit_card,
+                                label: s('payPremium'),
+                                subtitle: s('payPremiumSub'),
+                                color: _green,
+                                isFirst: true,
+                                isLast: false,
+                                onTap: widget.onGoPolicies,
+                              ),
                             _QuickAction(
                               icon: Icons.description,
                               label: s('myCertificate'),
                               subtitle: s('myCertificateSub'),
                               color: const Color(0xFF1565C0),
-                              isFirst: false,
+                              isFirst: _policies.isEmpty,
                               isLast: false,
                               onTap: () =>
                                   _showCertificateSheet(context, member, s),
                             ),
-                            _QuickAction(
-                              icon: Icons.receipt_long,
-                              label: s('paymentHistory'),
-                              subtitle: s('paymentHistorySub'),
-                              color: const Color(0xFF7B1FA2),
-                              isFirst: false,
-                              isLast: false,
-                              onTap: widget.onGoPolicies,
-                            ),
+                            if (_policies.isNotEmpty)
+                              _QuickAction(
+                                icon: Icons.receipt_long,
+                                label: s('paymentHistory'),
+                                subtitle: s('paymentHistorySub'),
+                                color: const Color(0xFF7B1FA2),
+                                isFirst: false,
+                                isLast: false,
+                                onTap: widget.onGoPolicies,
+                              ),
                             _QuickAction(
                               icon: Icons.headset_mic,
                               label: s('contactSupport'),
@@ -928,7 +983,7 @@ class _DashboardTabState extends State<_DashboardTab>
               icon: Icons.phone, label: s('callUs'), value: '+509 XXXX-XXXX'),
           const Divider(),
           _SupportTile(
-              icon: Icons.email, label: s('email'), value: 'support@kafa.org'),
+              icon: Icons.email, label: s('email'), value: 'kontak@kafa.org'),
           const Divider(),
           _SupportTile(
               icon: Icons.access_time,
@@ -948,7 +1003,7 @@ class _DashboardChatPanel extends StatefulWidget {
   final Map<String, dynamic> member;
   final String locale;
 
-  const _DashboardChatPanel({required this.member, required this.locale});
+  const _DashboardChatPanel({super.key, required this.member, required this.locale});
 
   @override
   State<_DashboardChatPanel> createState() => _DashboardChatPanelState();
@@ -988,7 +1043,8 @@ class _DashboardChatPanelState extends State<_DashboardChatPanel>
 
   String get _locale => widget.locale;
 
-  void _expand() {
+  // Public so _DashboardTabState can trigger via GlobalKey
+  void expand() {
     if (!_expanded) {
       setState(() => _expanded = true);
       _animCtrl.forward();
@@ -1004,7 +1060,7 @@ class _DashboardChatPanelState extends State<_DashboardChatPanel>
     final trimmed = text.trim();
     if (trimmed.isEmpty || _thinking) return;
     _textCtrl.clear();
-    _expand();
+    expand();
 
     setState(() {
       _messages.add(_ChatMsg(text: trimmed, isUser: true));
@@ -1071,20 +1127,21 @@ class _DashboardChatPanelState extends State<_DashboardChatPanel>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        border: const Border(
+          top: BorderSide(color: _green, width: 2),
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.10),
-            blurRadius: 16,
-            offset: const Offset(0, -3),
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, -2),
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-        child: Column(children: [
+      child: Column(children: [
         // ── Handle / header ──────────────────────────────────────────────────
         GestureDetector(
-          onTap: () => _expanded ? _collapse() : _expand(),
+          onTap: () => _expanded ? _collapse() : expand(),
           behavior: HitTestBehavior.opaque,
           child: SizedBox(
             height: 52,
@@ -1101,7 +1158,7 @@ class _DashboardChatPanelState extends State<_DashboardChatPanel>
                 ),
                 const SizedBox(width: 10),
                 const Text(
-                  'KAFA Assistant',
+                  'Chat',
                   style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -1190,7 +1247,6 @@ class _DashboardChatPanelState extends State<_DashboardChatPanel>
           ),
         ],
       ]),
-      ),
     );
   }
 }
@@ -2218,7 +2274,7 @@ class _ServicesTab extends StatelessWidget {
               icon: Icons.phone, label: s('callUs'), value: '+509 XXXX-XXXX'),
           const Divider(),
           _SupportTile(
-              icon: Icons.email, label: s('email'), value: 'support@kafa.org'),
+              icon: Icons.email, label: s('email'), value: 'kontak@kafa.org'),
           const Divider(),
           _SupportTile(
               icon: Icons.access_time,

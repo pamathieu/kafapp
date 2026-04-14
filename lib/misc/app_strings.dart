@@ -295,7 +295,7 @@ class AppStrings {
       'quickQuoteEstimate': 'Coût mensuel estimé',
       'quickQuotePerMonth': 'par mois',
       'quickQuoteNote': 'Basé sur {members} membre(s) — le tarif réel peut varier.',
-      'quickQuoteApply': 'Postuler maintenant',
+      'quickQuoteApply': 'Soumettre',
 
       // Plans screen actions
       'upgradePlan': 'Mettre à niveau',
@@ -309,6 +309,8 @@ class AppStrings {
       'documentUnavailable': 'Document actuellement indisponible.',
       'viewOptions': 'Voir les options',
       'viewQuote': 'Voir le devis',
+      'createQuote': 'Créer un devis',
+      'talkToAssistant': 'Parler à l\'assistant',
       'viewPlansAndCoverage': 'Voir les plans & couvertures',
 
       // Funeral Services screen (phase 3)
@@ -644,7 +646,7 @@ class AppStrings {
       'quickQuoteEstimate': 'Estimated monthly cost',
       'quickQuotePerMonth': 'per month',
       'quickQuoteNote': 'Based on {members} member(s) — actual pricing may vary.',
-      'quickQuoteApply': 'Apply Now',
+      'quickQuoteApply': 'Submit',
 
       // Plans screen actions
       'upgradePlan': 'Upgrade Plan',
@@ -658,6 +660,8 @@ class AppStrings {
       'documentUnavailable': 'Document is currently unavailable.',
       'viewOptions': 'View Options',
       'viewQuote': 'View Quote',
+      'createQuote': 'Create Quote',
+      'talkToAssistant': 'Talk to Assistant',
       'viewPlansAndCoverage': 'View Plans & Coverage',
 
       // Funeral Services screen (phase 3)
@@ -993,7 +997,7 @@ class AppStrings {
       'quickQuoteEstimate': 'Estimasyon pri chak mwa',
       'quickQuotePerMonth': 'pa mwa',
       'quickQuoteNote': 'Baze sou {members} manm — pri reyèl ka varye.',
-      'quickQuoteApply': 'Aplike kounye a',
+      'quickQuoteApply': 'Soumèt',
 
       // Plans screen actions
       'upgradePlan': 'Amelyore Plan',
@@ -1007,6 +1011,8 @@ class AppStrings {
       'documentUnavailable': 'Dokiman aktyèlman pa disponib.',
       'viewOptions': 'Wè opsyon yo',
       'viewQuote': 'Wè devis la',
+      'createQuote': 'Kreye yon devis',
+      'talkToAssistant': 'Pale ak asistan an',
       'viewPlansAndCoverage': 'Wè plan & kouvèti yo',
 
       // Funeral Services screen (phase 3)
@@ -1342,7 +1348,7 @@ class AppStrings {
       'quickQuoteEstimate': 'Costo mensual estimado',
       'quickQuotePerMonth': 'por mes',
       'quickQuoteNote': 'Basado en {members} miembro(s) — el precio real puede variar.',
-      'quickQuoteApply': 'Aplicar ahora',
+      'quickQuoteApply': 'Enviar',
 
       // Plans screen actions
       'upgradePlan': 'Mejorar Plan',
@@ -1356,6 +1362,8 @@ class AppStrings {
       'documentUnavailable': 'Documento actualmente no disponible.',
       'viewOptions': 'Ver opciones',
       'viewQuote': 'Ver cotización',
+      'createQuote': 'Crear cotización',
+      'talkToAssistant': 'Hablar con el asistente',
       'viewPlansAndCoverage': 'Ver planes & cobertura',
 
       // Funeral Services screen (phase 3)
@@ -1691,7 +1699,7 @@ class AppStrings {
       'quickQuoteEstimate': 'Custo mensal estimado',
       'quickQuotePerMonth': 'por mês',
       'quickQuoteNote': 'Baseado em {members} membro(s) — o preço real pode variar.',
-      'quickQuoteApply': 'Aplicar agora',
+      'quickQuoteApply': 'Enviar',
 
       // Plans screen actions
       'upgradePlan': 'Melhorar Plano',
@@ -1705,6 +1713,8 @@ class AppStrings {
       'documentUnavailable': 'Documento atualmente indisponível.',
       'viewOptions': 'Ver opções',
       'viewQuote': 'Ver cotação',
+      'createQuote': 'Criar cotação',
+      'talkToAssistant': 'Falar com o assistente',
       'viewPlansAndCoverage': 'Ver planos & cobertura',
 
       // Funeral Services screen (phase 3)

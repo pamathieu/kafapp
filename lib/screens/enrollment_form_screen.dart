@@ -16,11 +16,18 @@ const _bg    = Color(0xFFF2F4F7);
 
 const _plans = ['BASIC', 'PLUS', 'PREMIUM'];
 
+const _planColors = {
+  'BASIC':   Color(0xFF1565C0),
+  'PLUS':    Color(0xFF1A5C2A),
+  'PREMIUM': Color(0xFF8B6914),
+};
+
 class EnrollmentFormScreen extends StatefulWidget {
   final String memberId;
   final String memberName;
   final String? phone;
   final String? email;
+  final String? selectedPlan;
 
   const EnrollmentFormScreen({
     super.key,
@@ -28,6 +35,7 @@ class EnrollmentFormScreen extends StatefulWidget {
     required this.memberName,
     this.phone,
     this.email,
+    this.selectedPlan,
   });
 
   @override
@@ -53,6 +61,10 @@ class _EnrollmentFormScreenState extends State<EnrollmentFormScreen> {
     _nameCtrl.text  = widget.memberName;
     _phoneCtrl.text = widget.phone  ?? '';
     _emailCtrl.text = widget.email  ?? '';
+    if (widget.selectedPlan != null &&
+        _plans.contains(widget.selectedPlan)) {
+      _selectedPlan = widget.selectedPlan!;
+    }
   }
 
   @override
@@ -191,19 +203,39 @@ class _EnrollmentFormScreenState extends State<EnrollmentFormScreen> {
         DropdownButtonFormField<String>(
           initialValue: _selectedPlan,
           decoration: InputDecoration(
-            prefixIcon: const Icon(Icons.shield_outlined),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            prefixIcon: Icon(Icons.shield_outlined,
+                color: _planColors[_selectedPlan]),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(
+                    color: _planColors[_selectedPlan] ?? _green, width: 1.5)),
+            enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(
+                    color: _planColors[_selectedPlan] ?? _green, width: 1.5)),
+            focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(
+                    color: _planColors[_selectedPlan] ?? _green, width: 2)),
             filled: true,
-            fillColor: Colors.white,
+            fillColor: (_planColors[_selectedPlan] ?? _green).withValues(alpha: 0.05),
           ),
           items: _plans.map((p) {
+            final planColor = _planColors[p] ?? _green;
             final label = switch (p) {
               'BASIC'   => 'Basique — HTG 250/mois',
               'PLUS'    => 'Plus — HTG 450/mois',
               'PREMIUM' => 'Premium — HTG 750/mois',
               _         => p,
             };
-            return DropdownMenuItem(value: p, child: Text(label));
+            return DropdownMenuItem(
+              value: p,
+              child: Row(children: [
+                Icon(Icons.circle, size: 10, color: planColor),
+                const SizedBox(width: 8),
+                Text(label),
+              ]),
+            );
           }).toList(),
           onChanged: (v) => setState(() => _selectedPlan = v ?? _selectedPlan),
         ),

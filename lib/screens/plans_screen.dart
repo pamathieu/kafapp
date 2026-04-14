@@ -499,10 +499,11 @@ class _PlanCard extends StatelessWidget {
                         context,
                         MaterialPageRoute(
                           builder: (_) => EnrollmentFormScreen(
-                            memberId:   memberId,
-                            memberName: memberName,
-                            phone:      phone,
-                            email:      email,
+                            memberId:     memberId,
+                            memberName:   memberName,
+                            phone:        phone,
+                            email:        email,
+                            selectedPlan: code.toUpperCase(),
                           ),
                         ),
                       ),

@@ -249,10 +249,11 @@ class _QuickQuoteScreenState extends State<QuickQuoteScreen> {
                 context,
                 MaterialPageRoute(
                   builder: (_) => EnrollmentFormScreen(
-                    memberId:   widget.memberId,
-                    memberName: widget.memberName,
-                    phone:      widget.phone,
-                    email:      widget.email,
+                    memberId:     widget.memberId,
+                    memberName:   widget.memberName,
+                    phone:        widget.phone,
+                    email:        widget.email,
+                    selectedPlan: _plans[_selectedPlan]['code'] as String,
                   ),
                 ),
               ),
