@@ -13,6 +13,7 @@ import 'funeral_services_screen.dart';
 import 'documents_screen.dart';
 import 'death_report_screen.dart';
 import 'enrollment_form_screen.dart';
+import 'quick_quote_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Colour palette
@@ -199,39 +200,51 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
   });
 
   @override
-  Size get preferredSize =>
-      Size.fromHeight(hasPolicy ? kToolbarHeight : kToolbarHeight + 40);
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
 
-  void _showContactAdminPopup(BuildContext context) {
+  void _showViewOptionsSheet(BuildContext context) {
     String s(String key) => AppStrings.get(key, locale);
-    showDialog(
+    final memberId   = member['memberId']  as String? ?? '';
+    final memberName = member['full_name'] as String? ?? '';
+    showModalBottomSheet(
       context: context,
-      builder: (_) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.support_agent, color: _green, size: 48),
-            const SizedBox(height: 8),
-            Text(s('contactSupport'),
-                style:
-                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            _SupportTile(
-                icon: Icons.phone, label: s('callUs'), value: '+509 XXXX-XXXX'),
-            const Divider(),
-            _SupportTile(
-                icon: Icons.email,
-                label: s('email'),
-                value: 'support@kafa.org'),
-            const Divider(),
-            _SupportTile(
-                icon: Icons.access_time,
-                label: s('hours'),
-                value: s('hoursValue')),
-            const SizedBox(height: 8),
-          ]),
-        ),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text(s('viewOptions'),
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 20),
+          _OptionsButton(
+            icon: Icons.request_quote_outlined,
+            label: s('viewQuote'),
+            color: _green,
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(
+                builder: (_) => QuickQuoteScreen(
+                  memberId:   memberId,
+                  memberName: memberName,
+                  phone:      member['phone']  as String?,
+                  email:      member['email']  as String?,
+                ),
+              ));
+            },
+          ),
+          const SizedBox(height: 12),
+          _OptionsButton(
+            icon: Icons.shield_outlined,
+            label: s('viewPlansAndCoverage'),
+            color: const Color(0xFF1565C0),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(
+                builder: (_) => PlansScreen(memberId: memberId),
+              ));
+            },
+          ),
+        ]),
       ),
     );
   }
@@ -276,48 +289,7 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
                 fontWeight: FontWeight.bold,
                 letterSpacing: 3)),
       ]),
-      // ── No-policy warning banner ──────────────────────────────────────────
-      bottom: hasPolicy
-          ? null
-          : PreferredSize(
-              preferredSize: const Size.fromHeight(40),
-              child: Container(
-                width: double.infinity,
-                color: const Color(0xFFFFF3CD),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(children: [
-                  const Icon(Icons.info_outline,
-                      size: 16, color: Color(0xFF856404)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      s('contactKafaForAuth'),
-                      style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF856404)),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () => _showContactAdminPopup(context),
-                    style: TextButton.styleFrom(
-                      backgroundColor: const Color(0xFF856404),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 4),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6)),
-                    ),
-                    child: const Text('Contact Admin',
-                        style: TextStyle(
-                            fontSize: 11, fontWeight: FontWeight.bold)),
-                  ),
-                ]),
-              ),
-            ),
+      bottom: null,
       actions: [
         // ── Alerts bell ───────────────────────────────────────────────────
         _AlertsBellButton(member: member, locale: locale),
@@ -581,6 +553,54 @@ class _DashboardTabState extends State<_DashboardTab>
     super.dispose();
   }
 
+  void _showViewOptions(BuildContext context, String locale) {
+    String s(String k) => AppStrings.get(k, locale);
+    final member     = widget.member;
+    final memberId   = member['memberId']  as String? ?? '';
+    final memberName = member['full_name'] as String? ?? '';
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text(s('viewOptions'),
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 20),
+          _OptionsButton(
+            icon: Icons.request_quote_outlined,
+            label: s('viewQuote'),
+            color: _green,
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(
+                builder: (_) => QuickQuoteScreen(
+                  memberId:   memberId,
+                  memberName: memberName,
+                  phone:      member['phone'] as String?,
+                  email:      member['email'] as String?,
+                ),
+              ));
+            },
+          ),
+          const SizedBox(height: 12),
+          _OptionsButton(
+            icon: Icons.shield_outlined,
+            label: s('viewPlansAndCoverage'),
+            color: const Color(0xFF1565C0),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(
+                builder: (_) => PlansScreen(memberId: memberId),
+              ));
+            },
+          ),
+        ]),
+      ),
+    );
+  }
+
   void _toggleQuickActions() {
     setState(() => _quickActExpanded = !_quickActExpanded);
     if (_quickActExpanded) {
@@ -650,10 +670,6 @@ class _DashboardTabState extends State<_DashboardTab>
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ── Payment notification banner ───────────────────────────────────
-                    _PaymentNotificationBanner(
-                        member: widget.member, locale: locale),
-
                     // ── Greeting ──────────────────────────────────────────────────────
                     Text('${s('helloGreeting')}, $firstName 👋',
                         style: const TextStyle(
@@ -671,13 +687,56 @@ class _DashboardTabState extends State<_DashboardTab>
                               ? Colors.green.shade700
                               : Colors.grey.shade600),
                     ),
+                    // ── No-policy inline warning ──────────────────────────────────────
+                    if (!_loadingPolicies && _policies.isEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF3CD),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(children: [
+                          const Icon(Icons.info_outline,
+                              size: 15, color: Color(0xFF856404)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '${s('contactKafaForAuth').split('.').first}.',
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF856404)),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          TextButton(
+                            onPressed: () => _showViewOptions(context, locale),
+                            style: TextButton.styleFrom(
+                              backgroundColor: const Color(0xFF856404),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(6)),
+                            ),
+                            child: Text(s('viewOptions'),
+                                style: const TextStyle(
+                                    fontSize: 11, fontWeight: FontWeight.bold)),
+                          ),
+                        ]),
+                      ),
+                    ],
                     const SizedBox(height: 16),
 
                     // ── Summary cards row ─────────────────────────────────────────────
-                    // Card 1: Member ID + status + total policies (combined)
-                    // Card 2: Next payment (date + amount) + Pay Now button
-                    Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Expanded(
                             child: _MemberSummaryCard(
@@ -691,16 +750,18 @@ class _DashboardTabState extends State<_DashboardTab>
                             ),
                           ),
                           const SizedBox(width: 12),
-                          Expanded(
-                            child: _NextPaymentCard(
-                              nextPayDate: nextPayDate,
-                              premiumAmount: premiumAmount,
-                              locale: locale,
-                              onPayNow: () => _showSupportSheet(context, s),
-                              payLoading: false,
+                          if (_policies.isNotEmpty)
+                            Expanded(
+                              child: _NextPaymentCard(
+                                nextPayDate: nextPayDate,
+                                premiumAmount: premiumAmount,
+                                locale: locale,
+                                onPayNow: () => _showSupportSheet(context, s),
+                              ),
                             ),
-                          ),
-                        ]),
+                        ],
+                      ),
+                    ),
                     const SizedBox(height: 20),
 
                     // ── Quick Actions (collapsible, animated) ─────────────────────────
@@ -1655,20 +1716,18 @@ class _NextPaymentCard extends StatelessWidget {
   final String premiumAmount;
   final String locale;
   final VoidCallback onPayNow;
-  final bool payLoading;
 
   const _NextPaymentCard({
     required this.nextPayDate,
     required this.premiumAmount,
     required this.locale,
     required this.onPayNow,
-    this.payLoading = false,
   });
 
   @override
   Widget build(BuildContext context) {
     String s(String k) => AppStrings.get(k, locale);
-    final hasDate = nextPayDate != '—' && nextPayDate.isNotEmpty;
+    final hasDate   = nextPayDate   != '—' && nextPayDate.isNotEmpty;
     final hasAmount = premiumAmount != '—' && premiumAmount.isNotEmpty;
 
     return Container(
@@ -1685,8 +1744,7 @@ class _NextPaymentCard extends StatelessWidget {
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Container(
-          width: 36,
-          height: 36,
+          width: 36, height: 36,
           decoration: const BoxDecoration(
               color: Color(0xFFFFF3E0), shape: BoxShape.circle),
           child: const Icon(Icons.calendar_month_outlined,
@@ -1703,37 +1761,33 @@ class _NextPaymentCard extends StatelessWidget {
               fontWeight: FontWeight.bold,
               color: Color(0xFF1A1A1A)),
         ),
-        const SizedBox(height: 4),
-        Text(
-          hasAmount ? 'HTG $premiumAmount' : '—',
-          style: TextStyle(
-              fontSize: 12,
-              color: hasAmount ? const Color(0xFFE65100) : Colors.grey.shade400,
-              fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: payLoading ? null : onPayNow,
+        const Spacer(),
+        // Price + Pay Now button on the same row
+        Row(children: [
+          Text(
+            hasAmount ? 'HTG $premiumAmount' : '—',
+            style: TextStyle(
+                fontSize: 13,
+                color: hasAmount ? const Color(0xFFE65100) : Colors.grey.shade400,
+                fontWeight: FontWeight.w700),
+          ),
+          const Spacer(),
+          ElevatedButton(
+            onPressed: onPayNow,
             style: ElevatedButton.styleFrom(
               backgroundColor: _green,
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(8)),
               textStyle:
-                  const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
             ),
-            child: payLoading
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                        color: Colors.white, strokeWidth: 2))
-                : Text(s('payNow')),
+            child: Text(s('payNow')),
           ),
-        ),
+        ]),
       ]),
     );
   }
@@ -2192,6 +2246,27 @@ class _ServicesTab extends StatelessWidget {
                 color: Color(0xFF1A1A1A))),
         const SizedBox(height: 20),
 
+        // Quick Quote card
+        _ServiceCard(
+          icon: Icons.request_quote_outlined,
+          iconColor: const Color(0xFF0277BD),
+          accentColor: const Color(0xFFE1F5FE),
+          title: s('quickQuoteCard'),
+          subtitle: s('quickQuoteCardSub'),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => QuickQuoteScreen(
+                memberId:   memberId,
+                memberName: member['full_name'] as String? ?? '',
+                phone:      member['phone']     as String?,
+                email:      member['email']     as String?,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+
         // Plans & Coverage card
         _ServiceCard(
           icon: Icons.shield_outlined,
@@ -2203,7 +2278,11 @@ class _ServicesTab extends StatelessWidget {
             context,
             MaterialPageRoute(
               builder: (_) => PlansScreen(
-                  memberId: memberId, currentPlanCode: currentPlanCode),
+                  memberId:       memberId,
+                  currentPlanCode: currentPlanCode,
+                  memberName:     member['full_name'] as String? ?? '',
+                  phone:          member['phone']     as String?,
+                  email:          member['email']     as String?),
             ),
           ),
         ),
@@ -2519,6 +2598,48 @@ class _ProfileTab extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+class _OptionsButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _OptionsButton({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Row(children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(width: 12),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: color)),
+          const Spacer(),
+          Icon(Icons.arrow_forward_ios, size: 14, color: color),
+        ]),
+      ),
+    );
+  }
+}
+
 class _SupportTile extends StatelessWidget {
   final IconData icon;
   final String label, value;

@@ -4,16 +4,16 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../providers/language_provider.dart';
 import '../misc/app_strings.dart';
+import 'enrollment_form_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Plans & Coverage screen
-//  Fetches GET /member/plans — falls back to hardcoded tiers if unavailable.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const _green = Color(0xFF1A5C2A);
+const _gold  = Color(0xFFC8A96E);
 const _bg    = Color(0xFFF2F4F7);
 
-/// Hardcoded fallback plans — shown when the backend endpoint isn't ready yet.
 const _fallbackPlans = [
   {
     'planCode':      'BASIC',
@@ -54,15 +54,19 @@ const _fallbackPlans = [
 ];
 
 class PlansScreen extends StatefulWidget {
-  /// The policyStatus from the member's active policy, used to highlight
-  /// their current tier when we can match it.
   final String? currentPlanCode;
   final String memberId;
+  final String memberName;
+  final String? phone;
+  final String? email;
 
   const PlansScreen({
     super.key,
     required this.memberId,
     this.currentPlanCode,
+    this.memberName = '',
+    this.phone,
+    this.email,
   });
 
   @override
@@ -75,6 +79,8 @@ class _PlansScreenState extends State<PlansScreen> {
 
   List<Map<String, dynamic>> _plans = [];
   bool _loading = true;
+
+  bool get _hasPolicies => widget.currentPlanCode != null && widget.currentPlanCode!.isNotEmpty;
 
   @override
   void initState() {
@@ -89,7 +95,7 @@ class _PlansScreenState extends State<PlansScreen> {
       final response = await http.get(uri).timeout(const Duration(seconds: 10));
       if (!mounted) return;
       if (response.statusCode == 200) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
+        final data  = json.decode(response.body) as Map<String, dynamic>;
         final plans = data['plans'] as List?;
         setState(() {
           _plans   = plans != null
@@ -98,7 +104,6 @@ class _PlansScreenState extends State<PlansScreen> {
           _loading = false;
         });
       } else {
-        // Backend not ready yet — use hardcoded fallback
         setState(() {
           _plans   = List<Map<String, dynamic>>.from(_fallbackPlans);
           _loading = false;
@@ -111,6 +116,61 @@ class _PlansScreenState extends State<PlansScreen> {
         _loading = false;
       });
     }
+  }
+
+  void _showUpgradeDialog(BuildContext context, String locale,
+      String planName, int premium) {
+    String s(String k) => AppStrings.get(k, locale);
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          s('upgradePlanTitle').replaceAll('{plan}', planName),
+          style: const TextStyle(fontWeight: FontWeight.bold, color: _green),
+        ),
+        content: Text(
+          s('upgradePlanConfirm')
+              .replaceAll('{plan}', planName)
+              .replaceAll('{price}', '$premium'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(s('upgradePlanCancel')),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: _green, foregroundColor: Colors.white),
+            onPressed: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(s('upgradePlanSuccess')),
+                backgroundColor: _green,
+              ));
+            },
+            child: Text(s('upgradePlanSubmit')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDocumentUnavailable(BuildContext context, String locale) {
+    String s(String k) => AppStrings.get(k, locale);
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        content: Text(s('documentUnavailable')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -143,39 +203,61 @@ class _PlansScreenState extends State<PlansScreen> {
                           fontSize: 14, color: Colors.grey.shade600)),
                   const SizedBox(height: 20),
                   ..._plans.asMap().entries.map((entry) {
-                    final idx  = entry.key;
-                    final plan = entry.value;
-                    final code = (plan['planCode'] as String? ?? '').toUpperCase();
+                    final idx   = entry.key;
+                    final plan  = entry.value;
+                    final code  = (plan['planCode'] as String? ?? '').toUpperCase();
                     final isCurrent = widget.currentPlanCode != null &&
                         widget.currentPlanCode!.toUpperCase().contains(code);
+                    // Upgrade only for Plus (idx=1) and Premium (idx=2), w/ policies, not current
+                    final showUpgrade = _hasPolicies && !isCurrent && idx > 0;
+
                     return _PlanCard(
-                      plan:      plan,
-                      locale:    locale,
-                      isCurrent: isCurrent,
-                      tierIndex: idx,
+                      plan:         plan,
+                      locale:       locale,
+                      isCurrent:    isCurrent,
+                      tierIndex:    idx,
+                      showUpgrade:  showUpgrade,
+                      showActions:  !_hasPolicies,
+                      memberId:     widget.memberId,
+                      memberName:   widget.memberName,
+                      phone:        widget.phone,
+                      email:        widget.email,
+                      onUpgrade:    showUpgrade
+                          ? () {
+                              final nameKey = idx == 1 ? 'planPlus' : 'planPremium';
+                              final planName = AppStrings.get(nameKey, locale);
+                              final premium  = (plan['premiumAmount'] as num?)?.toInt() ?? 0;
+                              _showUpgradeDialog(context, locale, planName, premium);
+                            }
+                          : null,
+                      onViewMore:   () => _showDocumentUnavailable(context, locale),
                     );
                   }),
                   const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: _green.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: _green.withValues(alpha: 0.2)),
+                  if (_hasPolicies)
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: _green.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(12),
+                        border:
+                            Border.all(color: _green.withValues(alpha: 0.2)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.info_outline,
+                              color: _green, size: 18),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(s('planContactAdmin'),
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey.shade700)),
+                          ),
+                        ],
+                      ),
                     ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(Icons.info_outline, color: _green, size: 18),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(s('planContactAdmin'),
-                              style: TextStyle(
-                                  fontSize: 13, color: Colors.grey.shade700)),
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -191,18 +273,34 @@ class _PlanCard extends StatelessWidget {
   final Map<String, dynamic> plan;
   final String locale;
   final bool isCurrent;
-  final int tierIndex; // 0=Basic, 1=Plus, 2=Premium
+  final int tierIndex;
+  final bool showUpgrade;
+  final bool showActions; // View More + Apply (members w/o policy)
+  final String memberId;
+  final String memberName;
+  final String? phone;
+  final String? email;
+  final VoidCallback? onUpgrade;
+  final VoidCallback onViewMore;
 
   const _PlanCard({
     required this.plan,
     required this.locale,
     required this.isCurrent,
     required this.tierIndex,
+    required this.showUpgrade,
+    required this.showActions,
+    required this.memberId,
+    required this.memberName,
+    required this.onViewMore,
+    this.phone,
+    this.email,
+    this.onUpgrade,
   });
 
   static const _tierColors = [
-    Color(0xFF1565C0), // Basic — blue
-    _green,            // Plus  — green
+    Color(0xFF1565C0), // Basic  — blue
+    _green,            // Plus   — green
     Color(0xFF8B6914), // Premium — gold/dark
   ];
 
@@ -210,6 +308,13 @@ class _PlanCard extends StatelessWidget {
     Color(0xFFE3F2FD),
     Color(0xFFE8F5E9),
     Color(0xFFFFF8E1),
+  ];
+
+  // "View More" button color matches plan tier
+  static const _viewMoreColors = [
+    Color(0xFF1565C0),
+    _green,
+    _gold,
   ];
 
   @override
@@ -227,10 +332,9 @@ class _PlanCard extends StatelessWidget {
                       : null;
     final planName = planNameKey != null ? s(planNameKey) : code;
 
-    final tierColor  = tierIndex < _tierColors.length
-        ? _tierColors[tierIndex] : _green;
-    final accentColor = tierIndex < _tierAccents.length
-        ? _tierAccents[tierIndex] : const Color(0xFFE8F5E9);
+    final tierColor   = tierIndex < _tierColors.length  ? _tierColors[tierIndex]   : _green;
+    final accentColor = tierIndex < _tierAccents.length ? _tierAccents[tierIndex] : const Color(0xFFE8F5E9);
+    final viewMoreColor = tierIndex < _viewMoreColors.length ? _viewMoreColors[tierIndex] : _green;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -250,7 +354,7 @@ class _PlanCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
+          // ── Header ────────────────────────────────────────────────────────
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -258,65 +362,62 @@ class _PlanCard extends StatelessWidget {
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(14)),
             ),
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                      color: tierColor.withValues(alpha: 0.15),
-                      shape: BoxShape.circle),
-                  child: Icon(
-                    tierIndex == 0 ? Icons.shield_outlined
-                    : tierIndex == 1 ? Icons.shield
-                    : Icons.star,
-                    color: tierColor, size: 22,
-                  ),
+            child: Row(children: [
+              Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                    color: tierColor.withValues(alpha: 0.15),
+                    shape: BoxShape.circle),
+                child: Icon(
+                  tierIndex == 0 ? Icons.shield_outlined
+                  : tierIndex == 1 ? Icons.shield
+                  : Icons.star,
+                  color: tierColor, size: 22,
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (isCurrent)
-                        Container(
-                          margin: const EdgeInsets.only(bottom: 4),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: tierColor,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(s('yourCurrentPlan'),
-                              style: const TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (isCurrent)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: tierColor,
+                          borderRadius: BorderRadius.circular(20),
                         ),
-                      Text(planName,
-                          style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: tierColor)),
-                    ],
-                  ),
-                ),
-                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  if (premium != null)
-                    Text('HTG $premium',
+                        child: Text(s('yourCurrentPlan'),
+                            style: const TextStyle(
+                                fontSize: 10,
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold)),
+                      ),
+                    Text(planName,
                         style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                             color: tierColor)),
-                  Text(s('premiumPerMonth'),
+                  ],
+                ),
+              ),
+              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                if (premium != null)
+                  Text('HTG $premium',
                       style: TextStyle(
-                          fontSize: 12, color: Colors.grey.shade600)),
-                ]),
-              ],
-            ),
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: tierColor)),
+                Text(s('premiumPerMonth'),
+                    style: TextStyle(
+                        fontSize: 12, color: Colors.grey.shade600)),
+              ]),
+            ]),
           ),
 
-          // Coverage amount
+          // ── Coverage ──────────────────────────────────────────────────────
           if (assured != null)
             Padding(
               padding:
@@ -336,6 +437,7 @@ class _PlanCard extends StatelessWidget {
               ),
             ),
 
+          // ── Features ──────────────────────────────────────────────────────
           if (features.isNotEmpty) ...[
             Divider(height: 1, color: Colors.grey.shade100),
             Padding(
@@ -362,21 +464,97 @@ class _PlanCard extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 12),
           ],
+
+          // ── Action buttons ────────────────────────────────────────────────
+          if (showUpgrade || showActions) ...[
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (showActions) ...[
+                    // View More
+                    OutlinedButton(
+                      onPressed: onViewMore,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: viewMoreColor,
+                        side: BorderSide(color: viewMoreColor),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                        textStyle: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                      child: Text(s('viewMore')),
+                    ),
+                    const SizedBox(width: 8),
+                    // Apply
+                    ElevatedButton(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => EnrollmentFormScreen(
+                            memberId:   memberId,
+                            memberName: memberName,
+                            phone:      phone,
+                            email:      email,
+                          ),
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _green,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                        textStyle: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                      child: Text(s('applyPlan')),
+                    ),
+                  ],
+                  if (showUpgrade)
+                    ElevatedButton(
+                      onPressed: onUpgrade,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: tierColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                        textStyle: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                      child: Text(s('upgradePlan')),
+                    ),
+                ],
+              ),
+            ),
+          ] else
+            const SizedBox(height: 12),
         ],
       ),
     );
   }
 
-  /// Format large numbers: 100000 → "100,000"
   String _fmt(dynamic n) {
     final val = n is num ? n.toInt() : int.tryParse(n.toString()) ?? 0;
-    final s = val.toString();
+    final str = val.toString();
     final buf = StringBuffer();
-    for (var i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
-      buf.write(s[i]);
+    for (var i = 0; i < str.length; i++) {
+      if (i > 0 && (str.length - i) % 3 == 0) buf.write(',');
+      buf.write(str[i]);
     }
     return buf.toString();
   }

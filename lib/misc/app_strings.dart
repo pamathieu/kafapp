@@ -283,6 +283,34 @@ class AppStrings {
       'expressEnrollment': 'Inscription Rapide',
       'expressEnrollmentSub': 'Soumettre une demande d\'adhésion',
 
+      // Quick Quote
+      'quickQuoteCard': 'Devis Rapide',
+      'quickQuoteCardSub': 'Simulez votre coût de couverture en quelques secondes',
+      'quickQuoteTitle': 'Devis Rapide',
+      'quickQuoteSubtitle': 'Configurez une simulation de coût selon vos besoins',
+      'quickQuoteSelectPlan': 'Choisissez un plan',
+      'quickQuoteCoverage': 'Couverture jusqu\'à HTG {amount}',
+      'quickQuoteMembers': 'Nombre de membres',
+      'quickQuoteMembersDesc': 'Combien de personnes à couvrir ?',
+      'quickQuoteEstimate': 'Coût mensuel estimé',
+      'quickQuotePerMonth': 'par mois',
+      'quickQuoteNote': 'Basé sur {members} membre(s) — le tarif réel peut varier.',
+      'quickQuoteApply': 'Postuler maintenant',
+
+      // Plans screen actions
+      'upgradePlan': 'Mettre à niveau',
+      'upgradePlanTitle': 'Passer à {plan}',
+      'upgradePlanConfirm': 'Demander une mise à niveau vers le plan {plan} pour HTG {price}/mois ?',
+      'upgradePlanSuccess': 'Demande de mise à niveau soumise. Un agent KAFA vous contactera bientôt.',
+      'upgradePlanCancel': 'Annuler',
+      'upgradePlanSubmit': 'Demander la mise à niveau',
+      'viewMore': 'En savoir plus',
+      'applyPlan': 'Postuler',
+      'documentUnavailable': 'Document actuellement indisponible.',
+      'viewOptions': 'Voir les options',
+      'viewQuote': 'Voir le devis',
+      'viewPlansAndCoverage': 'Voir les plans & couvertures',
+
       // Funeral Services screen (phase 3)
       'funeralServicesTitle': 'Services Funèbres',
       'funeralServicesSubtitle': 'Prestataires partenaires KAFA',
@@ -603,6 +631,34 @@ class AppStrings {
       'deathEmergencySub': 'Report a policyholder death',
       'expressEnrollment': 'Express Enrollment',
       'expressEnrollmentSub': 'Submit a membership application',
+
+      // Quick Quote
+      'quickQuoteCard': 'Quick Quote',
+      'quickQuoteCardSub': 'Simulate your coverage cost in seconds',
+      'quickQuoteTitle': 'Quick Quote',
+      'quickQuoteSubtitle': 'Configure a cost simulation based on your needs',
+      'quickQuoteSelectPlan': 'Select a plan',
+      'quickQuoteCoverage': 'Coverage up to HTG {amount}',
+      'quickQuoteMembers': 'Number of members',
+      'quickQuoteMembersDesc': 'How many people to cover?',
+      'quickQuoteEstimate': 'Estimated monthly cost',
+      'quickQuotePerMonth': 'per month',
+      'quickQuoteNote': 'Based on {members} member(s) — actual pricing may vary.',
+      'quickQuoteApply': 'Apply Now',
+
+      // Plans screen actions
+      'upgradePlan': 'Upgrade Plan',
+      'upgradePlanTitle': 'Upgrade to {plan}',
+      'upgradePlanConfirm': 'Request upgrade to {plan} plan for HTG {price}/mo?',
+      'upgradePlanSuccess': 'Upgrade request submitted. A KAFA agent will contact you shortly.',
+      'upgradePlanCancel': 'Cancel',
+      'upgradePlanSubmit': 'Request Upgrade',
+      'viewMore': 'View More',
+      'applyPlan': 'Apply',
+      'documentUnavailable': 'Document is currently unavailable.',
+      'viewOptions': 'View Options',
+      'viewQuote': 'View Quote',
+      'viewPlansAndCoverage': 'View Plans & Coverage',
 
       // Funeral Services screen (phase 3)
       'funeralServicesTitle': 'Funeral Services',
@@ -925,6 +981,34 @@ class AppStrings {
       'expressEnrollment': 'Enskripsyon Rapid',
       'expressEnrollmentSub': 'Soumèt yon demann adhezyon',
 
+      // Quick Quote
+      'quickQuoteCard': 'Devis Rapid',
+      'quickQuoteCardSub': 'Simile pri kouvèti ou an kèk segond',
+      'quickQuoteTitle': 'Devis Rapid',
+      'quickQuoteSubtitle': 'Konfigire yon simasyon pri selon bezwen ou',
+      'quickQuoteSelectPlan': 'Chwazi yon plan',
+      'quickQuoteCoverage': 'Kouvèti jiska HTG {amount}',
+      'quickQuoteMembers': 'Kantite manm',
+      'quickQuoteMembersDesc': 'Konbyen moun pou kouvri?',
+      'quickQuoteEstimate': 'Estimasyon pri chak mwa',
+      'quickQuotePerMonth': 'pa mwa',
+      'quickQuoteNote': 'Baze sou {members} manm — pri reyèl ka varye.',
+      'quickQuoteApply': 'Aplike kounye a',
+
+      // Plans screen actions
+      'upgradePlan': 'Amelyore Plan',
+      'upgradePlanTitle': 'Pase nan {plan}',
+      'upgradePlanConfirm': 'Mande pou pase nan plan {plan} a HTG {price}/mwa?',
+      'upgradePlanSuccess': 'Demann amelyorasyon soumèt. Yon ajan KAFA ap kontakte ou byento.',
+      'upgradePlanCancel': 'Anile',
+      'upgradePlanSubmit': 'Mande Amelyorasyon',
+      'viewMore': 'Wè plis',
+      'applyPlan': 'Aplike',
+      'documentUnavailable': 'Dokiman aktyèlman pa disponib.',
+      'viewOptions': 'Wè opsyon yo',
+      'viewQuote': 'Wè devis la',
+      'viewPlansAndCoverage': 'Wè plan & kouvèti yo',
+
       // Funeral Services screen (phase 3)
       'funeralServicesTitle': 'Sèvis Fineray',
       'funeralServicesSubtitle': 'Patnè KAFA yo',
@@ -1246,6 +1330,34 @@ class AppStrings {
       'expressEnrollment': 'Inscripción Rápida',
       'expressEnrollmentSub': 'Enviar una solicitud de membresía',
 
+      // Quick Quote
+      'quickQuoteCard': 'Cotización Rápida',
+      'quickQuoteCardSub': 'Simule el costo de cobertura en segundos',
+      'quickQuoteTitle': 'Cotización Rápida',
+      'quickQuoteSubtitle': 'Configure una simulación de costo según sus necesidades',
+      'quickQuoteSelectPlan': 'Seleccione un plan',
+      'quickQuoteCoverage': 'Cobertura hasta HTG {amount}',
+      'quickQuoteMembers': 'Número de miembros',
+      'quickQuoteMembersDesc': '¿Cuántas personas cubrir?',
+      'quickQuoteEstimate': 'Costo mensual estimado',
+      'quickQuotePerMonth': 'por mes',
+      'quickQuoteNote': 'Basado en {members} miembro(s) — el precio real puede variar.',
+      'quickQuoteApply': 'Aplicar ahora',
+
+      // Plans screen actions
+      'upgradePlan': 'Mejorar Plan',
+      'upgradePlanTitle': 'Mejorar a {plan}',
+      'upgradePlanConfirm': '¿Solicitar mejora al plan {plan} por HTG {price}/mes?',
+      'upgradePlanSuccess': 'Solicitud de mejora enviada. Un agente KAFA se comunicará pronto.',
+      'upgradePlanCancel': 'Cancelar',
+      'upgradePlanSubmit': 'Solicitar Mejora',
+      'viewMore': 'Ver más',
+      'applyPlan': 'Aplicar',
+      'documentUnavailable': 'Documento actualmente no disponible.',
+      'viewOptions': 'Ver opciones',
+      'viewQuote': 'Ver cotización',
+      'viewPlansAndCoverage': 'Ver planes & cobertura',
+
       // Funeral Services screen (phase 3)
       'funeralServicesTitle': 'Servicios Funerarios',
       'funeralServicesSubtitle': 'Proveedores asociados de KAFA',
@@ -1566,6 +1678,34 @@ class AppStrings {
       'deathEmergencySub': 'Declarar o óbito de um segurado',
       'expressEnrollment': 'Inscrição Rápida',
       'expressEnrollmentSub': 'Enviar uma solicitação de adesão',
+
+      // Quick Quote
+      'quickQuoteCard': 'Cotação Rápida',
+      'quickQuoteCardSub': 'Simule o custo de cobertura em segundos',
+      'quickQuoteTitle': 'Cotação Rápida',
+      'quickQuoteSubtitle': 'Configure uma simulação de custo conforme suas necessidades',
+      'quickQuoteSelectPlan': 'Selecione um plano',
+      'quickQuoteCoverage': 'Cobertura até HTG {amount}',
+      'quickQuoteMembers': 'Número de membros',
+      'quickQuoteMembersDesc': 'Quantas pessoas cobrir?',
+      'quickQuoteEstimate': 'Custo mensal estimado',
+      'quickQuotePerMonth': 'por mês',
+      'quickQuoteNote': 'Baseado em {members} membro(s) — o preço real pode variar.',
+      'quickQuoteApply': 'Aplicar agora',
+
+      // Plans screen actions
+      'upgradePlan': 'Melhorar Plano',
+      'upgradePlanTitle': 'Melhorar para {plan}',
+      'upgradePlanConfirm': 'Solicitar melhoria para o plano {plan} por HTG {price}/mês?',
+      'upgradePlanSuccess': 'Solicitação de melhoria enviada. Um agente KAFA entrará em contato em breve.',
+      'upgradePlanCancel': 'Cancelar',
+      'upgradePlanSubmit': 'Solicitar Melhoria',
+      'viewMore': 'Ver mais',
+      'applyPlan': 'Aplicar',
+      'documentUnavailable': 'Documento atualmente indisponível.',
+      'viewOptions': 'Ver opções',
+      'viewQuote': 'Ver cotação',
+      'viewPlansAndCoverage': 'Ver planos & cobertura',
 
       // Funeral Services screen (phase 3)
       'funeralServicesTitle': 'Serviços Funerários',
