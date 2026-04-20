@@ -32,18 +32,51 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
 
   Future<void> _checkSavedSession() async {
     try {
-      final saved = await SessionService.loadSession();
+      final saved = await SessionService.loadSession().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => null,
+      );
       if (!mounted) return;
-      if (saved != null) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => MemberDashboardScreen(member: saved)),
-        );
-        return;
+      
+      if (saved != null && saved.isNotEmpty && _isValidMember(saved)) {
+        // Double-check required fields exist before navigating
+        final memberId = saved['memberId'] as String?;
+        final fullName = saved['full_name'] as String?;
+        if (memberId != null && memberId.isNotEmpty &&
+            fullName != null && fullName.isNotEmpty) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => MemberDashboardScreen(member: saved)),
+          );
+          return;
+        }
       }
-    } catch (_) {
+      
+      // Session is invalid or missing, clear it
+      if (saved != null) {
+        try {
+          await SessionService.clearSession();
+        } catch (_) {}
+      }
+    } catch (e) {
       // If anything goes wrong reading storage, just show the login form
+      debugPrint('Session load error: $e');
+      try {
+        await SessionService.clearSession();
+      } catch (_) {}
     }
     if (mounted) setState(() => _isLoading = false);
+  }
+
+  bool _isValidMember(Map<String, dynamic> member) {
+    // Validate required fields for member dashboard
+    try {
+      final memberId = member['memberId'] as String?;
+      final fullName = member['full_name'] as String?;
+      return memberId != null && memberId.isNotEmpty &&
+             fullName != null && fullName.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _login() async {

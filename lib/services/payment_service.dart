@@ -23,9 +23,12 @@ class PaymentResult {
 ///   2. Confirm payment via Stripe Flutter SDK
 ///   3. Return result to caller
 class PaymentService {
-  // TODO: Replace with your API Gateway URL (from Terraform output)
-  static const String _baseUrl =
-      'https://your-api-id.execute-api.us-east-1.amazonaws.com/prod';
+  // Set via --dart-define=API_BASE_URL=https://... at build/run time.
+  // Get the value from `terraform output api_gateway_base_url` after deploying.
+  static const String _baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod',
+  );
 
   /// Initiates and confirms a member premium payment.
   ///
@@ -57,11 +60,17 @@ class PaymentService {
       final paymentId = intentResponse['payment_id'] as String;
 
       // ── Step 2: Confirm payment via Stripe SDK ──────────────────────────
+      // On web, CardField is a Stripe.js iframe that collects card details
+      // internally. Passing PaymentMethodParams.card triggers a native method
+      // channel that doesn't exist on web. Pass null so the web implementation
+      // reads the card from the mounted CardField element.
       await Stripe.instance.confirmPayment(
         paymentIntentClientSecret: clientSecret,
-        data: const PaymentMethodParams.card(
-          paymentMethodData: PaymentMethodData(),
-        ),
+        data: kIsWeb
+            ? null
+            : const PaymentMethodParams.card(
+                paymentMethodData: PaymentMethodData(),
+              ),
       );
 
       return PaymentResult(

@@ -14,6 +14,7 @@ import 'documents_screen.dart';
 import 'death_report_screen.dart';
 import 'enrollment_form_screen.dart';
 import 'quick_quote_screen.dart';
+import 'payment_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Colour palette
@@ -45,9 +46,39 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
   @override
   void initState() {
     super.initState();
-    _member = widget.member; // start with cached session immediately
-    _checkPolicy();
-    _refreshMember(); // silently fetch fresh profile in background
+    
+    // Validate member data before using
+    try {
+      final memberId = widget.member['memberId'] as String?;
+      final fullName = widget.member['full_name'] as String?;
+      
+      if (memberId == null || memberId.isEmpty ||
+          fullName == null || fullName.isEmpty) {
+        throw Exception('Invalid member data on dashboard init');
+      }
+      
+      _member = widget.member;
+      try {
+        _checkPolicy();
+        _refreshMember();
+      } catch (e) {
+        debugPrint('Error during policy/member refresh: $e');
+        // Continue with cached data
+      }
+    } catch (e) {
+      debugPrint('Dashboard init error: $e');
+      // Force logout on invalid data
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        SessionService.clearSession().then((_) {
+          if (mounted && context.mounted) {
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const MemberLoginScreen()),
+              (_) => false,
+            );
+          }
+        });
+      });
+    }
   }
 
   /// Re-fetches the member profile from the server so payment_notification
@@ -90,95 +121,133 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final langProvider = context.watch<LanguageProvider>();
-    final locale = langProvider.locale;
-    String s(String key) => AppStrings.get(key, locale);
+    try {
+      final langProvider = context.watch<LanguageProvider>();
+      final locale = langProvider.locale;
+      String s(String key) => AppStrings.get(key, locale);
 
-    final member = _member;
-    final name = member['full_name'] as String? ?? '';
-    final isActive = member['status'] == true || member['status'] == 'true';
+      final member = _member;
+      final name = member['full_name'] as String? ?? 'Member';
+      final isActive = member['status'] == true || member['status'] == 'true';
 
-    Future<void> handleLogout() async {
-      await SessionService.clearSession();
-      if (!context.mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const MemberLoginScreen()),
-        (_) => false,
+      Future<void> handleLogout() async {
+        await SessionService.clearSession();
+        if (!context.mounted) return;
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const MemberLoginScreen()),
+          (_) => false,
+        );
+      }
+
+      final tabs = [
+        _DashboardTab(
+          member: _member,
+          onGoPolicies: () => _goTab(1),
+          onOpenChat: () => _chatPanelKey.currentState?.expand(),
+        ),
+        PolicyScreen(member: _member, embedded: true),
+        _ServicesTab(member: _member, locale: locale),
+        _ProfileTab(member: _member, locale: locale, onLogout: handleLogout),
+      ];
+
+      final navItems = [
+        BottomNavigationBarItem(
+            icon: const Icon(Icons.home_outlined),
+            activeIcon: const Icon(Icons.home),
+            label: s('navDashboard')),
+        BottomNavigationBarItem(
+            icon: const Icon(Icons.policy_outlined),
+            activeIcon: const Icon(Icons.policy),
+            label: s('navPolicies')),
+        BottomNavigationBarItem(
+            icon: const Icon(Icons.room_service_outlined),
+            activeIcon: const Icon(Icons.room_service),
+            label: s('navServices')),
+        BottomNavigationBarItem(
+            icon: const Icon(Icons.person_outline),
+            activeIcon: const Icon(Icons.person),
+            label: s('navProfile')),
+      ];
+
+      return Scaffold(
+        backgroundColor: _bg,
+        appBar: _KafaAppBar(
+          name: name,
+          locale: locale,
+          isActive: isActive,
+          hasPolicy: _hasPolicy,
+          onLogout: () async {
+            await SessionService.clearSession();
+            if (!context.mounted) return;
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const MemberLoginScreen()),
+              (_) => false,
+            );
+          },
+          onLocaleChange: (code) =>
+              context.read<LanguageProvider>().setLocale(code),
+          member: _member,
+        ),
+        body: IndexedStack(index: _tab, children: tabs),
+        bottomNavigationBar: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Offstage(
+              offstage: _tab != 0,
+              child: _DashboardChatPanel(key: _chatPanelKey, member: _member, locale: locale),
+            ),
+            BottomNavigationBar(
+              currentIndex: _tab,
+              onTap: _goTab,
+              type: BottomNavigationBarType.fixed,
+              selectedItemColor: _green,
+              unselectedItemColor: Colors.grey.shade500,
+              backgroundColor: Colors.white,
+              elevation: 12,
+              selectedFontSize: 11,
+              unselectedFontSize: 11,
+              items: navItems,
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      // If build fails, clear session and return to login
+      debugPrint('Dashboard build error: $e');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          SessionService.clearSession().then((_) {
+            if (mounted && context.mounted) {
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const MemberLoginScreen()),
+                (_) => false,
+              );
+            }
+          });
+        }
+      });
+      return Scaffold(
+        backgroundColor: _bg,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: Colors.red),
+              const SizedBox(height: 16),
+              const Text('An error occurred. Redirecting to login...'),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const MemberLoginScreen()),
+                  (_) => false,
+                ),
+                child: const Text('Go to Login'),
+              ),
+            ],
+          ),
+        ),
       );
     }
-
-    final tabs = [
-      _DashboardTab(
-        member: _member,
-        onGoPolicies: () => _goTab(1),
-        onOpenChat: () => _chatPanelKey.currentState?.expand(),
-      ),
-      PolicyScreen(member: _member, embedded: true),
-      _ServicesTab(member: _member, locale: locale),
-      _ProfileTab(member: _member, locale: locale, onLogout: handleLogout),
-    ];
-
-    final navItems = [
-      BottomNavigationBarItem(
-          icon: const Icon(Icons.home_outlined),
-          activeIcon: const Icon(Icons.home),
-          label: s('navDashboard')),
-      BottomNavigationBarItem(
-          icon: const Icon(Icons.policy_outlined),
-          activeIcon: const Icon(Icons.policy),
-          label: s('navPolicies')),
-      BottomNavigationBarItem(
-          icon: const Icon(Icons.room_service_outlined),
-          activeIcon: const Icon(Icons.room_service),
-          label: s('navServices')),
-      BottomNavigationBarItem(
-          icon: const Icon(Icons.person_outline),
-          activeIcon: const Icon(Icons.person),
-          label: s('navProfile')),
-    ];
-
-    return Scaffold(
-      backgroundColor: _bg,
-      appBar: _KafaAppBar(
-        name: name,
-        locale: locale,
-        isActive: isActive,
-        hasPolicy: _hasPolicy,
-        onLogout: () async {
-          await SessionService.clearSession();
-          if (!context.mounted) return;
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const MemberLoginScreen()),
-            (_) => false,
-          );
-        },
-        onLocaleChange: (code) =>
-            context.read<LanguageProvider>().setLocale(code),
-        member: _member,
-      ),
-      body: IndexedStack(index: _tab, children: tabs),
-      bottomNavigationBar: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Offstage(
-            offstage: _tab != 0,
-            child: _DashboardChatPanel(key: _chatPanelKey, member: _member, locale: locale),
-          ),
-          BottomNavigationBar(
-            currentIndex: _tab,
-            onTap: _goTab,
-            type: BottomNavigationBarType.fixed,
-            selectedItemColor: _green,
-            unselectedItemColor: Colors.grey.shade500,
-            backgroundColor: Colors.white,
-            elevation: 12,
-            selectedFontSize: 11,
-            unselectedFontSize: 11,
-            items: navItems,
-          ),
-        ],
-      ),
-    );
   }
 }
 
@@ -207,53 +276,6 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
-
-  void _showViewOptionsSheet(BuildContext context) {
-    String s(String key) => AppStrings.get(key, locale);
-    final memberId   = member['memberId']  as String? ?? '';
-    final memberName = member['full_name'] as String? ?? '';
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text(s('viewOptions'),
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 20),
-          _OptionsButton(
-            icon: Icons.request_quote_outlined,
-            label: s('viewQuote'),
-            color: _green,
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(context, MaterialPageRoute(
-                builder: (_) => QuickQuoteScreen(
-                  memberId:   memberId,
-                  memberName: memberName,
-                  phone:      member['phone']  as String?,
-                  email:      member['email']  as String?,
-                ),
-              ));
-            },
-          ),
-          const SizedBox(height: 12),
-          _OptionsButton(
-            icon: Icons.shield_outlined,
-            label: s('viewPlansAndCoverage'),
-            color: const Color(0xFF1565C0),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(context, MaterialPageRoute(
-                builder: (_) => PlansScreen(memberId: memberId),
-              ));
-            },
-          ),
-        ]),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -556,7 +578,12 @@ class _DashboardTabState extends State<_DashboardTab>
       value: 1.0, // starts expanded
     );
     _qaAnim = CurvedAnimation(parent: _qaCtrl, curve: Curves.easeInOut);
-    _fetchPolicies();
+    final memberId = widget.member['memberId'] as String? ?? '';
+    if (memberId.isNotEmpty) {
+      _fetchPolicies();
+    } else {
+      setState(() => _loadingPolicies = false);
+    }
   }
 
   @override
@@ -566,6 +593,17 @@ class _DashboardTabState extends State<_DashboardTab>
   }
 
   void _openChat() => widget.onOpenChat();
+
+  String _safeContactText(String Function(String) s) {
+    try {
+      final text = s('contactKafaForAuth');
+      if (text.isEmpty) return 'Contact KAFA for authorization.';
+      final parts = text.split('.');
+      return '${parts.isNotEmpty ? parts.first : text}.';
+    } catch (_) {
+      return 'Contact KAFA for authorization.';
+    }
+  }
 
   void _toggleQuickActions() {
     setState(() => _quickActExpanded = !_quickActExpanded);
@@ -601,128 +639,133 @@ class _DashboardTabState extends State<_DashboardTab>
 
   @override
   Widget build(BuildContext context) {
-    final locale = context.watch<LanguageProvider>().locale;
-    String s(String key) => AppStrings.get(key, locale);
+    try {
+      final locale = context.watch<LanguageProvider>().locale;
+      String s(String key) => AppStrings.get(key, locale);
 
-    final member = widget.member;
-    final name = member['full_name'] as String? ?? '';
-    final memberId = member['memberId'] as String? ?? '';
-    final isActive = member['status'] == true || member['status'] == 'true';
-    final totalPolicies = _policies.length;
-    final activePolicies = _policies.where((p) {
-      final pol = p['policy'] as Map<String, dynamic>? ?? {};
-      return (pol['policyStatus'] as String? ?? '').toUpperCase() == 'ACTIVE';
-    }).length;
+      final member = widget.member;
+      final name = (member['full_name'] as String?)?.trim() ?? 'Member';
+      final memberId = (member['memberId'] as String?)?.trim() ?? '';
+      final isActive = member['status'] == true || member['status'] == 'true';
+      final totalPolicies = _policies.length;
+      final activePolicies = _policies.where((p) {
+        try {
+          final pol = p['policy'] as Map<String, dynamic>? ?? {};
+          return (pol['policyStatus'] as String? ?? '').toUpperCase() == 'ACTIVE';
+        } catch (_) {
+          return false;
+        }
+      }).length;
 
-    // Derive next premium from first active policy if available
-    final firstPolicyMap = _policies.isNotEmpty
-        ? _policies.first['policy'] as Map<String, dynamic>?
-        : null;
-    final premiumAmount = firstPolicyMap?['premiumAmount']?.toString() ?? '—';
-    final nextPayDate = firstPolicyMap?['nextDueDate'] as String? ?? '—';
-    final deathReportPolicyNo = firstPolicyMap?['policyNo'] as String? ?? '';
+      // Derive next premium from first active policy if available
+      final firstPolicyMap = _policies.isNotEmpty
+          ? _policies.first['policy'] as Map<String, dynamic>?
+          : null;
+      final premiumAmount = firstPolicyMap?['premiumAmount']?.toString() ?? '—';
+      final nextPayDate = firstPolicyMap?['nextDueDate'] as String? ?? '—';
+      final deathReportPolicyNo = firstPolicyMap?['policyNo'] as String? ?? '';
 
-    final firstName = name.split(' ').first;
+      final firstName = name.contains(' ') ? name.split(' ').first : name;
 
-    return Column(
-      children: [
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: _fetchPolicies,
-            color: _green,
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 92),
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // ── Greeting ──────────────────────────────────────────────────────
-                    Text('${s('helloGreeting')}, $firstName 👋',
-                        style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1A1A1A))),
-                    const SizedBox(height: 2),
-                    Text(
-                      isActive
-                          ? s('membershipActive')
-                          : s('membershipInactive'),
-                      style: TextStyle(
-                          fontSize: 13,
-                          color: isActive
-                              ? Colors.green.shade700
-                              : Colors.grey.shade600),
-                    ),
-                    // ── No-policy inline warning + options dropdown ───────────────────
-                    if (!_loadingPolicies && _policies.isEmpty) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFF3CD),
-                          borderRadius: BorderRadius.only(
-                            topLeft: const Radius.circular(10),
-                            topRight: const Radius.circular(10),
-                            bottomLeft: Radius.circular(_optionsOpen ? 0 : 10),
-                            bottomRight: Radius.circular(_optionsOpen ? 0 : 10),
-                          ),
-                        ),
-                        child: Row(children: [
-                          const Icon(Icons.crisis_alert,
-                              size: 18, color: Colors.red),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              '${s('contactKafaForAuth').split('.').first}.',
-                              style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF856404)),
+      return Column(
+        children: [
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _fetchPolicies,
+              color: _green,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 92),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ── Greeting ──────────────────────────────────────────────────────
+                      Text('${s('helloGreeting')}, $firstName 👋',
+                          style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1A1A1A))),
+                      const SizedBox(height: 2),
+                      Text(
+                        isActive
+                            ? s('membershipActive')
+                            : s('membershipInactive'),
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: isActive
+                                ? Colors.green.shade700
+                                : Colors.grey.shade600),
+                      ),
+                      // ── No-policy inline warning + options dropdown ───────────────────
+                      if (!_loadingPolicies && _policies.isEmpty) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF3CD),
+                            borderRadius: BorderRadius.only(
+                              topLeft: const Radius.circular(10),
+                              topRight: const Radius.circular(10),
+                              bottomLeft: Radius.circular(_optionsOpen ? 0 : 10),
+                              bottomRight: Radius.circular(_optionsOpen ? 0 : 10),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          TextButton(
-                            onPressed: () =>
-                                setState(() => _optionsOpen = !_optionsOpen),
-                            style: TextButton.styleFrom(
-                              backgroundColor: Colors.orange,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 4),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(6)),
+                          child: Row(children: [
+                            const Icon(Icons.info_outline,
+                                size: 18, color: Colors.orange),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _safeContactText(s),
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF856404)),
+                              ),
                             ),
-                            child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              Text(s('viewOptions'),
-                                  style: const TextStyle(
-                                      fontSize: 11, fontWeight: FontWeight.bold)),
-                              const SizedBox(width: 4),
-                              Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(12),
-                                  splashColor: Colors.white38,
-                                  highlightColor: Colors.white24,
-                                  onTap: () => setState(() => _optionsOpen = !_optionsOpen),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(2),
-                                    child: AnimatedRotation(
-                                      turns: _optionsOpen ? 0.5 : 0.0,
-                                      duration: const Duration(milliseconds: 200),
-                                      child: const Icon(Icons.keyboard_arrow_down,
-                                          size: 14),
+                            const SizedBox(width: 8),
+                            TextButton(
+                              onPressed: () =>
+                                  setState(() => _optionsOpen = !_optionsOpen),
+                              style: TextButton.styleFrom(
+                                backgroundColor: Colors.orange,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(6)),
+                              ),
+                              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                Text(s('viewOptions'),
+                                    style: const TextStyle(
+                                        fontSize: 11, fontWeight: FontWeight.bold)),
+                                const SizedBox(width: 4),
+                                Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(12),
+                                    splashColor: Colors.white38,
+                                    highlightColor: Colors.white24,
+                                    onTap: () => setState(() => _optionsOpen = !_optionsOpen),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(2),
+                                      child: AnimatedRotation(
+                                        turns: _optionsOpen ? 0.5 : 0.0,
+                                        duration: const Duration(milliseconds: 200),
+                                        child: const Icon(Icons.keyboard_arrow_down,
+                                            size: 14),
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ]),
-                          ),
-                        ]),
-                      ),
+                              ]),
+                            ),
+                          ]),
+                        ),
                       // ── Inline dropdown ─────────────────────────────────────────────
                       if (_optionsOpen)
                         Container(
@@ -809,7 +852,33 @@ class _DashboardTabState extends State<_DashboardTab>
                                 nextPayDate: nextPayDate,
                                 premiumAmount: premiumAmount,
                                 locale: locale,
-                                onPayNow: () => _showSupportSheet(context, s),
+                                onPayNow: () {
+                                  final policyId =
+                                      firstPolicyMap?['policyNo'] as String? ??
+                                          '';
+                                  final premiumRaw =
+                                      firstPolicyMap?['premiumAmount']
+                                              ?.toString() ??
+                                          '0';
+                                  final amountCents =
+                                      ((double.tryParse(premiumRaw) ?? 0) * 100)
+                                          .round();
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => PaymentScreen(
+                                        args: PaymentArgs(
+                                          memberId: memberId,
+                                          policyId: policyId,
+                                          memberName: name,
+                                          amountCents: amountCents,
+                                          periodStart: '',
+                                          periodEnd: nextPayDate,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
                             ),
                         ],
@@ -920,8 +989,29 @@ class _DashboardTabState extends State<_DashboardTab>
         ),
       ],
     );
+    } catch (e) {
+      debugPrint('Dashboard tab build error: $e');
+      return Scaffold(
+        backgroundColor: _green,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: Colors.white),
+              const SizedBox(height: 16),
+              const Text('An error occurred',
+                  style: TextStyle(fontSize: 16, color: Colors.white)),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: _fetchPolicies,
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
   }
-
 
   void _showCertificateSheet(BuildContext context, Map<String, dynamic> member,
       String Function(String) s) {
@@ -1439,7 +1529,6 @@ class _TransactionsTabState extends State<_TransactionsTab> {
 
   bool _loading = true;
   List<Map<String, dynamic>> _policies = [];
-  bool _payLoading = false;
 
   @override
   void initState() {
@@ -1567,14 +1656,8 @@ class _TransactionsTabState extends State<_TransactionsTab> {
                       const SizedBox(height: 16),
                     ],
                     ElevatedButton.icon(
-                      icon: _payLoading
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                  color: Colors.white, strokeWidth: 2))
-                          : const Icon(Icons.payment),
-                      label: Text(_payLoading ? s('processing') : s('payNow')),
+                      icon: const Icon(Icons.payment),
+                      label: Text(s('payNow')),
                       style: ElevatedButton.styleFrom(
                           backgroundColor:
                               paymentAccess ? _green : Colors.grey.shade400,
@@ -1582,7 +1665,7 @@ class _TransactionsTabState extends State<_TransactionsTab> {
                           minimumSize: const Size(double.infinity, 52),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12))),
-                      onPressed: (!paymentAccess || _payLoading)
+                      onPressed: !paymentAccess
                           ? null
                           : () => _handlePayNow(context, s),
                     ),
@@ -1629,48 +1712,30 @@ class _TransactionsTabState extends State<_TransactionsTab> {
     );
   }
 
-  Future<void> _handlePayNow(
-      BuildContext context, String Function(String) s) async {
-    setState(() => _payLoading = true);
-    await Future.delayed(const Duration(seconds: 1));
-    if (!mounted) return;
-    setState(() => _payLoading = false);
-    showModalBottomSheet(
-      // ignore: use_build_context_synchronously
-      context: this.context,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-                color: Colors.green.shade50, shape: BoxShape.circle),
-            child: Icon(Icons.check_circle,
-                color: Colors.green.shade600, size: 36),
+  void _handlePayNow(BuildContext context, String Function(String) s) {
+    final firstEntry = _policies.isNotEmpty ? _policies.first : null;
+    final firstPolicy = firstEntry?['policy'] as Map<String, dynamic>?;
+    final premiumRaw = firstPolicy?['premiumAmount']?.toString() ?? '0';
+    final policyId = firstPolicy?['policyNo'] as String? ?? '';
+    final nextDueDate = firstPolicy?['nextDueDate'] as String? ?? '';
+    final memberId = widget.member['memberId'] as String? ?? '';
+    final memberName =
+        (widget.member['full_name'] as String?)?.trim() ?? 'Member';
+    final amountCents = ((double.tryParse(premiumRaw) ?? 0) * 100).round();
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PaymentScreen(
+          args: PaymentArgs(
+            memberId: memberId,
+            policyId: policyId,
+            memberName: memberName,
+            amountCents: amountCents,
+            periodStart: '',
+            periodEnd: nextDueDate,
           ),
-          const SizedBox(height: 16),
-          Text(s('paymentPortal'),
-              style:
-                  const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Text(s('paymentComingSoon'),
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
-          const SizedBox(height: 20),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(this.context),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: _green,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(double.infinity, 48),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12))),
-            child: Text(s('ok')),
-          ),
-        ]),
+        ),
       ),
     );
   }

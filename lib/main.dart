@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/language_provider.dart';
@@ -10,7 +11,43 @@ import 'screens/member_login_screen.dart';
 //   Member portal: flutter build web --dart-define=PORTAL=member
 const _portal = String.fromEnvironment('PORTAL', defaultValue: 'admin');
 
-void main() {
+// Stripe publishable key — use pk_test_... for development, pk_live_... for production.
+// Set via --dart-define=STRIPE_KEY=pk_test_... at build time, or replace directly for local dev.
+const _stripeKey = String.fromEnvironment(
+  'STRIPE_KEY',
+  defaultValue: 'pk_test_REPLACE_ME',
+);
+
+void main() async {
+  // Set up error handling for uncaught exceptions
+  FlutterError.onError = (FlutterErrorDetails details) {
+    debugPrintStack(
+      stackTrace: details.stack,
+      label: 'Flutter Error: ${details.exception}',
+    );
+  };
+
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // flutter_stripe registers a web MutationObserver at startup that reads
+  // Stripe.publishableKey (a late String). It must be set before runApp or
+  // the first render throws LateInitializationError → blank screen on web.
+  // We always assign it; payment screens validate it's a real key at tap time.
+  try {
+    final hasRealKey = _stripeKey.isNotEmpty && !_stripeKey.contains('REPLACE_ME');
+    Stripe.publishableKey = hasRealKey ? _stripeKey : '';
+    if (hasRealKey) {
+      try {
+        await Stripe.instance.applySettings();
+      } catch (e) {
+        debugPrint('[Stripe] applySettings failed: $e');
+      }
+    }
+  } catch (e) {
+    debugPrint('[Stripe] initialization failed: $e');
+    // Continue anyway, payment will fail at tap time if key is invalid
+  }
+
   runApp(
     MultiProvider(
       providers: [

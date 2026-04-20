@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/language_provider.dart';
 import '../misc/app_strings.dart';
 import 'beneficiaries_screen.dart';
+import 'policy_detail_screen.dart';
 
 class PolicyScreen extends StatefulWidget {
   final Map<String, dynamic> member;
@@ -121,9 +122,6 @@ class _PolicyCardState extends State<_PolicyCard> {
   static const _baseUrl =
       'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
 
-  bool _payExpanded   = false;
-  bool _claimExpanded = false;
-
   List<Map<String, dynamic>> _beneficiaries    = [];
   bool                       _loadingBenefits  = true;
 
@@ -158,313 +156,82 @@ class _PolicyCardState extends State<_PolicyCard> {
 
   String s(String k) => AppStrings.get(k, widget.locale);
 
+  double _parseNum(dynamic v) {
+    if (v == null) return 0;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString()) ?? 0;
+  }
+
   Map<String, dynamic> get _policy  => widget.data['policy']  as Map<String, dynamic>? ?? {};
   Map<String, dynamic> get _lastPay => widget.data['lastPay'] as Map<String, dynamic>? ?? {};
   Map<String, dynamic> get _nextSched => widget.data['nextSched'] as Map<String, dynamic>? ?? {};
   List<dynamic>        get _claims   => widget.data['claims']  as List<dynamic>? ?? [];
 
-  // ── Make Payment ────────────────────────────────────────────────────────────
+  // ── View Details (navigates to PolicyDetailScreen) ──────────────────────────
 
-  Future<void> _showPaymentDialog() async {
-    final methods = ['MOBILE_MONEY', 'BANK_TRANSFER', 'CASH'];
-    String selectedMethod = 'MOBILE_MONEY';
-    final amountCtrl = TextEditingController(
-        text: _policy['premiumAmount']?.toString() ?? '');
-    String? result;
+  void _openPolicyDetail() {
+    final memberId   = widget.member['memberId'] as String? ?? '';
+    final memberName = widget.member['full_name'] as String? ?? 'Member';
 
-    await showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text(
-            widget.locale == 'fr' ? 'Effectuer un paiement' : 'Make Payment',
-            style: const TextStyle(
-                fontWeight: FontWeight.bold, color: Color(0xFF1A5C2A)),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                widget.locale == 'fr'
-                    ? 'Police : ${_policy['policyNo'] ?? ''}'
-                    : 'Policy: ${_policy['policyNo'] ?? ''}',
-                style: const TextStyle(fontSize: 13, color: Colors.grey),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: amountCtrl,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(
-                  labelText: widget.locale == 'fr'
-                      ? 'Montant (HTG)'
-                      : 'Amount (HTG)',
-                  prefixIcon: const Icon(Icons.attach_money),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                ),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: selectedMethod,
-                decoration: InputDecoration(
-                  labelText: widget.locale == 'fr'
-                      ? 'Méthode de paiement'
-                      : 'Payment Method',
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                ),
-                items: methods
-                    .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-                    .toList(),
-                onChanged: (v) => setLocal(() => selectedMethod = v!),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(s('cancel')),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1A5C2A),
-                  foregroundColor: Colors.white),
-              onPressed: () async {
-                final amount =
-                    double.tryParse(amountCtrl.text.trim()) ?? 0;
-                if (amount <= 0) return;
-                Navigator.pop(ctx, {'amount': amount, 'method': selectedMethod});
-              },
-              child: Text(
-                  widget.locale == 'fr' ? 'Confirmer' : 'Confirm'),
-            ),
-          ],
-        ),
-      ),
-    ).then((res) => result = res?.toString());
-
-    if (result == null) return; // cancelled
-
-    // Re-parse because showDialog result is a map not a string
-    // We call directly after dialog closes
-  }
-
-  Future<void> _submitPayment() async {
-    final methods = ['MOBILE_MONEY', 'BANK_TRANSFER', 'CASH'];
-    String selectedMethod = 'MOBILE_MONEY';
-    final amountCtrl = TextEditingController(
-        text: _policy['premiumAmount']?.toString() ?? '');
-
-    final confirmed = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text(
-            widget.locale == 'fr' ? 'Effectuer un paiement' : 'Make Payment',
-            style: const TextStyle(
-                fontWeight: FontWeight.bold, color: Color(0xFF1A5C2A)),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                widget.locale == 'fr'
-                    ? 'Police : ${_policy['policyNo'] ?? ''}'
-                    : 'Policy: ${_policy['policyNo'] ?? ''}',
-                style: const TextStyle(fontSize: 13, color: Colors.grey),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: amountCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(
-                  labelText: widget.locale == 'fr' ? 'Montant (HTG)' : 'Amount (HTG)',
-                  prefixIcon: const Icon(Icons.attach_money),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: selectedMethod,
-                decoration: InputDecoration(
-                  labelText: widget.locale == 'fr' ? 'Méthode de paiement' : 'Payment Method',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                items: methods.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
-                onChanged: (v) => setLocal(() => selectedMethod = v!),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(s('cancel')),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1A5C2A),
-                  foregroundColor: Colors.white),
-              onPressed: () {
-                final amount = double.tryParse(amountCtrl.text.trim()) ?? 0;
-                if (amount <= 0) return;
-                Navigator.pop(ctx, {'amount': amount, 'method': selectedMethod});
-              },
-              child: Text(widget.locale == 'fr' ? 'Confirmer' : 'Confirm'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (confirmed == null || !mounted) return;
-
-    try {
-      final body = json.encode({
-        'policyNo':      _policy['policyNo'],
-        'memberId':      widget.member['memberId'],
-        'amount':        confirmed['amount'],
-        'paymentMethod': confirmed['method'],
-        'schedSK':       _nextSched['SK'] ?? '',
-      });
-      final response = await http.post(
-        Uri.parse('$_baseUrl/member/payment'),
-        headers: {'Content-Type': 'application/json'},
-        body: body,
-      );
-      if (!mounted) return;
-      final data = json.decode(response.body);
-      if (response.statusCode == 201) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(widget.locale == 'fr'
-              ? 'Paiement enregistré ✓  Réf: ${data['referenceNo']}'
-              : 'Payment recorded ✓  Ref: ${data['referenceNo']}'),
-          backgroundColor: Colors.green.shade700,
-        ));
-        widget.onRefresh();
-      } else {
-        throw Exception(data['error'] ?? 'Payment failed');
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Error: $e'),
-        backgroundColor: Colors.red.shade700,
+    // Parse payment history from lastPay + any history list in the payload
+    final List<PaymentHistory> paymentHistory = [];
+    if (_lastPay.isNotEmpty && _lastPay['paymentDate'] != null) {
+      paymentHistory.add(PaymentHistory(
+        paymentId:   _lastPay['referenceNo']  as String? ?? '',
+        date:        _lastPay['paymentDate']  as String? ?? '',
+        amountCents: (_parseNum(_lastPay['amountPaid']) * 100).round(),
+        status:      'SUCCEEDED',
+        period:      _lastPay['paymentPeriod'] as String? ?? '',
       ));
     }
-  }
 
-  // ── Create Claim ────────────────────────────────────────────────────────────
+    // Parse beneficiaries already loaded
+    final List<Beneficiary> beneficiaries = _beneficiaries.map((b) => Beneficiary(
+      name:         b['name']         as String? ?? '',
+      relationship: b['relationship'] as String? ?? '',
+      percentage:   _parseNum(b['sharePercent']).toInt(),
+    )).toList();
 
-  Future<void> _submitClaim() async {
-    final claimTypes = ['DEATH', 'DISABILITY', 'CRITICAL_ILLNESS', 'OTHER'];
-    String selectedType = 'DEATH';
-    final descCtrl = TextEditingController();
+    final premiumAmount = _parseNum(_policy['premiumAmount']);
+    final sumAssured    = _parseNum(_policy['sumAssured']);
 
-    final confirmed = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text(
-            widget.locale == 'fr' ? 'Soumettre une réclamation' : 'Submit a Claim',
-            style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A5C2A)),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                widget.locale == 'fr'
-                    ? 'Police : ${_policy['policyNo'] ?? ''}'
-                    : 'Policy: ${_policy['policyNo'] ?? ''}',
-                style: const TextStyle(fontSize: 13, color: Colors.grey),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: selectedType,
-                decoration: InputDecoration(
-                  labelText: widget.locale == 'fr' ? 'Type de réclamation' : 'Claim Type',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                items: claimTypes.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
-                onChanged: (v) => setLocal(() => selectedType = v!),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: descCtrl,
-                maxLines: 3,
-                decoration: InputDecoration(
-                  labelText: widget.locale == 'fr' ? 'Description' : 'Description',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(s('cancel')),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1A5C2A),
-                  foregroundColor: Colors.white),
-              onPressed: () {
-                if (descCtrl.text.trim().isEmpty) return;
-                Navigator.pop(ctx, {
-                  'claimType':   selectedType,
-                  'description': descCtrl.text.trim(),
-                });
-              },
-              child: Text(widget.locale == 'fr' ? 'Soumettre' : 'Submit'),
-            ),
-          ],
-        ),
-      ),
+    final detail = PolicyDetail(
+      policyId:            _policy['policyNo']    as String? ?? '',
+      memberId:            memberId,
+      memberName:          memberName,
+      planName:            _policy['productCode'] as String? ?? 'KAFA Plan',
+      monthlyPremiumCents: (premiumAmount * 100).round(),
+      coverageAmountCents: (sumAssured    * 100).round(),
+      startDate:           _policy['startDate']   as String? ?? '',
+      nextDueDate:         _nextSched['dueDate']  as String? ?? _policy['nextDueDate'] as String? ?? '',
+      nextPeriodStart:     _nextSched['dueDate']  as String? ?? '',
+      nextPeriodEnd:       _nextSched['dueDate']  as String? ?? '',
+      status: () {
+        switch ((_policy['policyStatus'] as String? ?? '').toUpperCase()) {
+          case 'ACTIVE':    return PolicyStatus.active;
+          case 'PENDING':   return PolicyStatus.pending;
+          case 'LAPSED':    return PolicyStatus.lapsed;
+          case 'CANCELLED': return PolicyStatus.cancelled;
+          default:          return PolicyStatus.active;
+        }
+      }(),
+      beneficiaries:  beneficiaries,
+      paymentHistory: paymentHistory,
     );
 
-    if (confirmed == null || !mounted) return;
-
-    try {
-      final body = json.encode({
-        'policyNo':    _policy['policyNo'],
-        'memberId':    widget.member['memberId'],
-        'claimType':   confirmed['claimType'],
-        'description': confirmed['description'],
-      });
-      final response = await http.post(
-        Uri.parse('$_baseUrl/member/claim'),
-        headers: {'Content-Type': 'application/json'},
-        body: body,
-      );
-      if (!mounted) return;
-      final data = json.decode(response.body);
-      if (response.statusCode == 201) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(widget.locale == 'fr'
-              ? 'Réclamation soumise ✓  N°: ${data['claimNo']}'
-              : 'Claim submitted ✓  No: ${data['claimNo']}'),
-          backgroundColor: Colors.green.shade700,
-        ));
-        widget.onRefresh();
-      } else {
-        throw Exception(data['error'] ?? 'Claim failed');
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Error: $e'),
-        backgroundColor: Colors.red.shade700,
-      ));
-    }
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (_, animation, __) => FadeTransition(
+          opacity: animation,
+          child: PolicyDetailScreen(policy: detail),
+        ),
+        transitionDuration: const Duration(milliseconds: 300),
+      ),
+    ).then((_) => widget.onRefresh());
   }
+
+
 
   // ── Build ───────────────────────────────────────────────────────────────────
 
@@ -637,6 +404,25 @@ class _PolicyCardState extends State<_PolicyCard> {
                 else
                   ..._beneficiaries.map((b) => _BeneficiaryTile(
                       data: b, locale: widget.locale)),
+
+                const SizedBox(height: 16),
+
+                // ── View Details button ──────────────────────────────────────
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _openPolicyDetail,
+                    icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                    label: Text(fr ? 'Voir les détails' : 'View Details'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF1A5C2A),
+                      side: const BorderSide(color: Color(0xFF1A5C2A)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),

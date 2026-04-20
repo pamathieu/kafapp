@@ -21,29 +21,26 @@ class PaymentArgs {
     required this.amountCents,
     required this.periodStart,
     required this.periodEnd,
-    this.currency = 'usd',
+    this.currency = 'htg',
   });
 
   String get formattedAmount {
-    final dollars = amountCents / 100;
-    return '\$${dollars.toStringAsFixed(2)}';
+    final amount = amountCents / 100;
+    return 'HTG ${amount.toStringAsFixed(2)}';
   }
 }
 
 // ── Color palette ─────────────────────────────────────────────────────────────
 class _KafaColors {
-  static const background   = Color(0xFF0D0F14);
-  static const surface      = Color(0xFF161A23);
-  static const card         = Color(0xFF1C2130);
-  static const gold         = Color(0xFFD4A847);
-  static const goldLight    = Color(0xFFECC96A);
-  static const goldDim      = Color(0xFF8A6E2F);
-  static const textPrimary  = Color(0xFFF0EDE6);
-  static const textSecondary = Color(0xFF8A8F9E);
-  static const textMuted    = Color(0xFF4A4F60);
-  static const success      = Color(0xFF3DAA6E);
-  static const error        = Color(0xFFCC4444);
-  static const divider      = Color(0xFF252A38);
+  static const background    = Color(0xFFF2F4F7);
+  static const surface       = Color(0xFFFFFFFF);
+  static const green         = Color(0xFF1A5C2A);
+  static const greenLight    = Color(0xFF236B35);
+  static const textPrimary   = Color(0xFF1A1A1A);
+  static const textSecondary = Color(0xFF6B7280);
+  static const textMuted     = Color(0xFF9CA3AF);
+  static const error         = Color(0xFFDC2626);
+  static const divider       = Color(0xFFE5E7EB);
 }
 
 class PaymentScreen extends StatefulWidget {
@@ -147,10 +144,16 @@ class _PaymentScreenState extends State<PaymentScreen>
                       const SizedBox(height: 10),
                       _buildErrorBanner(_cardError!),
                     ],
-                    const SizedBox(height: 28),
-                    _buildSectionLabel('Coverage Period'),
-                    const SizedBox(height: 12),
-                    _buildPeriodRow(),
+                    if (widget.args.periodEnd.isNotEmpty) ...[
+                      const SizedBox(height: 28),
+                      _buildSectionLabel('Due Date'),
+                      const SizedBox(height: 12),
+                      _buildInfoTile(
+                        label: 'Next payment due',
+                        value: _formatDate(widget.args.periodEnd),
+                        icon: Icons.calendar_today_rounded,
+                      ),
+                    ],
                     const SizedBox(height: 36),
                     _buildPayButton(),
                     const SizedBox(height: 20),
@@ -222,9 +225,7 @@ class _PaymentScreenState extends State<PaymentScreen>
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              gradient: const RadialGradient(
-                colors: [_KafaColors.goldLight, _KafaColors.goldDim],
-              ),
+              color: _KafaColors.green,
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Center(
@@ -253,13 +254,12 @@ class _PaymentScreenState extends State<PaymentScreen>
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF1E2235), Color(0xFF161A23)],
+          colors: [Color(0xFF1A5C2A), Color(0xFF236B35)],
         ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _KafaColors.goldDim.withOpacity(0.4)),
         boxShadow: [
           BoxShadow(
-            color: _KafaColors.gold.withOpacity(0.06),
+            color: _KafaColors.green.withValues(alpha: 0.2),
             blurRadius: 24,
             offset: const Offset(0, 8),
           ),
@@ -273,14 +273,13 @@ class _PaymentScreenState extends State<PaymentScreen>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: _KafaColors.goldDim.withOpacity(0.25),
+                  color: Colors.white.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: _KafaColors.goldDim.withOpacity(0.5)),
                 ),
                 child: const Text(
                   'Monthly Premium',
                   style: TextStyle(
-                    color: _KafaColors.gold,
+                    color: Colors.white,
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.8,
@@ -293,7 +292,7 @@ class _PaymentScreenState extends State<PaymentScreen>
           Text(
             widget.args.formattedAmount,
             style: const TextStyle(
-              color: _KafaColors.textPrimary,
+              color: Colors.white,
               fontSize: 42,
               fontWeight: FontWeight.w300,
               letterSpacing: -1.5,
@@ -303,8 +302,8 @@ class _PaymentScreenState extends State<PaymentScreen>
           const SizedBox(height: 6),
           Text(
             'Policy · ${widget.args.policyId}',
-            style: const TextStyle(
-              color: _KafaColors.textSecondary,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.7),
               fontSize: 13,
             ),
           ),
@@ -316,12 +315,13 @@ class _PaymentScreenState extends State<PaymentScreen>
   // ── Card field ────────────────────────────────────────────────────────────
   Widget _buildCardField() {
     return Container(
+      height: 54,
       decoration: BoxDecoration(
         color: _KafaColors.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: _cardError != null
-              ? _KafaColors.error.withOpacity(0.6)
+              ? _KafaColors.error.withValues(alpha: 0.6)
               : _KafaColors.divider,
         ),
       ),
@@ -343,32 +343,6 @@ class _PaymentScreenState extends State<PaymentScreen>
     );
   }
 
-  // ── Period row ────────────────────────────────────────────────────────────
-  Widget _buildPeriodRow() {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildInfoTile(
-            label: 'From',
-            value: _formatDate(widget.args.periodStart),
-            icon: Icons.calendar_today_rounded,
-          ),
-        ),
-        const SizedBox(width: 12),
-        const Icon(Icons.arrow_forward_rounded,
-            color: _KafaColors.textMuted, size: 16),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildInfoTile(
-            label: 'To',
-            value: _formatDate(widget.args.periodEnd),
-            icon: Icons.event_rounded,
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildInfoTile({
     required String label,
     required String value,
@@ -383,7 +357,7 @@ class _PaymentScreenState extends State<PaymentScreen>
       ),
       child: Row(
         children: [
-          Icon(icon, color: _KafaColors.goldDim, size: 15),
+          Icon(icon, color: _KafaColors.green, size: 15),
           const SizedBox(width: 8),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -417,8 +391,8 @@ class _PaymentScreenState extends State<PaymentScreen>
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: _isProcessing
-                    ? [_KafaColors.goldDim, _KafaColors.goldDim]
-                    : [_KafaColors.gold, _KafaColors.goldLight],
+                    ? [_KafaColors.greenLight, _KafaColors.greenLight]
+                    : [_KafaColors.green, _KafaColors.greenLight],
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
               ),
@@ -427,8 +401,8 @@ class _PaymentScreenState extends State<PaymentScreen>
                   ? []
                   : [
                       BoxShadow(
-                        color: _KafaColors.gold
-                            .withOpacity(0.3 * _pulseAnim.value),
+                        color: _KafaColors.green
+                            .withValues(alpha: 0.3 * _pulseAnim.value),
                         blurRadius: 20,
                         offset: const Offset(0, 6),
                       ),
@@ -465,9 +439,9 @@ class _PaymentScreenState extends State<PaymentScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: _KafaColors.error.withOpacity(0.12),
+        color: _KafaColors.error.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _KafaColors.error.withOpacity(0.4)),
+        border: Border.all(color: _KafaColors.error.withValues(alpha: 0.4)),
       ),
       child: Row(
         children: [

@@ -35,6 +35,9 @@ dependencies:
   # Launch phone/email/URLs
   url_launcher: ^6.3.1
 
+  # Stripe payment UI
+  flutter_stripe: ^11.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

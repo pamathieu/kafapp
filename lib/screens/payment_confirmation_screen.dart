@@ -1,19 +1,15 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'payment_screen.dart';
 
-// Reuse palette from payment_screen.dart (copy here for self-containment)
 class _C {
-  static const background    = Color(0xFF0D0F14);
-  static const surface       = Color(0xFF161A23);
-  static const gold          = Color(0xFFD4A847);
-  static const goldLight     = Color(0xFFECC96A);
-  static const goldDim       = Color(0xFF8A6E2F);
-  static const textPrimary   = Color(0xFFF0EDE6);
-  static const textSecondary = Color(0xFF8A8F9E);
-  static const textMuted     = Color(0xFF4A4F60);
-  static const success       = Color(0xFF3DAA6E);
-  static const divider       = Color(0xFF252A38);
+  static const background    = Color(0xFFF2F4F7);
+  static const surface       = Color(0xFFFFFFFF);
+  static const green         = Color(0xFF1A5C2A);
+  static const greenLight    = Color(0xFF236B35);
+  static const textPrimary   = Color(0xFF1A1A1A);
+  static const textSecondary = Color(0xFF6B7280);
+  static const success       = Color(0xFF1A5C2A);
+  static const divider       = Color(0xFFE5E7EB);
 }
 
 class PaymentConfirmationScreen extends StatefulWidget {
@@ -82,7 +78,6 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
       CurvedAnimation(parent: _contentController, curve: Curves.easeIn),
     );
 
-    // Staggered animation sequence
     Future.delayed(const Duration(milliseconds: 200), () {
       _checkController.forward();
       _ringController.forward();
@@ -131,7 +126,6 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Ripple ring
           AnimatedBuilder(
             animation: _ringController,
             builder: (_, __) => Transform.scale(
@@ -143,16 +137,12 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
                   height: 100,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: _C.success,
-                      width: 2,
-                    ),
+                    border: Border.all(color: _C.success, width: 2),
                   ),
                 ),
               ),
             ),
           ),
-          // Check circle
           AnimatedBuilder(
             animation: _checkController,
             builder: (_, __) => Transform.scale(
@@ -164,7 +154,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
                   height: 80,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: _C.success.withOpacity(0.15),
+                    color: _C.success.withValues(alpha: 0.1),
                     border: Border.all(color: _C.success, width: 2),
                   ),
                   child: const Icon(
@@ -196,7 +186,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
             style: TextStyle(
               color: _C.textPrimary,
               fontSize: 26,
-              fontWeight: FontWeight.w300,
+              fontWeight: FontWeight.w600,
               letterSpacing: -0.5,
             ),
           ),
@@ -204,7 +194,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
           Text(
             widget.args.formattedAmount,
             style: const TextStyle(
-              color: _C.gold,
+              color: _C.green,
               fontSize: 44,
               fontWeight: FontWeight.w700,
               letterSpacing: -2,
@@ -226,6 +216,13 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
         color: _C.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _C.divider),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         children: [
@@ -234,11 +231,13 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
           _buildDetailRow('Policy', widget.args.policyId),
           _buildDivider(),
           _buildDetailRow('Member', widget.args.memberName),
-          _buildDivider(),
-          _buildDetailRow(
-            'Coverage',
-            '${_fmt(widget.args.periodStart)} – ${_fmt(widget.args.periodEnd)}',
-          ),
+          if (widget.args.periodEnd.isNotEmpty) ...[
+            _buildDivider(),
+            _buildDetailRow(
+              'Due Date',
+              _fmt(widget.args.periodEnd),
+            ),
+          ],
           _buildDivider(),
           _buildDetailRow('Status', 'Confirmed', isStatus: true),
         ],
@@ -246,40 +245,40 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
     );
   }
 
-  Widget _buildDetailRow(String label, String value,
-      {bool isStatus = false}) {
+  Widget _buildDetailRow(String label, String value, {bool isStatus = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label,
-              style: const TextStyle(
-                  color: _C.textSecondary, fontSize: 13)),
+              style: const TextStyle(color: _C.textSecondary, fontSize: 13)),
           isStatus
               ? Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(
-                    color: _C.success.withOpacity(0.12),
+                    color: _C.success.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                        color: _C.success.withOpacity(0.4)),
+                    border: Border.all(color: _C.success.withValues(alpha: 0.4)),
                   ),
-                  child: Text(
-                    value,
-                    style: const TextStyle(
+                  child: const Text(
+                    'Confirmed',
+                    style: TextStyle(
                         color: _C.success,
                         fontSize: 12,
                         fontWeight: FontWeight.w600),
                   ),
                 )
-              : Text(
-                  value,
-                  style: const TextStyle(
-                    color: _C.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
+              : Flexible(
+                  child: Text(
+                    value,
+                    textAlign: TextAlign.end,
+                    style: const TextStyle(
+                      color: _C.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
         ],
@@ -294,13 +293,9 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
   Widget _buildActions() {
     return AnimatedBuilder(
       animation: _contentController,
-      builder: (_, child) => Opacity(
-        opacity: _contentOpacity.value,
-        child: child,
-      ),
+      builder: (_, child) => Opacity(opacity: _contentOpacity.value, child: child!),
       child: Column(
         children: [
-          // Primary: back to dashboard
           GestureDetector(
             onTap: () => Navigator.of(context).popUntil((r) => r.isFirst),
             child: Container(
@@ -308,12 +303,12 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
               height: 54,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [_C.gold, _C.goldLight],
+                  colors: [_C.green, _C.greenLight],
                 ),
                 borderRadius: BorderRadius.circular(14),
                 boxShadow: [
                   BoxShadow(
-                    color: _C.gold.withOpacity(0.25),
+                    color: _C.green.withValues(alpha: 0.25),
                     blurRadius: 16,
                     offset: const Offset(0, 6),
                   ),
@@ -323,35 +318,9 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
                 child: Text(
                   'Back to Dashboard',
                   style: TextStyle(
-                    color: _C.background,
+                    color: Colors.white,
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          // Secondary: view receipt (opens Stripe receipt URL if available)
-          GestureDetector(
-            onTap: () {
-              // TODO: launch(receiptUrl) via url_launcher
-            },
-            child: Container(
-              width: double.infinity,
-              height: 50,
-              decoration: BoxDecoration(
-                color: Colors.transparent,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: _C.divider),
-              ),
-              child: const Center(
-                child: Text(
-                  'View Receipt',
-                  style: TextStyle(
-                    color: _C.textSecondary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
@@ -369,7 +338,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
         '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
       ];
-      return '${m[int.parse(p[1])]} ${int.parse(p[2])}';
+      return '${m[int.parse(p[1])]} ${int.parse(p[2])}, ${p[0]}';
     } catch (_) {
       return iso;
     }

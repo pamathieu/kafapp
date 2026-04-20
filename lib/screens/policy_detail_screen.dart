@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../payment/payment_screen.dart';
+import 'payment_screen.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
 

@@ -31,6 +31,9 @@
 
   <title>member_management</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- Required by flutter_stripe on web — must load synchronously before Flutter -->
+  <script src="https://js.stripe.com/v3/"></script>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>
