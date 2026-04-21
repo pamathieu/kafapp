@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:provider/provider.dart';
@@ -29,23 +30,14 @@ void main() async {
 
   WidgetsFlutterBinding.ensureInitialized();
 
-  // flutter_stripe registers a web MutationObserver at startup that reads
-  // Stripe.publishableKey (a late String). It must be set before runApp or
-  // the first render throws LateInitializationError → blank screen on web.
-  // We always assign it; payment screens validate it's a real key at tap time.
-  try {
-    final hasRealKey = _stripeKey.isNotEmpty && !_stripeKey.contains('REPLACE_ME');
-    Stripe.publishableKey = hasRealKey ? _stripeKey : '';
-    if (hasRealKey) {
-      try {
-        await Stripe.instance.applySettings();
-      } catch (e) {
-        debugPrint('[Stripe] applySettings failed: $e');
-      }
-    }
-  } catch (e) {
-    debugPrint('[Stripe] initialization failed: $e');
-    // Continue anyway, payment will fail at tap time if key is invalid
+  // flutter_stripe: set publishableKey on all platforms so CardField works.
+  // applySettings() calls dart:io Platform which crashes on web — skip it there.
+  final hasRealKey = _stripeKey.isNotEmpty && !_stripeKey.contains('REPLACE_ME');
+  if (hasRealKey) {
+    try {
+      Stripe.publishableKey = _stripeKey;
+      if (!kIsWeb) await Stripe.instance.applySettings();
+    } catch (_) {}
   }
 
   runApp(

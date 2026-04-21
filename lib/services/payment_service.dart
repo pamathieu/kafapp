@@ -1,7 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:http/http.dart' as http;
+import '../stripe_confirmer.dart'
+    if (dart.library.html) '../stripe_confirmer_web.dart';
 
 /// Result object returned from [PaymentService.processPayment]
 class PaymentResult {
@@ -59,29 +60,15 @@ class PaymentService {
       final clientSecret = intentResponse['client_secret'] as String;
       final paymentId = intentResponse['payment_id'] as String;
 
-      // ── Step 2: Confirm payment via Stripe SDK ──────────────────────────
-      // On web, CardField is a Stripe.js iframe that collects card details
-      // internally. Passing PaymentMethodParams.card triggers a native method
-      // channel that doesn't exist on web. Pass null so the web implementation
-      // reads the card from the mounted CardField element.
-      await Stripe.instance.confirmPayment(
-        paymentIntentClientSecret: clientSecret,
-        data: kIsWeb
-            ? null
-            : const PaymentMethodParams.card(
-                paymentMethodData: PaymentMethodData(),
-              ),
-      );
+      // ── Step 2: Confirm payment ─────────────────────────────────────────
+      // confirmStripePayment is conditionally imported:
+      //   - Web: calls kafaConfirmPayment() JS function in index.html (Stripe.js)
+      //   - Native: uses flutter_stripe SDK with PaymentMethodParams.card
+      await confirmStripePayment(clientSecret);
 
       return PaymentResult(
         success: true,
         paymentId: paymentId,
-      );
-    } on StripeException catch (e) {
-      debugPrint('[PaymentService] Stripe error: ${e.error.message}');
-      return PaymentResult(
-        success: false,
-        errorMessage: e.error.message ?? 'Payment failed. Please try again.',
       );
     } on PaymentServiceException catch (e) {
       return PaymentResult(success: false, errorMessage: e.message);
@@ -89,7 +76,7 @@ class PaymentService {
       debugPrint('[PaymentService] Unexpected error: $e');
       return PaymentResult(
         success: false,
-        errorMessage: 'An unexpected error occurred. Please try again.',
+        errorMessage: e.toString().replaceFirst('Exception: ', ''),
       );
     }
   }

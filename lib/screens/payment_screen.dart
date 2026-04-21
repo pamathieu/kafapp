@@ -1,7 +1,10 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import '../services/payment_service.dart';
+import '../stripe_web_helper.dart'
+    if (dart.library.html) '../stripe_web_helper_web.dart';
 import 'payment_confirmation_screen.dart';
 
 /// Data passed into the payment screen from the member's policy view.
@@ -70,6 +73,10 @@ class _PaymentScreenState extends State<PaymentScreen>
     _pulseAnim = Tween<double>(begin: 0.6, end: 1.0).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
+    if (kIsWeb) {
+      const pk = String.fromEnvironment('STRIPE_KEY', defaultValue: '');
+      if (pk.isNotEmpty) registerStripeCardViewFactory(pk);
+    }
   }
 
   @override
@@ -139,7 +146,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                     const SizedBox(height: 28),
                     _buildSectionLabel('Card Details'),
                     const SizedBox(height: 12),
-                    _buildCardField(),
+                    _buildCardFields(),
                     if (_cardError != null) ...[
                       const SizedBox(height: 10),
                       _buildErrorBanner(_cardError!),
@@ -312,34 +319,78 @@ class _PaymentScreenState extends State<PaymentScreen>
     );
   }
 
-  // ── Card field ────────────────────────────────────────────────────────────
-  Widget _buildCardField() {
-    return Container(
-      height: 54,
-      decoration: BoxDecoration(
-        color: _KafaColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: _cardError != null
-              ? _KafaColors.error.withValues(alpha: 0.6)
-              : _KafaColors.divider,
+  // ── Card fields ───────────────────────────────────────────────────────────
+  Widget _buildCardFields() {
+    if (!kIsWeb) {
+      // Native: single combined CardField
+      return Container(
+        height: 54,
+        decoration: BoxDecoration(
+          color: _KafaColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: _cardError != null
+                ? _KafaColors.error.withValues(alpha: 0.6)
+                : _KafaColors.divider,
+          ),
         ),
-      ),
-      child: CardField(
-        onCardChanged: (details) {
-          if (_cardError != null && details != null) {
-            setState(() => _cardError = null);
-          }
-        },
-        decoration: const InputDecoration(
-          border: InputBorder.none,
-          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: CardField(
+          onCardChanged: (details) {
+            if (_cardError != null && details != null) {
+              setState(() => _cardError = null);
+            }
+          },
+          decoration: const InputDecoration(
+            border: InputBorder.none,
+            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          ),
+          style: const TextStyle(color: _KafaColors.textPrimary, fontSize: 15),
         ),
-        style: const TextStyle(
-          color: _KafaColors.textPrimary,
-          fontSize: 15,
+      );
+    }
+    // Web: three separate Stripe elements
+    return Column(
+      children: [
+        _buildStripeField('Card Number', stripeCardHtmlView()),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: _buildStripeField('Expiry', stripeExpiryHtmlView())),
+            const SizedBox(width: 12),
+            Expanded(child: _buildStripeField('CVC', stripeCvcHtmlView())),
+          ],
         ),
-      ),
+      ],
+    );
+  }
+
+  Widget _buildStripeField(String label, Widget field) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: _KafaColors.textMuted,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.8,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          height: 48,
+          decoration: BoxDecoration(
+            color: _KafaColors.surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: _KafaColors.divider),
+          ),
+          child: MouseRegion(
+            cursor: SystemMouseCursors.text,
+            child: field,
+          ),
+        ),
+      ],
     );
   }
 

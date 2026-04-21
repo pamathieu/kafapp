@@ -39,6 +39,10 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   bool _isSavingPassword = false;
   String? _passwordMessage;
 
+  // Payment history state
+  List<Map<String, dynamic>> _paymentHistory = [];
+  bool _loadingHistory = false;
+
   // Payment state
   List<Map<String, dynamic>> _memberPolicies    = [];
   Map<String, dynamic>?      _selectedPolicy;
@@ -65,6 +69,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     _member = widget.member;
     _initControllers();
     _loadLocalities();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadPaymentHistory());
   }
 
   void _initControllers() {
@@ -93,6 +98,29 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       });
     } catch (_) {
       setState(() => _loadingLocalities = false);
+    }
+  }
+
+  Future<void> _loadPaymentHistory() async {
+    setState(() => _loadingHistory = true);
+    try {
+      final api = context.read<AuthProvider>().apiService!;
+      final policies = await api.getMemberPolicies(_member.memberId);
+      final history = <Map<String, dynamic>>[];
+      for (final p in policies) {
+        final payments = p['paymentHistory'] as List<dynamic>? ?? [];
+        for (final pay in payments) {
+          history.add(Map<String, dynamic>.from(pay as Map));
+        }
+      }
+      history.sort((a, b) {
+        final da = a['paymentDate'] as String? ?? '';
+        final db = b['paymentDate'] as String? ?? '';
+        return db.compareTo(da);
+      });
+      if (mounted) setState(() { _paymentHistory = history; _loadingHistory = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loadingHistory = false);
     }
   }
 
@@ -466,6 +494,10 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
 
                     const SizedBox(height: 16),
 
+                    if (!_isEditing) _buildPaymentHistoryCard(),
+
+                    const SizedBox(height: 16),
+
                     if (_member.certificate != null) _buildCertificateCard(s),
 
                     const SizedBox(height: 80),
@@ -555,6 +587,98 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaymentHistoryCard() {
+    return Card(
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.receipt_long, color: Color(0xFF1A5C2A), size: 18),
+                const SizedBox(width: 8),
+                const Text(
+                  'Payment History',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                ),
+                const Spacer(),
+                if (_loadingHistory)
+                  const SizedBox(
+                    width: 16, height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (!_loadingHistory && _paymentHistory.isEmpty)
+              const Text(
+                'No payments recorded yet.',
+                style: TextStyle(color: Colors.grey, fontSize: 13),
+              )
+            else
+              ..._paymentHistory.map((p) {
+                final date   = p['paymentDate'] as String? ?? '';
+                final ref    = p['referenceNo'] as String? ?? p['paymentId'] as String? ?? '';
+                final amount = p['amountPaid']  ?? p['amount_cents'] ?? 0;
+                final period = p['paymentPeriod'] as String? ?? p['period'] as String? ?? '';
+                final status = (p['status'] as String? ?? 'SUCCEEDED').toUpperCase();
+                final amountStr = amount is num
+                    ? 'HTG ${amount.toStringAsFixed(2)}'
+                    : 'HTG $amount';
+                final (color, icon) = status == 'FAILED'
+                    ? (Colors.red, Icons.cancel_outlined)
+                    : status == 'PENDING'
+                        ? (Colors.orange, Icons.pending_outlined)
+                        : (const Color(0xFF1A5C2A), Icons.check_circle_outline);
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        children: [
+                          Icon(icon, color: color, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  period.isNotEmpty ? period : date,
+                                  style: const TextStyle(
+                                      fontSize: 13, fontWeight: FontWeight.w500),
+                                ),
+                                if (ref.isNotEmpty)
+                                  Text(
+                                    ref,
+                                    style: const TextStyle(
+                                        fontSize: 11, color: Colors.grey),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            amountStr,
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: color),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                  ],
+                );
+              }),
           ],
         ),
       ),

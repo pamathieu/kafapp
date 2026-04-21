@@ -32,8 +32,92 @@
   <title>member_management</title>
   <link rel="manifest" href="manifest.json">
 
+  <style>
+    #kafa-card-number, #kafa-card-expiry, #kafa-card-cvc {
+      background: #FFFFFF;
+    }
+    #kafa-card-number .__PrivateStripeElement,
+    #kafa-card-expiry .__PrivateStripeElement,
+    #kafa-card-cvc .__PrivateStripeElement {
+      background: #FFFFFF !important;
+      width: 100%;
+    }
+    #kafa-card-number iframe,
+    #kafa-card-expiry iframe,
+    #kafa-card-cvc iframe {
+      background: #FFFFFF !important;
+    }
+  </style>
+
   <!-- Required by flutter_stripe on web — must load synchronously before Flutter -->
   <script src="https://js.stripe.com/v3/"></script>
+  <script>
+    var _kafaStripe = null;
+    var _kafaCardNumber = null;
+    var _kafaCardExpiry = null;
+    var _kafaCardCvc = null;
+
+    var _kafaStyle = {
+      base: {
+        fontSize: '16px',
+        color: '#000000',
+        fontFamily: 'monospace',
+        fontSmoothing: 'antialiased',
+        '::placeholder': { color: '#9CA3AF' }
+      },
+      invalid: {
+        color: '#DC2626'
+      }
+    };
+
+    window.kafaSetupCard = function(pk) {
+      _kafaStripe = Stripe(pk);
+      var els = _kafaStripe.elements({ fonts: [] });
+      var opts = { style: _kafaStyle, classes: { base: 'kafa-stripe-input' } };
+      _kafaCardNumber = els.create('cardNumber', opts);
+      _kafaCardExpiry = els.create('cardExpiry', opts);
+      _kafaCardCvc    = els.create('cardCvc',    opts);
+    };
+
+    function _forceWhiteBg(id) {
+      var el = document.getElementById(id);
+      if (el) {
+        el.style.background = '#FFFFFF';
+        var iframe = el.querySelector('iframe');
+        if (iframe) {
+          iframe.style.background = '#FFFFFF';
+          try {
+            iframe.contentDocument.body.style.background = '#FFFFFF';
+            iframe.contentDocument.body.style.color = '#1A1A1A';
+          } catch(e) {}
+        }
+      }
+    }
+
+    window.kafaMountNumber = function() {
+      _kafaCardNumber.mount('#kafa-card-number');
+      setTimeout(function() { _forceWhiteBg('kafa-card-number'); }, 500);
+    };
+    window.kafaMountExpiry = function() {
+      _kafaCardExpiry.mount('#kafa-card-expiry');
+      setTimeout(function() { _forceWhiteBg('kafa-card-expiry'); }, 500);
+    };
+    window.kafaMountCvc = function() {
+      _kafaCardCvc.mount('#kafa-card-cvc');
+      setTimeout(function() { _forceWhiteBg('kafa-card-cvc'); }, 500);
+    };
+
+    window.kafaConfirmPayment = function(clientSecret) {
+      return _kafaStripe.confirmCardPayment(clientSecret, {
+        payment_method: { card: _kafaCardNumber }
+      }).then(function(result) {
+        if (result.error) return JSON.stringify({ ok: false, msg: result.error.message });
+        return JSON.stringify({ ok: true });
+      }).catch(function(e) {
+        return JSON.stringify({ ok: false, msg: String(e) });
+      });
+    };
+  </script>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>
