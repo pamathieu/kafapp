@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/language_provider.dart';
 import '../misc/app_strings.dart';
+import '../services/dev_env.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Documents & Wishes screen
@@ -53,7 +54,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     setState(() { _loading = true; _error = null; });
     try {
       final uri = Uri.parse(
-          '$_baseUrl/member/documents?memberId=${Uri.encodeComponent(widget.memberId)}');
+          '$_baseUrl${devPath('/member/documents')}?memberId=${Uri.encodeComponent(widget.memberId)}');
       final response = await http.get(uri).timeout(const Duration(seconds: 10));
       if (!mounted) return;
       if (response.statusCode == 200) {
@@ -188,7 +189,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     setState(() => _uploading = true);
     try {
       final response = await http.post(
-        Uri.parse('$_baseUrl/member/documents/upload'),
+        Uri.parse('$_baseUrl${devPath('/member/documents/upload')}'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'memberId': widget.memberId,

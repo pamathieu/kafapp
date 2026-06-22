@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import '../models/member.dart';
+import 'dev_env.dart';
 
 class ApiService {
   static const String _baseUrl   = 'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
@@ -118,6 +119,19 @@ class ApiService {
         'Failed to retrieve certificate links: ${response.statusCode} ${response.body}');
   }
 
+  /// POST /certificates — generate a certificate for a member (SigV4)
+  Future<Map<String, dynamic>> generateCertificate(String memberId) async {
+    final uri  = Uri.parse('$_baseUrl/certificates');
+    final body = json.encode({'memberId': memberId, 'companyId': _companyId});
+    final headers  = _signRequest(method: 'POST', uri: uri, body: body);
+    final response = await http.post(uri, headers: headers, body: body);
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return json.decode(response.body) as Map<String, dynamic>;
+    }
+    final error = json.decode(response.body);
+    throw Exception(error['error'] ?? 'Failed to generate certificate');
+  }
+
   /// POST /members/set-payment-access — admin grants/revokes payment access (SigV4)
   Future<void> setPaymentAccess(String memberId, bool enabled) async {
     final uri  = Uri.parse('$_baseUrl/members/set-payment-access');
@@ -173,7 +187,7 @@ class ApiService {
 
   /// GET /member/policy — fetch policies for a member (no SigV4)
   Future<List<Map<String, dynamic>>> getMemberPolicies(String memberId) async {
-    final uri      = Uri.parse('$_baseUrl/member/policy?memberId=${Uri.encodeComponent(memberId)}');
+    final uri      = Uri.parse('$_baseUrl${devPath('/member/policy')}?memberId=${Uri.encodeComponent(memberId)}');
     final response = await http.get(uri, headers: {'Content-Type': 'application/json'});
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
@@ -205,7 +219,7 @@ class ApiService {
 
   /// POST /member/login — member self-service (no SigV4, public endpoint)
   Future<Map<String, dynamic>> memberLogin(String identifier, String password) async {
-    final uri      = Uri.parse('$_baseUrl/member/login');
+    final uri      = Uri.parse('$_baseUrl${devPath('/member/login')}');
     final body     = json.encode({'identifier': identifier, 'password': password});
     final response = await http.post(uri,
         headers: {'Content-Type': 'application/json'}, body: body);
@@ -216,7 +230,7 @@ class ApiService {
 
   /// POST /members/set-credentials — admin sets a member password (SigV4)
   Future<void> setMemberCredentials(String memberId, String password) async {
-    final uri  = Uri.parse('$_baseUrl/members/set-credentials');
+    final uri  = Uri.parse('$_baseUrl${devPath('/members/set-credentials')}');
     final body = json.encode({
       'memberId':  memberId,
       'companyId': _companyId,
@@ -241,6 +255,36 @@ class ApiService {
     return 0;
   }
 
+  /// GET /admin/payments?memberId= — fetch Stripe payment records for a member (SigV4)
+  Future<List<Map<String, dynamic>>> getAdminPayments(String memberId) async {
+    final uri     = Uri.parse('$_baseUrl/admin/payments?memberId=${Uri.encodeComponent(memberId)}');
+    final headers = _signRequest(method: 'GET', uri: uri, body: '');
+    final response = await http.get(uri, headers: headers);
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return List<Map<String, dynamic>>.from(data['payments'] ?? []);
+    }
+    throw Exception('Failed to load Stripe payments: ${response.statusCode}');
+  }
+
+  /// POST /members/policies/create — admin creates a policy for a member (SigV4)
+  Future<Map<String, dynamic>> createMemberPolicy({
+    required String memberId,
+    required String planCode,
+  }) async {
+    final uri  = Uri.parse('$_baseUrl${devPath('/members/policies/create')}');
+    final body = json.encode({
+      'memberId':  memberId,
+      'companyId': _companyId,
+      'planCode':  planCode,
+    });
+    final headers  = _signRequest(method: 'POST', uri: uri, body: body);
+    final response = await http.post(uri, headers: headers, body: body);
+    final data = json.decode(response.body) as Map<String, dynamic>;
+    if (response.statusCode == 201) return data;
+    throw Exception(data['error'] ?? 'Failed to create policy');
+  }
+
   /// GET /localities — list all communes
   Future<List<Map<String, dynamic>>> listLocalities() async {
     final uri      = Uri.parse('$_baseUrl/localities');
@@ -254,7 +298,7 @@ class ApiService {
   }
 
   Future<List<Member>> listMembers() async {
-    final uri      = Uri.parse('$_baseUrl/members/list?companyId=$_companyId');
+    final uri      = Uri.parse('$_baseUrl${devPath('/members/list')}?companyId=$_companyId');
     final headers  = _signRequest(method: 'GET', uri: uri, body: '');
     final response = await http.get(uri, headers: headers);
     if (response.statusCode == 200) {
@@ -266,7 +310,7 @@ class ApiService {
   }
 
   Future<Member> getMember(String memberId) async {
-    final uri      = Uri.parse('$_baseUrl/members?memberId=$memberId&companyId=$_companyId');
+    final uri      = Uri.parse('$_baseUrl${devPath('/members')}?memberId=$memberId&companyId=$_companyId');
     final headers  = _signRequest(method: 'GET', uri: uri, body: '');
     final response = await http.get(uri, headers: headers);
     if (response.statusCode == 200) {
@@ -276,7 +320,7 @@ class ApiService {
   }
 
   Future<Member> editMember(String memberId) async {
-    final uri      = Uri.parse('$_baseUrl/members/edit');
+    final uri      = Uri.parse('$_baseUrl${devPath('/members/edit')}');
     final body     = json.encode({'memberId': memberId, 'companyId': _companyId});
     final headers  = _signRequest(method: 'POST', uri: uri, body: body);
     final response = await http.post(uri, headers: headers, body: body);
@@ -289,7 +333,7 @@ class ApiService {
 
   /// Update member — supports renaming memberId via oldMemberId field
   Future<Member> updateMember(Member member, {String? oldMemberId}) async {
-    final uri  = Uri.parse('$_baseUrl/members/update');
+    final uri  = Uri.parse('$_baseUrl${devPath('/members/update')}');
     final body = json.encode({
       'memberId':              member.memberId,
       'oldMemberId':           oldMemberId ?? member.memberId,
@@ -317,7 +361,7 @@ class ApiService {
 
   /// Create a new member
   Future<Member> createMember(Member member) async {
-    final uri  = Uri.parse('$_baseUrl/members/create');
+    final uri  = Uri.parse('$_baseUrl${devPath('/members/create')}');
     final body = json.encode({
       'memberId':              member.memberId,
       'companyId':             _companyId,
@@ -340,5 +384,52 @@ class ApiService {
     }
     final error = json.decode(response.body);
     throw Exception(error['error'] ?? 'Failed to create member: ${response.statusCode}');
+  }
+
+  Future<List<Map<String, dynamic>>> getProspects() async {
+    final uri     = Uri.parse('$_baseUrl/prospects');
+    final headers = _signRequest(method: 'GET', uri: uri, body: '');
+    final response = await http.get(uri, headers: headers);
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return List<Map<String, dynamic>>.from(data['prospects'] ?? []);
+    }
+    throw Exception('Failed to load prospects: ${response.statusCode}');
+  }
+
+  Future<Map<String, dynamic>> updateProspectStatus(
+      String prospectId, String status, {String? note}) async {
+    final uri  = Uri.parse('$_baseUrl/prospects/${Uri.encodeComponent(prospectId)}');
+    final payload = <String, dynamic>{'status': status};
+    if (note != null) payload['note'] = note;
+    final body = json.encode(payload);
+    final headers = _signRequest(method: 'PATCH', uri: uri, body: body);
+    final response = await http.patch(uri, headers: headers, body: body);
+    if (response.statusCode == 200) {
+      return json.decode(response.body) as Map<String, dynamic>;
+    }
+    final err = json.decode(response.body);
+    throw Exception(err['error'] ?? 'Failed to update prospect: ${response.statusCode}');
+  }
+
+  Future<void> saveProspectNote(String prospectId, String note) async {
+    final uri  = Uri.parse('$_baseUrl/prospects/${Uri.encodeComponent(prospectId)}');
+    final body = json.encode({'note': note});
+    final headers = _signRequest(method: 'PATCH', uri: uri, body: body);
+    final response = await http.patch(uri, headers: headers, body: body);
+    if (response.statusCode != 200) {
+      final err = json.decode(response.body);
+      throw Exception(err['error'] ?? 'Failed to save note: ${response.statusCode}');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getChats({String? type}) async {
+    final uri = Uri.parse('$_baseUrl/chats${type != null ? '?type=$type' : ''}');
+    final response = await http.get(uri, headers: {'Content-Type': 'application/json'});
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return List<Map<String, dynamic>>.from(data['sessions'] ?? []);
+    }
+    throw Exception('Failed to load chats: ${response.statusCode}');
   }
 }

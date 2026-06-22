@@ -1,11 +1,15 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 import '../providers/language_provider.dart';
 import '../misc/app_strings.dart';
 import '../services/session_service.dart';
+import '../services/dev_env.dart';
 import 'member_login_screen.dart';
 import 'policy_screen.dart';
 import 'plans_screen.dart';
@@ -40,6 +44,8 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
   // Live member data — refreshed from server on init so notifications are current
   late Map<String, dynamic> _member;
 
+  Timer? _refreshTimer;
+
   static const _baseUrl =
       'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -61,6 +67,12 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
       try {
         _checkPolicy();
         _refreshMember();
+        // Silently re-fetch so notifications/payment access stay current
+        // without the member needing to log out and back in.
+        _refreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+          _checkPolicy();
+          _refreshMember();
+        });
       } catch (e) {
         debugPrint('Error during policy/member refresh: $e');
         // Continue with cached data
@@ -81,6 +93,12 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
     }
   }
 
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
   /// Re-fetches the member profile from the server so payment_notification
   /// and payment_access are always current, even when loaded from session cache.
   Future<void> _refreshMember() async {
@@ -89,7 +107,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
     if (memberId.isEmpty) return;
     try {
       final uri = Uri.parse(
-          '$_baseUrl/member/profile?memberId=${Uri.encodeComponent(memberId)}'
+          '$_baseUrl${devPath('/member/profile')}?memberId=${Uri.encodeComponent(memberId)}'
           '&companyId=${Uri.encodeComponent(companyId)}');
       final response = await http.get(uri);
       if (!mounted || response.statusCode != 200) return;
@@ -107,7 +125,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
     try {
       final uri = Uri.parse(
           'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod'
-          '/member/policy?memberId=${Uri.encodeComponent(memberId)}');
+          '${devPath('/member/policy')}?memberId=${Uri.encodeComponent(memberId)}');
       final response = await http.get(uri);
       if (!mounted) return;
       final data = json.decode(response.body) as Map<String, dynamic>;
@@ -147,7 +165,12 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
         ),
         PolicyScreen(member: _member, embedded: true),
         _ServicesTab(member: _member, locale: locale),
-        _ProfileTab(member: _member, locale: locale, onLogout: handleLogout),
+        _ProfileTab(
+          member: _member,
+          locale: locale,
+          onLogout: handleLogout,
+          onMemberUpdated: (fresh) => setState(() => _member = fresh),
+        ),
       ];
 
       final navItems = [
@@ -438,24 +461,63 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
 //  Bell button — shows alerts badge + bottom sheet
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _AlertsBellButton extends StatelessWidget {
+class _AlertsBellButton extends StatefulWidget {
   final Map<String, dynamic> member;
   final String locale;
 
   const _AlertsBellButton({required this.member, required this.locale});
 
+  @override
+  State<_AlertsBellButton> createState() => _AlertsBellButtonState();
+}
+
+class _AlertsBellButtonState extends State<_AlertsBellButton> {
+  static const _baseUrl =
+      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
+  bool _paymentDismissed = false;
+
+  Map<String, dynamic>? get _paymentNotif {
+    if (_paymentDismissed) return null;
+    final notif =
+        widget.member['payment_notification'] as Map<String, dynamic>?;
+    if (notif == null) return null;
+    final seen = notif['seen'] == true || notif['seen'] == 'true';
+    return seen ? null : notif;
+  }
+
+  Future<void> _acknowledgePayment() async {
+    setState(() => _paymentDismissed = true);
+    try {
+      final memberId = widget.member['memberId'] as String? ?? '';
+      await http.post(
+        Uri.parse('$_baseUrl/member/acknowledge-payment'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'memberId': memberId, 'companyId': 'KAFA-001'}),
+      );
+    } catch (_) {}
+  }
+
   List<Map<String, dynamic>> _buildAlerts(String Function(String) s) {
-    final isActive = member['status'] == true || member['status'] == 'true';
+    final isActive =
+        widget.member['status'] == true || widget.member['status'] == 'true';
     final alerts = <Map<String, dynamic>>[];
+
+    // Payment notification at the top
+    final notif = _paymentNotif;
+    if (notif != null) {
+      alerts.add({'type': 'payment', 'data': notif});
+    }
 
     if (!isActive) {
       alerts.add({
+        'type': 'generic',
         'icon': Icons.warning_amber_rounded,
         'color': Colors.orange,
         'text': s('alertInactive'),
       });
     }
     alerts.add({
+      'type': 'generic',
       'icon': Icons.info_outline,
       'color': const Color(0xFF1565C0),
       'text': s('alertContactInfo'),
@@ -464,25 +526,96 @@ class _AlertsBellButton extends StatelessWidget {
   }
 
   void _show(BuildContext context) {
-    String s(String k) => AppStrings.get(k, locale);
+    String s(String k) => AppStrings.get(k, widget.locale);
     final alerts = _buildAlerts(s);
 
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Row(children: [
-            const Icon(Icons.notifications_outlined, color: _green, size: 22),
-            const SizedBox(width: 10),
-            Text(s('alertsReminders'),
-                style:
-                    const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-          ]),
-          const SizedBox(height: 16),
-          ...alerts.map((a) => Padding(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Row(children: [
+              const Icon(Icons.notifications_outlined, color: _green, size: 22),
+              const SizedBox(width: 10),
+              Text(s('alertsReminders'),
+                  style: const TextStyle(
+                      fontSize: 17, fontWeight: FontWeight.bold)),
+            ]),
+            const SizedBox(height: 16),
+            ...alerts.map((a) {
+              if (a['type'] == 'payment') {
+                final notif = a['data'] as Map<String, dynamic>;
+                final amount = notif['amountPaid']?.toString() ?? '—';
+                final rawDate = notif['paymentDate'] as String? ?? '—';
+                final date = AppStrings.formatDate(rawDate, widget.locale);
+                final ref = notif['referenceNo'] as String? ?? '—';
+                final policyNo = notif['policyNo'] as String? ?? '—';
+                final method = notif['paymentMethod'] as String? ?? '—';
+                final period = notif['paymentPeriod'] as String? ?? '';
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green.shade300),
+                  ),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          Icon(Icons.check_circle,
+                              color: Colors.green.shade600, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              s('paymentReceived'),
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  color: Colors.green.shade800),
+                            ),
+                          ),
+                        ]),
+                        const SizedBox(height: 6),
+                        Text(
+                          s('paymentReceivedDesc').replaceAll('{amount}', amount),
+                          style: TextStyle(
+                              fontSize: 13, color: Colors.green.shade800),
+                        ),
+                        const SizedBox(height: 8),
+                        if (period.isNotEmpty) _NotifRow(s('periodLabel'), period),
+                        _NotifRow(s('collectedOnLabel'), date),
+                        _NotifRow(s('policyPrefix'), policyNo),
+                        _NotifRow(s('methodLabel'), method),
+                        _NotifRow(s('referenceLabel'), ref),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: TextButton(
+                            onPressed: () {
+                              _acknowledgePayment();
+                              setSheetState(() {});
+                              Navigator.pop(ctx);
+                            },
+                            style: TextButton.styleFrom(
+                              backgroundColor: Colors.green.shade100,
+                              foregroundColor: Colors.green.shade800,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8)),
+                            ),
+                            child: Text(s('gotItDismiss')),
+                          ),
+                        ),
+                      ]),
+                );
+              }
+              // Generic alert
+              return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -496,17 +629,21 @@ class _AlertsBellButton extends StatelessWidget {
                                 fontSize: 14, color: Color(0xFF333333))),
                       ),
                     ]),
-              )),
-        ]),
+              );
+            }),
+          ]),
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    String s(String k) => AppStrings.get(k, locale);
-    final count = _buildAlerts(s).length;
-    final hasWarn = member['status'] != true && member['status'] != 'true';
+    String s(String k) => AppStrings.get(k, widget.locale);
+    final alerts = _buildAlerts(s);
+    final hasPayment = _paymentNotif != null;
+    final hasWarn = widget.member['status'] != true &&
+        widget.member['status'] != 'true';
 
     return IconButton(
       onPressed: () => _show(context),
@@ -519,12 +656,16 @@ class _AlertsBellButton extends StatelessWidget {
             width: 16,
             height: 16,
             decoration: BoxDecoration(
-              color: hasWarn ? Colors.orange : Colors.green.shade600,
+              color: hasPayment
+                  ? Colors.green.shade500
+                  : hasWarn
+                      ? Colors.orange
+                      : Colors.green.shade600,
               shape: BoxShape.circle,
               border: Border.all(color: _green, width: 1.5),
             ),
             child: Center(
-              child: Text('$count',
+              child: Text('${alerts.length}',
                   style: const TextStyle(
                       color: Colors.white,
                       fontSize: 9,
@@ -562,6 +703,7 @@ class _DashboardTabState extends State<_DashboardTab>
   bool _loadingPolicies = true;
   bool _quickActExpanded = true;
   bool _optionsOpen = false;
+  Timer? _refreshTimer;
 
   late final AnimationController _qaCtrl;
   late final Animation<double> _qaAnim;
@@ -581,6 +723,10 @@ class _DashboardTabState extends State<_DashboardTab>
     final memberId = widget.member['memberId'] as String? ?? '';
     if (memberId.isNotEmpty) {
       _fetchPolicies();
+      // Silently re-fetch so payments/policy changes made elsewhere (e.g. by
+      // an admin) show up here without the member needing to reload.
+      _refreshTimer =
+          Timer.periodic(const Duration(seconds: 20), (_) => _fetchPolicies());
     } else {
       setState(() => _loadingPolicies = false);
     }
@@ -588,6 +734,7 @@ class _DashboardTabState extends State<_DashboardTab>
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _qaCtrl.dispose();
     super.dispose();
   }
@@ -618,7 +765,7 @@ class _DashboardTabState extends State<_DashboardTab>
     final memberId = widget.member['memberId'] as String? ?? '';
     try {
       final uri = Uri.parse(
-          '$_baseUrl/member/policy?memberId=${Uri.encodeComponent(memberId)}');
+          '$_baseUrl${devPath('/member/policy')}?memberId=${Uri.encodeComponent(memberId)}');
       final response =
           await http.get(uri, headers: {'Content-Type': 'application/json'});
       if (response.statusCode == 200) {
@@ -696,6 +843,7 @@ class _DashboardTabState extends State<_DashboardTab>
                                 ? Colors.green.shade700
                                 : Colors.grey.shade600),
                       ),
+
                       // ── No-policy inline warning + options dropdown ───────────────────
                       if (!_loadingPolicies && _policies.isEmpty) ...[
                         const SizedBox(height: 8),
@@ -874,6 +1022,8 @@ class _DashboardTabState extends State<_DashboardTab>
                                           amountCents: amountCents,
                                           periodStart: '',
                                           periodEnd: nextPayDate,
+                                          currency: 'usd',
+                                          productCode: firstPolicyMap?['productCode'] as String?,
                                         ),
                                       ),
                                     ),
@@ -1073,7 +1223,7 @@ class _DashboardTabState extends State<_DashboardTab>
               icon: Icons.phone, label: s('callUs'), value: '+509 XXXX-XXXX'),
           const Divider(),
           _SupportTile(
-              icon: Icons.email, label: s('email'), value: 'kontak@kafa.org'),
+              icon: Icons.email, label: s('email'), value: 'kontak@kafayiti.com'),
           const Divider(),
           _SupportTile(
               icon: Icons.access_time,
@@ -1101,8 +1251,10 @@ class _DashboardChatPanel extends StatefulWidget {
 
 class _DashboardChatPanelState extends State<_DashboardChatPanel>
     with SingleTickerProviderStateMixin {
-  static const _chatUrl =
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod/member/chat';
+  static const _chatUrl = String.fromEnvironment(
+    'ASSISTANT_URL',
+    defaultValue: 'https://4fnzfkwkn8.execute-api.us-east-1.amazonaws.com/default/kafa-assistant',
+  );
 
   final _textCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
@@ -1111,6 +1263,7 @@ class _DashboardChatPanelState extends State<_DashboardChatPanel>
 
   bool _expanded = false;
   bool _thinking = false;
+  String? _sessionId;
 
   late final AnimationController _animCtrl;
 
@@ -1121,6 +1274,17 @@ class _DashboardChatPanelState extends State<_DashboardChatPanel>
       vsync: this,
       duration: const Duration(milliseconds: 320),
     );
+    _initSession();
+  }
+
+  Future<void> _initSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    var id = prefs.getString('member_chat_session');
+    if (id == null) {
+      id = const Uuid().v4();
+      await prefs.setString('member_chat_session', id);
+    }
+    if (mounted) setState(() => _sessionId = id);
   }
 
   @override
@@ -1166,8 +1330,10 @@ class _DashboardChatPanelState extends State<_DashboardChatPanel>
             headers: {'Content-Type': 'application/json'},
             body: json.encode({
               'messages': _history,
-              'member': widget.member,
-              'locale': _locale,
+              'sessionId': _sessionId ?? 'member-anonymous',
+              'conversationType': 'member_chat',
+              'memberName': widget.member['full_name'] ?? '',
+              'memberId': widget.member['memberId'] ?? '',
             }),
           )
           .timeout(const Duration(seconds: 35));
@@ -1529,19 +1695,31 @@ class _TransactionsTabState extends State<_TransactionsTab> {
 
   bool _loading = true;
   List<Map<String, dynamic>> _policies = [];
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _fetchPolicies();
+    // Silently re-fetch so new payments/policies show up without a manual reload.
+    _refreshTimer = Timer.periodic(
+        const Duration(seconds: 20), (_) => _fetchPolicies(silent: true));
   }
 
-  Future<void> _fetchPolicies() async {
-    setState(() => _loading = true);
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  /// [silent] is true for background polling refreshes, so the tab doesn't
+  /// flash a full-screen loading spinner every time the timer fires.
+  Future<void> _fetchPolicies({bool silent = false}) async {
+    if (!silent) setState(() => _loading = true);
     final memberId = widget.member['memberId'] as String? ?? '';
     try {
       final uri = Uri.parse(
-          '$_baseUrl/member/policy?memberId=${Uri.encodeComponent(memberId)}');
+          '$_baseUrl${devPath('/member/policy')}?memberId=${Uri.encodeComponent(memberId)}');
       final response =
           await http.get(uri, headers: {'Content-Type': 'application/json'});
       if (response.statusCode == 200) {
@@ -1609,7 +1787,7 @@ class _TransactionsTabState extends State<_TransactionsTab> {
                   value: lastPayDate != '—'
                       ? AppStrings.formatDate(lastPayDate, locale)
                       : s('noRecord'),
-                  sub: premiumAmount != '—' ? 'HTG $premiumAmount' : '',
+                  sub: premiumAmount != '—' ? 'US\$$premiumAmount' : '',
                 ),
               ),
               const SizedBox(width: 12),
@@ -1621,7 +1799,7 @@ class _TransactionsTabState extends State<_TransactionsTab> {
                   value: nextPayDate != '—'
                       ? AppStrings.formatDate(nextPayDate, locale)
                       : s('contactUs'),
-                  sub: premiumAmount != '—' ? 'HTG $premiumAmount' : '',
+                  sub: premiumAmount != '—' ? 'US\$$premiumAmount' : '',
                 ),
               ),
             ]),
@@ -1646,7 +1824,7 @@ class _TransactionsTabState extends State<_TransactionsTab> {
                               style: TextStyle(
                                   fontSize: 13, color: Colors.grey.shade600)),
                           TextSpan(
-                              text: 'HTG $premiumAmount',
+                              text: 'US\$$premiumAmount',
                               style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
@@ -1734,6 +1912,8 @@ class _TransactionsTabState extends State<_TransactionsTab> {
             amountCents: amountCents,
             periodStart: '',
             periodEnd: nextDueDate,
+            currency: 'usd',
+            productCode: firstPolicy?['productCode'] as String?,
           ),
         ),
       ),
@@ -1845,10 +2025,30 @@ class _NextPaymentCard extends StatelessWidget {
     required this.onPayNow,
   });
 
+  /// If the stored due date is today or in the past, advance to the 1st of
+  /// the next month so the card always shows a future date.
+  String get _effectiveDueDate {
+    if (nextPayDate == '—' || nextPayDate.isEmpty) return nextPayDate;
+    try {
+      final due = DateTime.parse(nextPayDate);
+      final today = DateTime.now();
+      final todayDate = DateTime(today.year, today.month, today.day);
+      if (!due.isAfter(todayDate)) {
+        // Advance to 1st of next month
+        final next = DateTime(today.year, today.month + 1, 1);
+        return '${next.year}-${next.month.toString().padLeft(2, '0')}-01';
+      }
+      return nextPayDate;
+    } catch (_) {
+      return nextPayDate;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     String s(String k) => AppStrings.get(k, locale);
-    final hasDate   = nextPayDate   != '—' && nextPayDate.isNotEmpty;
+    final displayDate = _effectiveDueDate;
+    final hasDate   = displayDate   != '—' && displayDate.isNotEmpty;
     final hasAmount = premiumAmount != '—' && premiumAmount.isNotEmpty;
 
     return Container(
@@ -1876,7 +2076,7 @@ class _NextPaymentCard extends StatelessWidget {
             style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
         const SizedBox(height: 2),
         Text(
-          hasDate ? AppStrings.formatDate(nextPayDate, locale) : '—',
+          hasDate ? AppStrings.formatDate(displayDate, locale) : '—',
           style: const TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.bold,
@@ -1886,7 +2086,7 @@ class _NextPaymentCard extends StatelessWidget {
         // Price + Pay Now button on the same row
         Row(children: [
           Text(
-            hasAmount ? 'HTG $premiumAmount' : '—',
+            hasAmount ? 'US\$$premiumAmount' : '—',
             style: TextStyle(
                 fontSize: 13,
                 color: hasAmount ? const Color(0xFFE65100) : Colors.grey.shade400,
@@ -1992,9 +2192,10 @@ class _SectionCard extends StatelessWidget {
   final String title;
   final IconData icon;
   final Widget child;
+  final Widget? trailing;
 
   const _SectionCard(
-      {required this.title, required this.icon, required this.child});
+      {required this.title, required this.icon, required this.child, this.trailing});
 
   @override
   Widget build(BuildContext context) {
@@ -2017,6 +2218,7 @@ class _SectionCard extends StatelessWidget {
           Text(title,
               style: const TextStyle(
                   fontSize: 14, fontWeight: FontWeight.bold, color: _green)),
+          if (trailing != null) ...[const Spacer(), trailing!],
         ]),
         const Divider(height: 20),
         child,
@@ -2229,7 +2431,7 @@ class _PaymentNotificationBannerState
     final paymentPeriod = notif['paymentPeriod'] as String? ?? '';
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(top: 14, bottom: 4),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.green.shade50,
@@ -2339,7 +2541,7 @@ class _ServicesTab extends StatelessWidget {
               icon: Icons.phone, label: s('callUs'), value: '+509 XXXX-XXXX'),
           const Divider(),
           _SupportTile(
-              icon: Icons.email, label: s('email'), value: 'kontak@kafa.org'),
+              icon: Icons.email, label: s('email'), value: 'kontak@kafayiti.com'),
           const Divider(),
           _SupportTile(
               icon: Icons.access_time,
@@ -2565,21 +2767,141 @@ class _ServiceCard extends StatelessWidget {
 //  Profile Tab
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ProfileTab extends StatelessWidget {
+class _ProfileTab extends StatefulWidget {
   final Map<String, dynamic> member;
   final String locale;
   final Future<void> Function() onLogout;
+  final void Function(Map<String, dynamic>) onMemberUpdated;
 
   const _ProfileTab({
     required this.member,
     required this.locale,
     required this.onLogout,
+    required this.onMemberUpdated,
   });
+
+  @override
+  State<_ProfileTab> createState() => _ProfileTabState();
+}
+
+class _ProfileTabState extends State<_ProfileTab> {
+  static const String _baseUrl =
+      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
+
+  bool _isEditing = false;
+  bool _isSaving = false;
+  String? _error;
+
+  late TextEditingController _phoneCtrl;
+  late TextEditingController _emailCtrl;
+  late TextEditingController _addressCtrl;
+  late TextEditingController _dobCtrl;
+  late TextEditingController _idTypeCtrl;
+  late TextEditingController _idNumberCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _initControllers();
+  }
+
+  void _initControllers() {
+    _phoneCtrl = TextEditingController(text: widget.member['phone'] as String? ?? '');
+    _emailCtrl = TextEditingController(text: widget.member['email'] as String? ?? '');
+    _addressCtrl = TextEditingController(text: widget.member['address'] as String? ?? '');
+    _dobCtrl = TextEditingController(
+        text: widget.member['date_of_birth'] as String? ??
+            widget.member['dateOfBirth'] as String? ??
+            '');
+    _idTypeCtrl = TextEditingController(
+        text: widget.member['identification_type'] as String? ??
+            widget.member['identificationType'] as String? ??
+            '');
+    _idNumberCtrl = TextEditingController(
+        text: widget.member['identification_number'] as String? ??
+            widget.member['identificationNumber'] as String? ??
+            '');
+  }
+
+  @override
+  void didUpdateWidget(_ProfileTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_isEditing && oldWidget.member != widget.member) {
+      _initControllers();
+    }
+  }
+
+  @override
+  void dispose() {
+    _phoneCtrl.dispose();
+    _emailCtrl.dispose();
+    _addressCtrl.dispose();
+    _dobCtrl.dispose();
+    _idTypeCtrl.dispose();
+    _idNumberCtrl.dispose();
+    super.dispose();
+  }
+
+  void _startEdit() {
+    setState(() {
+      _isEditing = true;
+      _error = null;
+    });
+  }
+
+  void _cancelEdit() {
+    setState(() {
+      _isEditing = false;
+      _error = null;
+      _initControllers();
+    });
+  }
+
+  Future<void> _saveEdit() async {
+    setState(() { _isSaving = true; _error = null; });
+    try {
+      final memberId = widget.member['memberId'] as String? ?? '';
+      final companyId = widget.member['companyId'] as String? ?? 'KAFA-001';
+      final uri = Uri.parse('$_baseUrl${devPath('/member/profile/update')}');
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'memberId': memberId,
+          'companyId': companyId,
+          'phone': _phoneCtrl.text.trim(),
+          'email': _emailCtrl.text.trim(),
+          'address': _addressCtrl.text.trim(),
+          'date_of_birth': _dobCtrl.text.trim(),
+          'identification_type': _idTypeCtrl.text.trim(),
+          'identification_number': _idNumberCtrl.text.trim(),
+        }),
+      );
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      if (response.statusCode != 200) {
+        throw Exception(data['error'] as String? ?? 'Failed to update profile');
+      }
+      final fresh = data['member'] as Map<String, dynamic>?;
+      if (fresh != null) {
+        await SessionService.saveSession(fresh);
+        widget.onMemberUpdated(fresh);
+      }
+      if (mounted) setState(() { _isEditing = false; _isSaving = false; });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+          _error = e.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final locale = context.watch<LanguageProvider>().locale;
     String s(String k) => AppStrings.get(k, locale);
+    final member = widget.member;
 
     final name = member['full_name'] as String? ?? '—';
     final phone = member['phone'] as String? ?? '—';
@@ -2653,10 +2975,38 @@ class _ProfileTab extends StatelessWidget {
         ),
         const SizedBox(height: 24),
 
+        if (_error != null) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.red.shade200),
+            ),
+            child: Row(children: [
+              const Icon(Icons.error_outline, color: Colors.red, size: 16),
+              const SizedBox(width: 8),
+              Expanded(
+                  child: Text(_error!,
+                      style: const TextStyle(color: Colors.red, fontSize: 13))),
+            ]),
+          ),
+        ],
+
         // Personal info
         _SectionCard(
           title: s('profileInfo'),
           icon: Icons.person_outline,
+          trailing: _isEditing
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.edit_outlined, size: 18, color: _green),
+                  tooltip: s('editProfile'),
+                  onPressed: _startEdit,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                ),
           child: Column(children: [
             _OverviewRow(
                 icon: Icons.badge_outlined,
@@ -2666,21 +3016,44 @@ class _ProfileTab extends StatelessWidget {
                 icon: Icons.location_on_outlined,
                 label: s('commune'),
                 value: commune),
-            _OverviewRow(
-                icon: Icons.home_outlined, label: s('address'), value: address),
-            _OverviewRow(
-                icon: Icons.phone_outlined, label: s('phone'), value: phone),
-            _OverviewRow(
-                icon: Icons.email_outlined, label: s('email'), value: email),
-            _OverviewRow(
-                icon: Icons.cake_outlined,
-                label: s('dateOfBirth'),
-                value: AppStrings.formatDate(dob, locale)),
-            if (issuedDate.isNotEmpty)
+            if (_isEditing) ...[
+              _ProfileEditField(
+                  controller: _addressCtrl, label: s('address'), icon: Icons.home_outlined),
+              const SizedBox(height: 10),
+              _ProfileEditField(
+                  controller: _phoneCtrl,
+                  label: s('phone'),
+                  icon: Icons.phone_outlined,
+                  keyboardType: TextInputType.phone),
+              const SizedBox(height: 10),
+              _ProfileEditField(
+                  controller: _emailCtrl,
+                  label: s('email'),
+                  icon: Icons.email_outlined,
+                  keyboardType: TextInputType.emailAddress),
+              const SizedBox(height: 10),
+              _ProfileEditField(
+                  controller: _dobCtrl,
+                  label: s('dateOfBirth'),
+                  icon: Icons.cake_outlined,
+                  hint: 'YYYY-MM-DD'),
+            ] else ...[
               _OverviewRow(
-                  icon: Icons.verified_outlined,
-                  label: s('memberSince'),
-                  value: AppStrings.formatDate(issuedDate, locale)),
+                  icon: Icons.home_outlined, label: s('address'), value: address),
+              _OverviewRow(
+                  icon: Icons.phone_outlined, label: s('phone'), value: phone),
+              _OverviewRow(
+                  icon: Icons.email_outlined, label: s('email'), value: email),
+              _OverviewRow(
+                  icon: Icons.cake_outlined,
+                  label: s('dateOfBirth'),
+                  value: AppStrings.formatDate(dob, locale)),
+              if (issuedDate.isNotEmpty)
+                _OverviewRow(
+                    icon: Icons.verified_outlined,
+                    label: s('memberSince'),
+                    value: AppStrings.formatDate(issuedDate, locale)),
+            ],
           ]),
         ),
         const SizedBox(height: 16),
@@ -2689,13 +3062,62 @@ class _ProfileTab extends StatelessWidget {
         _SectionCard(
           title: s('identification'),
           icon: Icons.fingerprint,
-          child: Column(children: [
-            _OverviewRow(
-                icon: Icons.credit_card, label: s('idType'), value: idType),
-            _OverviewRow(
-                icon: Icons.numbers, label: s('idNumber'), value: idNumber),
-          ]),
+          trailing: _isEditing
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.edit_outlined, size: 18, color: _green),
+                  tooltip: s('editProfile'),
+                  onPressed: _startEdit,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                ),
+          child: _isEditing
+              ? Column(children: [
+                  _ProfileEditField(
+                      controller: _idTypeCtrl, label: s('idType'), icon: Icons.credit_card),
+                  const SizedBox(height: 10),
+                  _ProfileEditField(
+                      controller: _idNumberCtrl, label: s('idNumber'), icon: Icons.numbers),
+                ])
+              : Column(children: [
+                  _OverviewRow(
+                      icon: Icons.credit_card, label: s('idType'), value: idType),
+                  _OverviewRow(
+                      icon: Icons.numbers, label: s('idNumber'), value: idNumber),
+                ]),
         ),
+
+        if (_isEditing) ...[
+          const SizedBox(height: 16),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _isSaving ? null : _cancelEdit,
+                style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12)),
+                child: Text(s('cancel')),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _isSaving ? null : _saveEdit,
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: _green,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12)),
+                child: _isSaving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : Text(s('save')),
+              ),
+            ),
+          ]),
+        ],
+
         const SizedBox(height: 24),
 
         // Logout button
@@ -2710,10 +3132,41 @@ class _ProfileTab extends StatelessWidget {
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12)),
             ),
-            onPressed: onLogout,
+            onPressed: widget.onLogout,
           ),
         ),
       ]),
+    );
+  }
+}
+
+class _ProfileEditField extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+  final IconData icon;
+  final String? hint;
+  final TextInputType? keyboardType;
+
+  const _ProfileEditField({
+    required this.controller,
+    required this.label,
+    required this.icon,
+    this.hint,
+    this.keyboardType,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        prefixIcon: Icon(icon, size: 20),
+        isDense: true,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      ),
     );
   }
 }

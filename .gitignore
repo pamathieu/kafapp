@@ -1,9 +1,66 @@
 # Terraform
 .terraform/
 *.tfstate
-*.tfstate.backup
+*.tfstate.*
 *.tfvars
 .terraform.lock.hcl
+
+# Secrets / credentials
+android/key.properties
+*.keystore
+*.jks
+.env
+.env.*
+
+# Sensitive debug output (contains real member PII captured during testing)
+response.json
+iac/response.json
+src/response.json
+
+# Lambda build artifacts — vendored deps and zipped packages are rebuilt on
+# deploy, not source we maintain. Keeping them out avoids huge, stale diffs.
+lambda/*.zip
+lambda/deployed_handler.zip
+lambda/bin/
+lambda/certifi/
+lambda/certifi-*.dist-info/
+lambda/charset_normalizer/
+lambda/charset_normalizer-*.dist-info/
+lambda/idna/
+lambda/idna-*.dist-info/
+lambda/requests/
+lambda/requests-*.dist-info/
+lambda/stripe/
+lambda/stripe-*.dist-info/
+lambda/typing_extensions.py
+lambda/typing_extensions-*.dist-info/
+lambda/urllib3/
+lambda/urllib3-*.dist-info/
+lambda/*.so
+lambda/package/
+__pycache__/
+*.pyc
+
+# src/ vendored Python deps (installed locally for running one-off scripts;
+# rebuilt via requirements, not source we maintain)
+src/bin/
+src/*.dist-info/
+src/annotated_types/
+src/anthropic/
+src/anyio/
+src/certifi/
+src/distro/
+src/docstring_parser/
+src/h11/
+src/httpcore/
+src/httpx/
+src/idna/
+src/jiter/
+src/pydantic/
+src/pydantic_core/
+src/sniffio/
+src/typing_extensions.py
+src/typing_inspection/
 
 # Miscellaneous
 *.class

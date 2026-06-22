@@ -32,6 +32,7 @@ class _CreateMemberScreenState extends State<CreateMemberScreen> {
   final _idTypeCtrl     = TextEditingController();
   final _notesCtrl      = TextEditingController();
   bool _status = true;
+  String _sex = '';
 
   @override
   void initState() {
@@ -136,6 +137,7 @@ class _CreateMemberScreenState extends State<CreateMemberScreen> {
         identificationNumber: _idNumberCtrl.text.trim(),
         identificationType:   _idTypeCtrl.text.trim(),
         status:               _status,
+        sex:                  _sex,
         notes:                _notesCtrl.text.trim(),
         locality:             _selectedLocality,
       );
@@ -299,6 +301,26 @@ class _CreateMemberScreenState extends State<CreateMemberScreen> {
                       _field(_idNumberCtrl, s('idNumber'), Icons.credit_card),
                       const SizedBox(height: 12),
                       _field(_idTypeCtrl, s('idType'), Icons.article),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          const Icon(Icons.wc, size: 20, color: Color(0xFF1A5C2A)),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: DropdownButton<String>(
+                              key: ValueKey(_sex),
+                              value: _sex.isEmpty ? null : _sex,
+                              isExpanded: true,
+                              hint: Text(s('sex')),
+                              items: [
+                                DropdownMenuItem(value: 'Male',   child: Text(s('male'))),
+                                DropdownMenuItem(value: 'Female', child: Text(s('female'))),
+                              ],
+                              onChanged: (v) => setState(() => _sex = v ?? ''),
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                   const SizedBox(height: 12),

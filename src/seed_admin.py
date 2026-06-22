@@ -4,8 +4,7 @@ seed_admin.py — Create the initial admin record in kopera-admin DynamoDB table
 Password is stored as a SHA-256 hash — never in plaintext.
 
 Usage:
-    python seed_admin.py
-    python seed_admin.py --username admin --password kafa2026
+    python seed_admin.py --username admin --password <choose-a-strong-password>
 """
 
 import boto3
@@ -35,8 +34,8 @@ def seed_admin(username: str, password: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Seed admin credentials into DynamoDB")
-    parser.add_argument("--username", default="admin",    help="Admin username")
-    parser.add_argument("--password", default="kafa2026", help="Admin password")
+    parser.add_argument("--username", default="admin", help="Admin username")
+    parser.add_argument("--password", required=True,   help="Admin password")
     args = parser.parse_args()
 
     seed_admin(args.username, args.password)

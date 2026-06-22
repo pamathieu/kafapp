@@ -26,10 +26,12 @@ import os
 import json
 import logging
 import hashlib
+import secrets
 import boto3
 import requests
 from boto3.dynamodb.conditions import Attr
 from decimal import Decimal
+from datetime import datetime, timezone, timedelta
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 
@@ -43,6 +45,7 @@ logger.setLevel(logging.INFO)
 _session  = boto3.session.Session()
 dynamodb  = boto3.resource("dynamodb")
 s3_client = boto3.client("s3")
+ses       = boto3.client("ses", region_name="us-east-1")
 
 MEMBERS_TABLE   = os.environ["MEMBERS_TABLE"]    # kopera-member
 COMPANIES_TABLE = os.environ["COMPANIES_TABLE"]  # kopera-company
@@ -52,6 +55,7 @@ ENVIRONMENT     = os.environ.get("ENVIRONMENT", "prod")
 AWS_REGION      = os.environ.get("AWS_REGION", "us-east-1")
 API_BASE_URL    = os.environ["API_BASE_URL"]     # https://<id>.execute-api.<region>.amazonaws.com/prod
 ADMIN_TABLE      = os.environ.get("ADMIN_TABLE", "kopera-admin")
+LIFE_INSURANCE_TABLE_NAME = os.environ.get("LIFE_INSURANCE_TABLE", "kopera-life-insurance")
 LOCALITIES_TABLE = os.environ.get("LOCALITIES_TABLE", "kopera-localities")
 
 ################################################################################
@@ -63,6 +67,12 @@ def lambda_handler(event, context):
 
     method   = event.get("httpMethod", "")
     resource = event.get("resource", "")
+
+    # The dev certificate-handler Lambda is wired to "-dev" suffixed paths
+    # (e.g. /members-dev/list) so it can share this exact codebase while
+    # pointing at the dev DynamoDB tables. Normalize back to the canonical
+    # path before routing so the if/elif chain below needs no duplication.
+    resource = resource.replace("-dev", "")
 
     # ── CORS preflight ────────────────────────────────────────────────────────
     if method == "OPTIONS":
@@ -152,9 +162,17 @@ def lambda_handler(event, context):
     if method == "POST" and resource == "/member/login":
         return _handle_member_login(event)
 
+    # ── POST /member/profile/update — member edits their own profile ──────────
+    if method == "POST" and resource == "/member/profile/update":
+        return _handle_member_profile_update(event)
+
     # ── POST /members/set-credentials — admin sets member password ────────────
     if method == "POST" and resource == "/members/set-credentials":
         return _handle_set_member_credentials(event)
+
+    # ── POST /member/request-password-reset — send setup link by email ────────
+    if method == "POST" and resource == "/member/request-password-reset":
+        return _handle_request_password_reset(event)
 
 
     # ── POST /members/create — create new member with uniqueness check ─────────
@@ -164,6 +182,22 @@ def lambda_handler(event, context):
     # ── POST /auth/login — validate admin credentials ────────────────────────
     if method == "POST" and resource == "/auth/login":
         return _handle_admin_login(event)
+
+    # ── GET /member/policy — list policies for a member ───────────────────────
+    if method == "GET" and resource == "/member/policy":
+        return _handle_get_member_policies(event)
+
+    # ── GET /member/documents — list member documents ─────────────────────────
+    if method == "GET" and resource == "/member/documents":
+        return _handle_get_member_documents(event)
+
+    # ── POST /member/documents/upload — request presigned S3 upload URL ───────
+    if method == "POST" and resource == "/member/documents/upload":
+        return _handle_request_document_upload(event)
+
+    # ── POST /members/policies/create — admin creates a policy for a member ───
+    if method == "POST" and resource == "/members/policies/create":
+        return _handle_create_member_policy(event)
 
     return _resp(404, {"error": f"Route not found: {method} {resource}"})
 
@@ -283,8 +317,10 @@ def _handle_generate_certificate(event: dict) -> dict:
     """
     try:
         body       = json.loads(event.get("body") or "{}")
-        member_id  = body["member_id"]
-        company_id = body["company_id"]
+        member_id  = body.get("memberId") or body.get("member_id")
+        company_id = body.get("companyId") or body.get("company_id")
+        if not member_id or not company_id:
+            raise KeyError("memberId / companyId")
     except (KeyError, json.JSONDecodeError) as exc:
         return _resp(400, {"error": f"Missing field: {exc}"})
 
@@ -298,6 +334,11 @@ def _handle_generate_certificate(event: dict) -> dict:
         if not member:  return _resp(404, {"error": f"Member not found: {member_id}"})
         if not company: return _resp(404, {"error": f"Company not found: {company_id}"})
 
+        status = member.get("status", True)
+        is_active = status if isinstance(status, bool) else str(status).lower() == "true"
+        if not is_active:
+            return _resp(400, {"error": "Cannot generate certificate for an inactive member"})
+
         # Import PDF/JPEG generation from the shared module
         from certificate_engine import generate_pdf, generate_jpeg
 
@@ -305,7 +346,7 @@ def _handle_generate_certificate(event: dict) -> dict:
         issued_date    = datetime.now(timezone.utc).strftime("%d / %m / %Y")
         timestamp      = datetime.now(timezone.utc).isoformat()
 
-        pdf_bytes  = generate_pdf(member, company, certificate_id, issued_date)
+        pdf_bytes  = generate_pdf(member, company, certificate_id, issued_date, s3_client=s3)
         jpeg_bytes = generate_jpeg(pdf_bytes)
 
         prefix      = f"certificates/{company_id}/{member_id}/{certificate_id}"
@@ -711,15 +752,18 @@ def _handle_update_member_v2(event: dict) -> dict:
         if existing.get("Item"):
             return _resp(409, {"error": f"Member ID '{new_member_id}' already exists"})
 
+    # Fetch current record so we only check uniqueness when values actually change
+    current = _db_get_member(old_member_id, company_id) or {}
+
     phone = body.get("phone", "").strip()
-    if phone:
+    if phone and phone != (current.get("phone") or "").strip():
         phone_check = table.scan(FilterExpression=Attr("phone").eq(phone))
         for item in phone_check.get("Items", []):
             if item["memberId"] != old_member_id:
                 return _resp(409, {"error": f"Phone '{phone}' is already registered to another member"})
 
     email = body.get("email", "").strip()
-    if email:
+    if email and email != (current.get("email") or "").strip():
         email_check = table.scan(FilterExpression=Attr("email").eq(email))
         for item in email_check.get("Items", []):
             if item["memberId"] != old_member_id:
@@ -784,15 +828,42 @@ def _handle_update_member_v2(event: dict) -> dict:
 def _handle_member_login(event: dict) -> dict:
     """
     Allows a cooperative member to log in using their email or phone number
-    plus a password. Scans kopera-member for a matching identifier, verifies
-    the SHA-256 hashed password stored in the 'credentials' attribute, and
-    returns the member's profile (excluding credentials).
+    plus a password. Also handles first-time password setup when the body
+    contains {memberId, setupPassword} instead of {identifier, password}.
     """
     try:
         body = json.loads(event.get("body") or "{}")
     except json.JSONDecodeError:
         return _resp(400, {"error": "Invalid JSON"})
 
+    # ── First-time password setup flow ────────────────────────────────────────
+    setup_password = body.get("setupPassword", "").strip()
+    setup_token    = body.get("setupToken", "").strip()
+    if setup_password and setup_token:
+        if len(setup_password) < 6:
+            return _resp(400, {"error": "Password must be at least 6 characters"})
+        table = dynamodb.Table(MEMBERS_TABLE)
+        resp  = table.scan(FilterExpression=Attr("setupToken").eq(setup_token))
+        items = resp.get("Items", [])
+        if not items:
+            return _resp(401, {"error": "Invalid setup link."})
+        member = items[0]
+        if member.get("credentials"):
+            return _resp(409, {"error": "Password already set. Please log in normally."})
+        expiry_str = member.get("setupTokenExpiry", "")
+        if expiry_str and datetime.fromisoformat(expiry_str) < datetime.now(timezone.utc):
+            return _resp(410, {"error": "This setup link has expired. Request a new one from the login screen."})
+        pw_hash = hashlib.sha256(setup_password.encode()).hexdigest()
+        table.update_item(
+            Key={"memberId": member["memberId"], "companyId": member.get("companyId", "KAFA-001")},
+            UpdateExpression="SET credentials = :h, setupToken = :null, setupTokenExpiry = :null",
+            ExpressionAttributeValues={":h": pw_hash, ":null": None},
+        )
+        logger.info("First-time password setup for member: %s", member["memberId"])
+        safe = {k: v for k, v in member.items() if k not in ("credentials", "setupToken", "setupTokenExpiry")}
+        return _resp(200, {"message": "Password created successfully", "member": safe})
+
+    # ── Normal login flow ─────────────────────────────────────────────────────
     identifier = body.get("identifier", "").strip()   # email OR phone
     password   = body.get("password", "").strip()
 
@@ -830,6 +901,159 @@ def _handle_member_login(event: dict) -> dict:
 
 
 ################################################################################
+# POST /member/profile/update — member edits their own profile
+################################################################################
+
+def _handle_member_profile_update(event: dict) -> dict:
+    """
+    Member self-service profile edit. Limited to contact/personal fields a
+    member may safely change themselves — never status, memberId, or notes,
+    which remain admin-only via /members/update.
+    """
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    member_id  = body.get("memberId", "").strip()
+    company_id = body.get("companyId", "KAFA-001").strip()
+
+    if not member_id:
+        return _resp(400, {"error": "memberId required"})
+
+    current = _db_get_member(member_id, company_id)
+    if not current:
+        return _resp(404, {"error": "Member not found"})
+
+    table = dynamodb.Table(MEMBERS_TABLE)
+
+    phone = body.get("phone", "").strip()
+    if phone and phone != (current.get("phone") or "").strip():
+        phone_check = table.scan(FilterExpression=Attr("phone").eq(phone))
+        for item in phone_check.get("Items", []):
+            if item["memberId"] != member_id:
+                return _resp(409, {"error": f"Phone '{phone}' is already registered to another member"})
+
+    email = body.get("email", "").strip()
+    if email and email != (current.get("email") or "").strip():
+        email_check = table.scan(FilterExpression=Attr("email").eq(email))
+        for item in email_check.get("Items", []):
+            if item["memberId"] != member_id:
+                return _resp(409, {"error": f"Email '{email}' is already registered to another member"})
+
+    allowed = ["phone", "email", "address", "date_of_birth",
+               "identification_number", "identification_type"]
+
+    update_parts = []
+    attr_names   = {}
+    attr_values  = {}
+
+    for field in allowed:
+        if field in body:
+            nk = f"#f_{field}"
+            vk = f":v_{field}"
+            update_parts.append(f"{nk} = {vk}")
+            attr_names[nk] = field
+            attr_values[vk] = body[field]
+
+    if not update_parts:
+        return _resp(400, {"error": "No updatable fields provided"})
+
+    table.update_item(
+        Key={"memberId": member_id, "companyId": company_id},
+        UpdateExpression="SET " + ", ".join(update_parts),
+        ExpressionAttributeNames=attr_names,
+        ExpressionAttributeValues=attr_values,
+    )
+
+    updated = _db_get_member(member_id, company_id)
+    safe_member = {k: v for k, v in updated.items() if k != "credentials"}
+    logger.info("Member %s updated their own profile", member_id)
+    return _resp(200, {"message": "Profile updated", "member": safe_member})
+
+
+################################################################################
+# POST /member/request-password-reset — send a new setup link by email
+################################################################################
+
+def _handle_request_password_reset(event: dict) -> dict:
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    identifier = body.get("identifier", "").strip()
+    if not identifier:
+        return _resp(400, {"error": "identifier (member ID, email, or phone) required"})
+
+    table = dynamodb.Table(MEMBERS_TABLE)
+
+    items = []
+    for attr in ("memberId", "email", "phone"):
+        resp = table.scan(FilterExpression=Attr(attr).eq(identifier))
+        items = resp.get("Items", [])
+        if items:
+            break
+
+    # Always return success to avoid leaking whether an account exists
+    if not items:
+        return _resp(200, {"message": "If an account exists, a reset link has been sent to the email on file."})
+
+    member   = items[0]
+    email    = (member.get("email") or "").strip()
+    member_id = member.get("memberId", "")
+
+    if not email:
+        return _resp(400, {"error": "No email address on file for this account. Please contact KAFA."})
+
+    token  = secrets.token_urlsafe(150)   # 200 URL-safe chars
+    expiry = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+
+    table.update_item(
+        Key={"memberId": member_id, "companyId": member.get("companyId", "KAFA-001")},
+        UpdateExpression="SET setupToken = :t, setupTokenExpiry = :e",
+        ExpressionAttributeValues={":t": token, ":e": expiry},
+    )
+
+    name = member.get("full_name") or f"{member.get('firstName', '')} {member.get('lastName', '')}".strip() or "Member"
+    link = f"https://member.kafayiti.com?setup={token}"
+    html = f"""
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
+      <div style="background:#1a5c2e;padding:24px 32px;text-align:center">
+        <h1 style="color:#fff;margin:0;font-size:22px">KAFA — Kooperativ Asirans Fanmi Ayisyen</h1>
+      </div>
+      <div style="padding:32px;background:#fff">
+        <h2 style="color:#1a5c2e;margin-top:0">Password Setup Request</h2>
+        <p>Hello {name},</p>
+        <p>A password setup link was requested for your KAFA member account. Click the button below to create your password. <strong>This link expires in 24 hours.</strong></p>
+        <div style="text-align:center;margin:32px 0">
+          <a href="{link}"
+             style="background:#1a5c2e;color:#fff;padding:14px 32px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:16px;display:inline-block">
+            Set Up Password
+          </a>
+        </div>
+        <p style="color:#888;font-size:13px">If you did not request this, you can ignore this email. Your account remains secure.</p>
+        <p>If you have questions, contact us at <a href="mailto:info@kafayiti.com" style="color:#1a5c2e">info@kafayiti.com</a> or call (509) 3500-0326.</p>
+      </div>
+      <div style="background:#f0f0f0;padding:16px 32px;text-align:center;font-size:12px;color:#888">
+        KAFA — 874 Rue Ste Catherine, Léogâne, Haïti
+      </div>
+    </div>"""
+
+    ses.send_email(
+        Source="KAFA <noreply@kafayiti.com>",
+        Destination={"ToAddresses": [email]},
+        Message={
+            "Subject": {"Data": "KAFA — Password Setup Link"},
+            "Body":    {"Html": {"Data": html}},
+        },
+    )
+
+    logger.info("Password reset link sent for member: %s", member_id)
+    return _resp(200, {"message": "If an account exists, a reset link has been sent to the email on file."})
+
+
+################################################################################
 # POST /members/set-credentials — admin sets a member's password
 ################################################################################
 
@@ -863,6 +1087,308 @@ def _handle_set_member_credentials(event: dict) -> dict:
 
     logger.info("Credentials set for member: %s", member_id)
     return _resp(200, {"message": f"Password set successfully for member {member_id}"})
+
+
+################################################################################
+# GET /member/policy — list policies for a member
+################################################################################
+
+def _handle_get_member_policies(event: dict) -> dict:
+    member_id = (event.get("queryStringParameters") or {}).get("memberId", "").strip()
+    if not member_id:
+        return _resp(400, {"error": "memberId required"})
+
+    ins_table = dynamodb.Table(LIFE_INSURANCE_TABLE_NAME)
+
+    from boto3.dynamodb.conditions import Key as _Key
+
+    # Query the MEMBER# partition to get all POLICY# SK refs
+    refs_resp = ins_table.query(
+        KeyConditionExpression=_Key("PK").eq(f"MEMBER#{member_id}")
+    )
+    refs = [r for r in refs_resp.get("Items", []) if r.get("entity_type") == "MEMBER_POLICY_REF"]
+
+    policies = []
+    for ref in refs:
+        pol_no = ref.get("policyNo", "")
+        if not pol_no:
+            continue
+        pol_resp = ins_table.get_item(Key={"PK": f"POLICY#{pol_no}", "SK": "METADATA"})
+        pol = pol_resp.get("Item")
+        if not pol:
+            continue
+
+        # Fetch payment history (SCHED# items)
+        sched_resp = ins_table.query(
+            KeyConditionExpression=(
+                _Key("PK").eq(f"POLICY#{pol_no}") &
+                _Key("SK").begins_with("SCHED#")
+            )
+        )
+        schedules = sched_resp.get("Items", [])
+        payment_history = [
+            {
+                "paymentDate":   s.get("paidDate", ""),
+                "referenceNo":   s.get("SK", ""),
+                "amountPaid":    float(s.get("paidAmount", 0)),
+                "paymentPeriod": s.get("dueDate", ""),
+                "status":        s.get("status", "PENDING"),
+            }
+            for s in schedules if s.get("status") == "PAID"
+        ]
+
+        policies.append({
+            "policy":         {k: str(v) if not isinstance(v, (str, bool, type(None))) else v
+                               for k, v in pol.items()},
+            "paymentHistory": payment_history,
+        })
+
+    return _resp(200, {"policies": policies})
+
+
+################################################################################
+# POST /members/policies/create — admin creates a policy for a member
+################################################################################
+
+# KAFA plan catalog — mirrors the pricing shown on the Plans & Coverage screen.
+_PLAN_CATALOG = {
+    "BASIC": {
+        "productCode":   "LIFE-BASIC",
+        "planId":        "plan-basic-monthly",
+        "premiumAmount": Decimal("10"),
+        "sumAssured":    Decimal("270000"),
+    },
+    "STANDARD": {
+        "productCode":   "LIFE-STANDARD",
+        "planId":        "plan-standard-monthly",
+        "premiumAmount": Decimal("20"),
+        "sumAssured":    Decimal("400000"),
+    },
+}
+
+
+def _next_policy_number(ins_table) -> str:
+    """Scans for the highest existing POL-KAFA-###### number and increments it."""
+    resp = ins_table.scan(
+        FilterExpression="entity_type = :t",
+        ExpressionAttributeValues={":t": "POLICY"},
+        ProjectionExpression="policyNo",
+    )
+    items = resp.get("Items", [])
+    while "LastEvaluatedKey" in resp:
+        resp = ins_table.scan(
+            FilterExpression="entity_type = :t",
+            ExpressionAttributeValues={":t": "POLICY"},
+            ProjectionExpression="policyNo",
+            ExclusiveStartKey=resp["LastEvaluatedKey"],
+        )
+        items.extend(resp.get("Items", []))
+
+    max_seq = 0
+    for item in items:
+        pol_no = item.get("policyNo", "")
+        if pol_no.startswith("POL-KAFA-"):
+            try:
+                max_seq = max(max_seq, int(pol_no.rsplit("-", 1)[-1]))
+            except ValueError:
+                continue
+    return f"POL-KAFA-{max_seq + 1:06d}"
+
+
+def _handle_create_member_policy(event: dict) -> dict:
+    """
+    Admin-only. Creates a new policy for a member from the fixed KAFA plan
+    catalog (BASIC or STANDARD). A member may hold more than one policy.
+    """
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    member_id  = body.get("memberId", "").strip()
+    company_id = body.get("companyId", "KAFA-001").strip()
+    plan_code  = body.get("planCode", "").strip().upper()
+
+    if not member_id:
+        return _resp(400, {"error": "memberId required"})
+    plan = _PLAN_CATALOG.get(plan_code)
+    if not plan:
+        return _resp(400, {"error": f"Unknown planCode '{plan_code}'. Expected BASIC or STANDARD."})
+
+    member = _db_get_member(member_id, company_id)
+    if not member:
+        return _resp(404, {"error": "Member not found"})
+    member_name = member.get("full_name", "Unknown")
+
+    ins_table = dynamodb.Table(LIFE_INSURANCE_TABLE_NAME)
+    pol_no = _next_policy_number(ins_table)
+    pol_pk = f"POLICY#{pol_no}"
+
+    today      = datetime.now(timezone.utc).date()
+    next_month = today.replace(day=1) + timedelta(days=32)
+    next_due   = next_month.replace(day=1).isoformat()
+    start_str  = today.isoformat()
+
+    with ins_table.batch_writer() as batch:
+        batch.put_item(Item={
+            "PK":            pol_pk,
+            "SK":            "METADATA",
+            "GSI2PK":        next_due,
+            "GSI2SK":        pol_pk,
+            "GSI4PK":        "ACTIVE",
+            "GSI4SK":        next_due,
+            "entity_type":   "POLICY",
+            "policyNo":      pol_no,
+            "memberId":      member_id,
+            "companyId":     company_id,
+            "memberName":    member_name,
+            "productCode":   plan["productCode"],
+            "planId":        plan["planId"],
+            "frequency":     "MONTHLY",
+            "startDate":     start_str,
+            "endDate":       "",
+            "policyStatus":  "ACTIVE",
+            "sumAssured":    plan["sumAssured"],
+            "premiumAmount": plan["premiumAmount"],
+            "nextDueDate":   next_due,
+            "lastPaidDate":  "",
+            "lastPaidAmount": Decimal("0"),
+            "totalPaid":     Decimal("0"),
+            "createdAt":     f"{today.isoformat()}T00:00:00Z",
+            "updatedAt":     f"{today.isoformat()}T00:00:00Z",
+        })
+
+        batch.put_item(Item={
+            "PK":           f"MEMBER#{member_id}",
+            "SK":           pol_pk,
+            "entity_type":  "MEMBER_POLICY_REF",
+            "memberId":     member_id,
+            "companyId":    company_id,
+            "policyNo":     pol_no,
+            "productCode":  plan["productCode"],
+            "policyStatus": "ACTIVE",
+            "premiumAmount": plan["premiumAmount"],
+            "sumAssured":   plan["sumAssured"],
+            "startDate":    start_str,
+            "nextDueDate":  next_due,
+        })
+
+        # First installment due immediately (PENDING)
+        batch.put_item(Item={
+            "PK":           pol_pk,
+            "SK":           f"SCHED#{next_due}#000001",
+            "entity_type":  "SCHEDULE",
+            "policyNo":     pol_no,
+            "installmentNo": Decimal("1"),
+            "dueDate":      next_due,
+            "amountDue":    plan["premiumAmount"],
+            "status":       "PENDING",
+            "paidDate":     "",
+            "paidAmount":   Decimal("0"),
+        })
+
+    logger.info("Policy %s created for member %s (plan %s)", pol_no, member_id, plan_code)
+    return _resp(201, {
+        "message":  "Policy created successfully",
+        "policyNo": pol_no,
+        "policy": {
+            "policyNo":      pol_no,
+            "memberId":      member_id,
+            "productCode":   plan["productCode"],
+            "premiumAmount": str(plan["premiumAmount"]),
+            "sumAssured":    str(plan["sumAssured"]),
+            "policyStatus":  "ACTIVE",
+            "nextDueDate":   next_due,
+        },
+    })
+
+
+################################################################################
+# GET /member/documents — list documents for a member
+################################################################################
+
+def _handle_get_member_documents(event: dict) -> dict:
+    member_id = (event.get("queryStringParameters") or {}).get("memberId", "").strip()
+    if not member_id:
+        return _resp(400, {"error": "memberId required"})
+
+    from boto3.dynamodb.conditions import Key as _Key
+
+    docs_table = dynamodb.Table("kopera-member-documents")
+    try:
+        resp = docs_table.query(
+            KeyConditionExpression=_Key("memberId").eq(member_id)
+        )
+        items = resp.get("Items", [])
+        documents = []
+        for item in items:
+            doc_key = item.get("s3Key", "")
+            url = ""
+            if doc_key:
+                try:
+                    url = s3_client.generate_presigned_url(
+                        "get_object",
+                        Params={"Bucket": ASSETS_BUCKET, "Key": doc_key},
+                        ExpiresIn=3600,
+                    )
+                except Exception:
+                    pass
+            documents.append({
+                "documentId": item.get("documentId", ""),
+                "name":       item.get("name", ""),
+                "type":       item.get("docType", ""),
+                "uploadedAt": item.get("uploadedAt", ""),
+                "url":        url,
+            })
+        documents.sort(key=lambda d: d["uploadedAt"], reverse=True)
+        return _resp(200, {"documents": documents})
+    except Exception as exc:
+        logger.exception("Failed to list documents for %s", member_id)
+        return _resp(500, {"error": str(exc)})
+
+
+################################################################################
+# POST /member/documents/upload — create doc record + presigned S3 PUT URL
+################################################################################
+
+def _handle_request_document_upload(event: dict) -> dict:
+    import uuid as _uuid
+
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    member_id = body.get("memberId", "").strip()
+    name      = body.get("name", "").strip()
+    doc_type  = body.get("docType", "Autre").strip()
+
+    if not member_id or not name:
+        return _resp(400, {"error": "memberId and name required"})
+
+    doc_id    = f"DOC-{_uuid.uuid4().hex[:10].upper()}"
+    s3_key    = f"documents/{member_id}/{doc_id}/{name}"
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    # Save record to DynamoDB
+    docs_table = dynamodb.Table("kopera-member-documents")
+    docs_table.put_item(Item={
+        "memberId":   member_id,
+        "documentId": doc_id,
+        "name":       name,
+        "docType":    doc_type,
+        "s3Key":      s3_key,
+        "uploadedAt": timestamp,
+    })
+
+    # Generate presigned PUT URL (valid 15 min)
+    upload_url = s3_client.generate_presigned_url(
+        "put_object",
+        Params={"Bucket": ASSETS_BUCKET, "Key": s3_key},
+        ExpiresIn=900,
+    )
+
+    return _resp(201, {"documentId": doc_id, "uploadUrl": upload_url})
 
 
 ################################################################################

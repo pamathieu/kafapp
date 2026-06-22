@@ -15,11 +15,13 @@ class _C {
 class PaymentConfirmationScreen extends StatefulWidget {
   final PaymentArgs args;
   final String paymentId;
+  final int? chargedAmountCents;
 
   const PaymentConfirmationScreen({
     super.key,
     required this.args,
     required this.paymentId,
+    this.chargedAmountCents,
   });
 
   @override
@@ -192,7 +194,8 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
           ),
           const SizedBox(height: 8),
           Text(
-            widget.args.formattedAmount,
+            widget.args.formattedAmount(
+                widget.chargedAmountCents ?? widget.args.amountCents),
             style: const TextStyle(
               color: _C.green,
               fontSize: 44,

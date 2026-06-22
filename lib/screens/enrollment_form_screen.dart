@@ -14,12 +14,12 @@ import '../misc/app_strings.dart';
 const _green = Color(0xFF1A5C2A);
 const _bg    = Color(0xFFF2F4F7);
 
-const _plans = ['BASIC', 'PLUS', 'PREMIUM'];
+const _plans = ['BASIC', 'STANDARD', 'FUNERAL_SAVINGS'];
 
 const _planColors = {
-  'BASIC':   Color(0xFF1565C0),
-  'PLUS':    Color(0xFF1A5C2A),
-  'PREMIUM': Color(0xFF8B6914),
+  'BASIC':           Color(0xFF1565C0),
+  'STANDARD':        Color(0xFF1A5C2A),
+  'FUNERAL_SAVINGS': Color(0xFF8B6914),
 };
 
 class EnrollmentFormScreen extends StatefulWidget {
@@ -223,10 +223,10 @@ class _EnrollmentFormScreenState extends State<EnrollmentFormScreen> {
           items: _plans.map((p) {
             final planColor = _planColors[p] ?? _green;
             final label = switch (p) {
-              'BASIC'   => 'Basique — HTG 250/mois',
-              'PLUS'    => 'Plus — HTG 450/mois',
-              'PREMIUM' => 'Premium — HTG 750/mois',
-              _         => p,
+              'BASIC'           => '${s('planBasic')} — US\$10/mo (1,350 Gdes)',
+              'STANDARD'        => '${s('planStandard')} — US\$20/mo (2,700 Gdes)',
+              'FUNERAL_SAVINGS' => s('planFuneralSavings'),
+              _                 => p,
             };
             return DropdownMenuItem(
               value: p,

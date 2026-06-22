@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/language_provider.dart';
 import '../misc/app_strings.dart';
+import '../widgets/billing_toggle.dart';
 import 'enrollment_form_screen.dart';
 
 const _green = Color(0xFF1A5C2A);
@@ -30,35 +31,37 @@ class QuickQuoteScreen extends StatefulWidget {
 }
 
 class _QuickQuoteScreenState extends State<QuickQuoteScreen> {
-  int _selectedPlan = 0; // 0=Basic, 1=Plus, 2=Premium
+  int _selectedPlan = 0; // 0=Basic, 1=Standard
   int _members = 1;
+  bool _annual = false; // false = monthly, true = annual billing
 
+  // Funeral Savings Plan has no fixed premium/coverage, so it can't be
+  // simulated here — Quick Quote only covers the two fixed-cost plans.
   static const _plans = [
-    {'code': 'BASIC',   'premium': 250,  'sumAssured': 25000},
-    {'code': 'PLUS',    'premium': 450,  'sumAssured': 50000},
-    {'code': 'PREMIUM', 'premium': 750,  'sumAssured': 100000},
+    {'code': 'BASIC',    'premium': 10, 'premiumGdes': 1350, 'annualPremium': 120, 'annualPremiumGdes': 16250, 'sumAssured': 270000},
+    {'code': 'STANDARD', 'premium': 20, 'premiumGdes': 2700, 'annualPremium': 240, 'annualPremiumGdes': 32500, 'sumAssured': 400000},
   ];
 
   static const _tierColors = [
     Color(0xFF1565C0),
     _green,
-    Color(0xFF8B6914),
   ];
 
   static const _tierAccents = [
     Color(0xFFE3F2FD),
     Color(0xFFE8F5E9),
-    Color(0xFFFFF8E1),
   ];
 
   static const _tierIcons = [
     Icons.shield_outlined,
     Icons.shield,
-    Icons.star,
   ];
 
-  int get _totalMonthly =>
-      (_plans[_selectedPlan]['premium']! as int) * _members;
+  int get _perMemberPremium => _annual
+      ? _plans[_selectedPlan]['annualPremium']! as int
+      : _plans[_selectedPlan]['premium']! as int;
+
+  int get _totalAmount => _perMemberPremium * _members;
 
   @override
   Widget build(BuildContext context) {
@@ -79,7 +82,13 @@ class _QuickQuoteScreenState extends State<QuickQuoteScreen> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(s('quickQuoteSubtitle'),
               style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
+          BillingToggle(
+            annual: _annual,
+            locale: locale,
+            onChanged: (v) => setState(() => _annual = v),
+          ),
+          const SizedBox(height: 20),
 
           // ── Plan selector ────────────────────────────────────────────────
           Text(s('quickQuoteSelectPlan'),
@@ -94,7 +103,7 @@ class _QuickQuoteScreenState extends State<QuickQuoteScreen> {
             final accent    = _tierAccents[i];
             final icon      = _tierIcons[i];
             final isSelected = _selectedPlan == i;
-            final nameKey = i == 0 ? 'planBasic' : i == 1 ? 'planPlus' : 'planPremium';
+            final nameKey = i == 0 ? 'planBasic' : 'planStandard';
 
             return GestureDetector(
               onTap: () => setState(() => _selectedPlan = i),
@@ -142,7 +151,9 @@ class _QuickQuoteScreenState extends State<QuickQuoteScreen> {
                       ],
                     ),
                   ),
-                  Text('HTG ${plan['premium']}/mo',
+                  Text(
+                      'US\$${_annual ? plan['annualPremium'] : plan['premium']}'
+                      '${_annual ? s('premiumPerYear') : s('premiumPerMonth')}',
                       style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
@@ -217,12 +228,12 @@ class _QuickQuoteScreenState extends State<QuickQuoteScreen> {
                       fontSize: 13,
                       color: Colors.white70)),
               const SizedBox(height: 6),
-              Text('HTG $_totalMonthly',
+              Text('US\$$_totalAmount',
                   style: const TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
                       color: Colors.white)),
-              Text(s('quickQuotePerMonth'),
+              Text(s(_annual ? 'quickQuotePerYear' : 'quickQuotePerMonth'),
                   style: const TextStyle(fontSize: 13, color: Colors.white70)),
               const SizedBox(height: 12),
               Row(children: [

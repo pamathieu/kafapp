@@ -10,6 +10,7 @@ class Member {
   String identificationType;
   bool status;
   String notes;
+  String sex;
   Map<String, dynamic>? certificate;
   String? issuedDate;
   Map<String, dynamic>? locality; // {commune, code}
@@ -26,6 +27,7 @@ class Member {
     this.identificationType = '',
     this.status = true,
     this.notes = '',
+    this.sex = '',
     this.certificate,
     this.issuedDate,
     this.locality,
@@ -44,6 +46,7 @@ class Member {
       identificationType: json['identification_type'] ?? '',
       status: _parseBool(json['status']),
       notes: json['notes'] ?? '',
+      sex: json['sex'] ?? '',
       certificate: json['certificate'] as Map<String, dynamic>?,
       issuedDate: json['issued_date'] ?? json['issuedDate'],
       locality: json['locality'] as Map<String, dynamic>?,
@@ -69,6 +72,7 @@ class Member {
         'identification_type': identificationType,
         'status': status,
         'notes': notes,
+        'sex': sex,
         if (locality != null) 'locality': locality,
       };
 
@@ -83,6 +87,7 @@ class Member {
     String? identificationType,
     bool? status,
     String? notes,
+    String? sex,
     Map<String, dynamic>? locality,
   }) {
     return Member(
@@ -97,6 +102,7 @@ class Member {
       identificationType: identificationType ?? this.identificationType,
       status: status ?? this.status,
       notes: notes ?? this.notes,
+      sex: sex ?? this.sex,
       certificate: certificate,
       issuedDate: issuedDate,
       locality: locality ?? this.locality,

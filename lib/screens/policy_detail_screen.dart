@@ -73,9 +73,9 @@ class PolicyDetail {
   String get formattedCoverage {
     final amount = coverageAmountCents / 100;
     if (amount >= 1000) {
-      return '\$${(amount / 1000).toStringAsFixed(0)}K';
+      return 'HTG ${(amount / 1000).toStringAsFixed(0)}K';
     }
-    return '\$${amount.toStringAsFixed(0)}';
+    return 'HTG ${amount.toStringAsFixed(0)}';
   }
 }
 
@@ -156,6 +156,8 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
               amountCents: widget.policy.monthlyPremiumCents,
               periodStart: widget.policy.nextPeriodStart,
               periodEnd:   widget.policy.nextPeriodEnd,
+              currency:    'usd',
+              productCode: widget.policy.planName,
             ),
           ),
         ),

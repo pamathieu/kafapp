@@ -7,6 +7,21 @@ import '../stripe_web_helper.dart'
     if (dart.library.html) '../stripe_web_helper_web.dart';
 import 'payment_confirmation_screen.dart';
 
+/// Annual premium lookup, by plan code, from the KAFA plan catalog.
+/// Mirrors the pricing shown on the Plans & Coverage screen.
+const _annualPremiumsCents = {
+  'BASIC':    12000, // US$120/yr
+  'STANDARD': 24000, // US$240/yr
+};
+
+/// Maps a policy's productCode (e.g. "LIFE-BASIC") to its plan catalog code.
+String? _planCodeFromProductCode(String productCode) {
+  final upper = productCode.toUpperCase();
+  if (upper.contains('BASIC'))    return 'BASIC';
+  if (upper.contains('STANDARD')) return 'STANDARD';
+  return null;
+}
+
 /// Data passed into the payment screen from the member's policy view.
 class PaymentArgs {
   final String memberId;
@@ -16,6 +31,7 @@ class PaymentArgs {
   final String periodStart;
   final String periodEnd;
   final String currency;
+  final String? productCode;
 
   const PaymentArgs({
     required this.memberId,
@@ -24,12 +40,23 @@ class PaymentArgs {
     required this.amountCents,
     required this.periodStart,
     required this.periodEnd,
-    this.currency = 'htg',
+    this.currency = 'usd',
+    this.productCode,
   });
 
-  String get formattedAmount {
-    final amount = amountCents / 100;
-    return 'HTG ${amount.toStringAsFixed(2)}';
+  /// The annual amount for this policy's plan, if known.
+  int? get annualAmountCents {
+    final code = productCode;
+    if (code == null) return null;
+    final planCode = _planCodeFromProductCode(code);
+    if (planCode == null) return null;
+    return _annualPremiumsCents[planCode];
+  }
+
+  String formattedAmount(int cents) {
+    final amount = cents / 100;
+    final symbol = currency.toLowerCase() == 'usd' ? 'US\$' : 'HTG ';
+    return '$symbol${amount.toStringAsFixed(2)}';
   }
 }
 
@@ -60,8 +87,14 @@ class _PaymentScreenState extends State<PaymentScreen>
   final _paymentService = PaymentService();
   bool _isProcessing = false;
   String? _cardError;
+  bool _annual = false; // false = monthly (default), true = annual billing
   late AnimationController _pulseController;
   late Animation<double> _pulseAnim;
+
+  /// The amount actually being charged, based on the selected billing frequency.
+  int get _chargeAmountCents =>
+      _annual ? (widget.args.annualAmountCents ?? widget.args.amountCents * 12)
+              : widget.args.amountCents;
 
   @override
   void initState() {
@@ -95,7 +128,7 @@ class _PaymentScreenState extends State<PaymentScreen>
     final result = await _paymentService.processPayment(
       memberId: widget.args.memberId,
       policyId: widget.args.policyId,
-      amountCents: widget.args.amountCents,
+      amountCents: _chargeAmountCents,
       periodStart: widget.args.periodStart,
       periodEnd: widget.args.periodEnd,
       currency: widget.args.currency,
@@ -113,6 +146,7 @@ class _PaymentScreenState extends State<PaymentScreen>
             child: PaymentConfirmationScreen(
               args: widget.args,
               paymentId: result.paymentId!,
+              chargedAmountCents: _chargeAmountCents,
             ),
           ),
           transitionDuration: const Duration(milliseconds: 500),
@@ -143,6 +177,10 @@ class _PaymentScreenState extends State<PaymentScreen>
                   children: [
                     const SizedBox(height: 28),
                     _buildAmountCard(),
+                    if (widget.args.annualAmountCents != null) ...[
+                      const SizedBox(height: 20),
+                      _buildFrequencySelector(),
+                    ],
                     const SizedBox(height: 28),
                     _buildSectionLabel('Card Details'),
                     const SizedBox(height: 12),
@@ -283,9 +321,9 @@ class _PaymentScreenState extends State<PaymentScreen>
                   color: Colors.white.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: const Text(
-                  'Monthly Premium',
-                  style: TextStyle(
+                child: Text(
+                  _annual ? 'Annual Premium' : 'Monthly Premium',
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
@@ -297,7 +335,7 @@ class _PaymentScreenState extends State<PaymentScreen>
           ),
           const SizedBox(height: 16),
           Text(
-            widget.args.formattedAmount,
+            widget.args.formattedAmount(_chargeAmountCents),
             style: const TextStyle(
               color: Colors.white,
               fontSize: 42,
@@ -316,6 +354,45 @@ class _PaymentScreenState extends State<PaymentScreen>
           ),
         ],
       ),
+    );
+  }
+
+  // ── Billing frequency selector ──────────────────────────────────────────
+  Widget _buildFrequencySelector() {
+    Widget segment(String label, bool isAnnual) {
+      final selected = _annual == isAnnual;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => setState(() => _annual = isAnnual),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: selected ? _KafaColors.green : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: Text(label,
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: selected ? Colors.white : _KafaColors.textSecondary)),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: _KafaColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _KafaColors.divider),
+      ),
+      child: Row(children: [
+        segment('Monthly', false),
+        segment('Annual', true),
+      ]),
     );
   }
 
@@ -470,7 +547,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                       ),
                     )
                   : Text(
-                      'Pay ${widget.args.formattedAmount}',
+                      'Pay ${widget.args.formattedAmount(_chargeAmountCents)}',
                       style: const TextStyle(
                         color: _KafaColors.background,
                         fontSize: 16,

@@ -8,9 +8,11 @@ Stripe calls this after a payment settles. The handler:
 3. Updates the record status to SUCCEEDED, FAILED, or REFUNDED.
 
 Environment variables:
-  LIFE_INSURANCE_TABLE  — DynamoDB table name (kopera-life-insurance)
-  STRIPE_SECRET_KEY     — Stripe secret key  (sk_test_... / sk_live_...)
-  KAFA_WEBHOOK_SECRET   — Stripe webhook signing secret (whsec_...)
+  LIFE_INSURANCE_TABLE       — DynamoDB table name (kopera-life-insurance)
+  STRIPE_SECRET_KEY_SSM_PARAM    — SSM param holding the Stripe secret key
+                                    (defaults to /kafa/stripe/secret_key_live)
+  WEBHOOK_SECRET_SSM_PARAM       — SSM param holding the webhook signing
+                                    secret (defaults to /kafa/stripe/webhook_secret_live)
 """
 
 import json
@@ -26,9 +28,13 @@ logger.setLevel(logging.INFO)
 _TABLE   = os.environ["LIFE_INSURANCE_TABLE"]
 _GSI     = "GSI5-StripeIntent"
 _dynamodb = boto3.client("dynamodb")
+_ssm = boto3.client("ssm")
 
-stripe.api_key          = os.environ["STRIPE_SECRET_KEY"]
-_WEBHOOK_SECRET         = os.environ["KAFA_WEBHOOK_SECRET"]
+_SECRET_KEY_PARAM = os.environ.get("STRIPE_SECRET_KEY_SSM_PARAM", "/kafa/stripe/secret_key_live")
+_WEBHOOK_PARAM    = os.environ.get("WEBHOOK_SECRET_SSM_PARAM", "/kafa/stripe/webhook_secret_live")
+
+stripe.api_key  = _ssm.get_parameter(Name=_SECRET_KEY_PARAM, WithDecryption=True)["Parameter"]["Value"]
+_WEBHOOK_SECRET = _ssm.get_parameter(Name=_WEBHOOK_PARAM, WithDecryption=True)["Parameter"]["Value"]
 
 from payment_schema import payment_update_expression  # noqa: E402
 

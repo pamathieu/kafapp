@@ -5,7 +5,9 @@ import 'package:provider/provider.dart';
 import '../providers/language_provider.dart';
 import '../misc/app_strings.dart';
 import '../services/session_service.dart';
+import '../services/dev_env.dart';
 import 'member_dashboard_screen.dart';
+import 'set_password_screen.dart';
 
 class MemberLoginScreen extends StatefulWidget {
   const MemberLoginScreen({super.key});
@@ -21,8 +23,8 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
   bool _isLoading       = true; // true initially while checking saved session
   String? _errorMessage;
 
-  static const String _loginUrl =
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod/member/login';
+  static String get _loginUrl =>
+      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod${devPath('/member/login')}';
 
   @override
   void initState() {
@@ -319,6 +321,15 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
                               : Text(s('connect'),
                                   style: const TextStyle(fontSize: 16)),
                         ),
+
+                        const SizedBox(height: 16),
+                        TextButton(
+                          onPressed: () => _showSetupDialog(context),
+                          child: const Text(
+                            'First time? Set up your password',
+                            style: TextStyle(fontSize: 13, color: Colors.grey),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -326,6 +337,110 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  static const _resetUrl =
+      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod/member/request-password-reset';
+
+  void _showSetupDialog(BuildContext context) {
+    final identifierCtrl = TextEditingController();
+    bool sending = false;
+    String? dialogError;
+    bool sent = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          title: const Text('Set Up Your Password'),
+          content: sent
+              ? const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.mark_email_read_outlined, size: 48, color: Color(0xFF1A5C2A)),
+                    SizedBox(height: 12),
+                    Text(
+                      'Check your email for a setup link. It will expire in 24 hours.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 14),
+                    ),
+                  ],
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Enter your member ID, email, or phone to receive a setup link.',
+                      style: TextStyle(fontSize: 13, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: identifierCtrl,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Member ID, Email, or Phone',
+                        prefixIcon: Icon(Icons.person_outline),
+                      ),
+                    ),
+                    if (dialogError != null) ...[
+                      const SizedBox(height: 8),
+                      Text(dialogError!, style: const TextStyle(color: Colors.red, fontSize: 13)),
+                    ],
+                  ],
+                ),
+          actions: sent
+              ? [
+                  FilledButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Done'),
+                  ),
+                ]
+              : [
+                  TextButton(
+                    onPressed: sending ? null : () => Navigator.pop(ctx),
+                    child: const Text('Cancel'),
+                  ),
+                  FilledButton(
+                    onPressed: sending
+                        ? null
+                        : () async {
+                            final id = identifierCtrl.text.trim();
+                            if (id.isEmpty) return;
+                            setDialogState(() { sending = true; dialogError = null; });
+                            try {
+                              final res = await http.post(
+                                Uri.parse(_resetUrl),
+                                headers: {'Content-Type': 'application/json'},
+                                body: jsonEncode({'identifier': id}),
+                              );
+                              final data = jsonDecode(res.body) as Map<String, dynamic>;
+                              if (res.statusCode == 200) {
+                                setDialogState(() { sending = false; sent = true; });
+                              } else {
+                                setDialogState(() {
+                                  sending = false;
+                                  dialogError = data['error'] ?? 'Something went wrong.';
+                                });
+                              }
+                            } catch (_) {
+                              setDialogState(() {
+                                sending = false;
+                                dialogError = 'Connection error. Please try again.';
+                              });
+                            }
+                          },
+                    child: sending
+                        ? const SizedBox(width: 16, height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text('Send Link'),
+                  ),
+                ],
         ),
       ),
     );

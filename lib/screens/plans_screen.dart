@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../providers/language_provider.dart';
 import '../misc/app_strings.dart';
+import '../widgets/billing_toggle.dart';
 import 'enrollment_form_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -17,38 +18,49 @@ const _bg    = Color(0xFFF2F4F7);
 const _fallbackPlans = [
   {
     'planCode':      'BASIC',
-    'premiumAmount': 250,
-    'sumAssured':    25000,
+    'premiumAmount': 10,
+    'premiumCurrency': 'USD',
+    'premiumAmountGdes': 1350,
+    'annualAmount': 120,
+    'annualAmountGdes': 16250,
+    'sumAssured':    270000,
     'features': [
-      'Couverture funèbre de base',
-      'Transport local inclus',
-      'Cercueil standard',
-      'Assistance téléphonique',
+      'Age acceptance 0-80 years',
+      'No medical exam',
+      'Fixed premium',
+      'Flexible payment (monthly/quarterly/annual)',
+      'Fast claims processing',
     ],
   },
   {
-    'planCode':      'PLUS',
-    'premiumAmount': 450,
-    'sumAssured':    50000,
+    'planCode':      'STANDARD',
+    'mostPopular':   true,
+    'premiumAmount': 20,
+    'premiumCurrency': 'USD',
+    'premiumAmountGdes': 2700,
+    'annualAmount': 240,
+    'annualAmountGdes': 32500,
+    'sumAssured':    400000,
     'features': [
-      'Couverture funèbre étendue',
-      'Transport régional inclus',
-      'Cercueil de qualité supérieure',
-      'Assistance 24h/24',
-      'Cérémonie de base incluse',
+      'Age acceptance 0-80 years',
+      'No medical exam',
+      'Fixed premium',
+      'Flexible payment (monthly/quarterly/annual)',
+      'Fast claims processing',
+      '24/7 phone support',
     ],
   },
   {
-    'planCode':      'PREMIUM',
-    'premiumAmount': 750,
-    'sumAssured':    100000,
+    'planCode':      'FUNERAL_SAVINGS',
+    'isSavingsPlan': true,
     'features': [
-      'Couverture funèbre complète',
-      'Transport national & international',
-      'Cercueil premium',
-      'Assistance 24h/24 dédiée',
-      'Cérémonie complète incluse',
-      'Rapatriement de corps',
+      'Open to ALL ages',
+      'Unlimited savings',
+      'Continuous deposit flexibility',
+      'Fixed premium',
+      'Flexible payment (monthly/quarterly/annual)',
+      'Fast claims processing',
+      '24/7 phone support',
     ],
   },
 ];
@@ -79,6 +91,7 @@ class _PlansScreenState extends State<PlansScreen> {
 
   List<Map<String, dynamic>> _plans = [];
   bool _loading = true;
+  bool _annual  = false; // false = monthly, true = annual billing
 
   bool get _hasPolicies => widget.currentPlanCode != null && widget.currentPlanCode!.isNotEmpty;
 
@@ -201,15 +214,23 @@ class _PlansScreenState extends State<PlansScreen> {
                   Text(s('plansSubtitle'),
                       style: TextStyle(
                           fontSize: 14, color: Colors.grey.shade600)),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
+                  BillingToggle(
+                    annual: _annual,
+                    locale: locale,
+                    onChanged: (v) => setState(() => _annual = v),
+                  ),
+                  const SizedBox(height: 16),
                   ..._plans.asMap().entries.map((entry) {
                     final idx   = entry.key;
                     final plan  = entry.value;
                     final code  = (plan['planCode'] as String? ?? '').toUpperCase();
                     final isCurrent = widget.currentPlanCode != null &&
                         widget.currentPlanCode!.toUpperCase().contains(code);
-                    // Upgrade only for Plus (idx=1) and Premium (idx=2), w/ policies, not current
-                    final showUpgrade = _hasPolicies && !isCurrent && idx > 0;
+                    // Upgrade only from Basic → Standard, w/ policies, not current.
+                    // Funeral Savings is a separate product, not a coverage tier upgrade.
+                    final showUpgrade =
+                        _hasPolicies && !isCurrent && code == 'STANDARD';
 
                     return _PlanCard(
                       plan:         plan,
@@ -218,14 +239,14 @@ class _PlansScreenState extends State<PlansScreen> {
                       tierIndex:    idx,
                       showUpgrade:  showUpgrade,
                       showActions:  !_hasPolicies,
+                      annual:       _annual,
                       memberId:     widget.memberId,
                       memberName:   widget.memberName,
                       phone:        widget.phone,
                       email:        widget.email,
                       onUpgrade:    showUpgrade
                           ? () {
-                              final nameKey = idx == 1 ? 'planPlus' : 'planPremium';
-                              final planName = AppStrings.get(nameKey, locale);
+                              final planName = AppStrings.get('planStandard', locale);
                               final premium  = (plan['premiumAmount'] as num?)?.toInt() ?? 0;
                               _showUpgradeDialog(context, locale, planName, premium);
                             }
@@ -276,6 +297,7 @@ class _PlanCard extends StatelessWidget {
   final int tierIndex;
   final bool showUpgrade;
   final bool showActions; // View More + Apply (members w/o policy)
+  final bool annual;
   final String memberId;
   final String memberName;
   final String? phone;
@@ -290,6 +312,7 @@ class _PlanCard extends StatelessWidget {
     required this.tierIndex,
     required this.showUpgrade,
     required this.showActions,
+    required this.annual,
     required this.memberId,
     required this.memberName,
     required this.onViewMore,
@@ -321,14 +344,17 @@ class _PlanCard extends StatelessWidget {
   Widget build(BuildContext context) {
     String s(String k) => AppStrings.get(k, locale);
 
-    final code     = plan['planCode']      as String? ?? '';
-    final premium  = plan['premiumAmount'];
-    final assured  = plan['sumAssured'];
-    final features = (plan['features'] as List?)?.cast<String>() ?? [];
+    final code         = plan['planCode'] as String? ?? '';
+    final isSavingsPlan = plan['isSavingsPlan'] == true;
+    final mostPopular  = plan['mostPopular'] == true;
+    final premium      = annual ? plan['annualAmount']     : plan['premiumAmount'];
+    final premiumGdes  = annual ? plan['annualAmountGdes'] : plan['premiumAmountGdes'];
+    final assured      = plan['sumAssured'];
+    final features      = (plan['features'] as List?)?.cast<String>() ?? [];
 
-    final planNameKey = code.toLowerCase() == 'basic'   ? 'planBasic'
-                      : code.toLowerCase() == 'plus'    ? 'planPlus'
-                      : code.toLowerCase() == 'premium' ? 'planPremium'
+    final planNameKey = code.toUpperCase() == 'BASIC'           ? 'planBasic'
+                      : code.toUpperCase() == 'STANDARD'        ? 'planStandard'
+                      : code.toUpperCase() == 'FUNERAL_SAVINGS' ? 'planFuneralSavings'
                       : null;
     final planName = planNameKey != null ? s(planNameKey) : code;
 
@@ -341,9 +367,11 @@ class _PlanCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: isCurrent
-            ? Border.all(color: tierColor, width: 2)
-            : Border.all(color: Colors.grey.shade200),
+        border: mostPopular
+            ? Border.all(color: _gold, width: 2)
+            : isCurrent
+                ? Border.all(color: tierColor, width: 2)
+                : Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
               color: Colors.black.withValues(alpha: 0.06),
@@ -354,13 +382,32 @@ class _PlanCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── "Most Popular" badge ─────────────────────────────────────────
+          if (mostPopular)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              decoration: const BoxDecoration(
+                color: _gold,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
+              ),
+              alignment: Alignment.center,
+              child: Text(s('mostPopular'),
+                  style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1A1A1A),
+                      letterSpacing: 0.5)),
+            ),
+
           // ── Header ────────────────────────────────────────────────────────
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: accentColor,
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(14)),
+              borderRadius: mostPopular
+                  ? BorderRadius.zero
+                  : const BorderRadius.vertical(top: Radius.circular(14)),
             ),
             child: Row(children: [
               Container(
@@ -369,9 +416,9 @@ class _PlanCard extends StatelessWidget {
                     color: tierColor.withValues(alpha: 0.15),
                     shape: BoxShape.circle),
                 child: Icon(
-                  tierIndex == 0 ? Icons.shield_outlined
-                  : tierIndex == 1 ? Icons.shield
-                  : Icons.star,
+                  isSavingsPlan ? Icons.savings_outlined
+                  : tierIndex == 0 ? Icons.shield_outlined
+                  : Icons.shield,
                   color: tierColor, size: 22,
                 ),
               ),
@@ -403,22 +450,27 @@ class _PlanCard extends StatelessWidget {
                   ],
                 ),
               ),
-              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                if (premium != null)
-                  Text('HTG $premium',
+              if (!isSavingsPlan)
+                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  if (premium != null)
+                    Text('US\$$premium',
+                        style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: tierColor)),
+                  if (premiumGdes != null)
+                    Text('${_fmt(premiumGdes)} Gdes',
+                        style: TextStyle(
+                            fontSize: 11, color: Colors.grey.shade600)),
+                  Text(s(annual ? 'premiumPerYear' : 'premiumPerMonth'),
                       style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: tierColor)),
-                Text(s('premiumPerMonth'),
-                    style: TextStyle(
-                        fontSize: 12, color: Colors.grey.shade600)),
-              ]),
+                          fontSize: 12, color: Colors.grey.shade600)),
+                ]),
             ]),
           ),
 
           // ── Coverage ──────────────────────────────────────────────────────
-          if (assured != null)
+          if (assured != null && !isSavingsPlan)
             Padding(
               padding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -560,3 +612,4 @@ class _PlanCard extends StatelessWidget {
     return buf.toString();
   }
 }
+

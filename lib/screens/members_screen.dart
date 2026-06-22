@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -20,6 +21,7 @@ class _MembersScreenState extends State<MembersScreen> {
   List<Member> _filteredMembers = [];
   bool _isLoading = true;
   String? _error;
+  Timer? _timer;
   final _searchController = TextEditingController();
   String _filterStatus = 'All'; // All, Active, Inactive (internal English keys)
 
@@ -28,34 +30,45 @@ class _MembersScreenState extends State<MembersScreen> {
     super.initState();
     _loadMembers();
     _searchController.addListener(_filterMembers);
+    _timer = Timer.periodic(
+        const Duration(seconds: 30), (_) => _loadMembers(silent: true));
   }
 
   @override
   void dispose() {
+    _timer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadMembers() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+  /// [silent] is true for background polling refreshes, so the list doesn't
+  /// flash a full-screen loading spinner every time the timer fires.
+  Future<void> _loadMembers({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
     try {
       final api = context.read<AuthProvider>().apiService!;
       final members = await api.listMembers();
       members.sort((a, b) =>
           a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()));
+      if (!mounted) return;
       setState(() {
         _allMembers = members;
         _isLoading = false;
       });
       _filterMembers();
     } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _isLoading = false;
-      });
+      if (!mounted) return;
+      if (!silent) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
     }
   }
 

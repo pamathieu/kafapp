@@ -31,6 +31,11 @@ class PaymentService {
     defaultValue: 'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod',
   );
 
+  // Empty in prod builds. Dev builds pass --dart-define=PAYMENT_ENDPOINT_SUFFIX=-dev
+  // so payments route to the sandbox Stripe Lambdas instead of the live ones.
+  static const String _paymentEndpointSuffix =
+      String.fromEnvironment('PAYMENT_ENDPOINT_SUFFIX', defaultValue: '');
+
   /// Initiates and confirms a member premium payment.
   ///
   /// [memberId]    - KAFA member ID (e.g. "M-001")
@@ -91,7 +96,7 @@ class PaymentService {
     required String periodEnd,
   }) async {
     final response = await http.post(
-      Uri.parse('$_baseUrl/payments/create-intent'),
+      Uri.parse('$_baseUrl/payments/create-intent$_paymentEndpointSuffix'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         'member_id': memberId,
@@ -104,10 +109,14 @@ class PaymentService {
     );
 
     if (response.statusCode != 200) {
-      final body = jsonDecode(response.body);
-      throw PaymentServiceException(
-        body['error'] ?? 'Failed to initialize payment.',
-      );
+      String message = 'Failed to initialize payment (${response.statusCode}).';
+      try {
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        message = body['error'] as String? ?? message;
+      } catch (_) {
+        // Response was not JSON (e.g. API Gateway HTML error page)
+      }
+      throw PaymentServiceException(message);
     }
 
     return jsonDecode(response.body) as Map<String, dynamic>;

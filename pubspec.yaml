@@ -1,8 +1,8 @@
-name: member_management
-description: KAFA Member Management — Admin app for managing cooperative members.
+name: kafa_member
+description: KAFA Member Portal — Manage your cooperative insurance account.
 
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -25,9 +25,10 @@ dependencies:
 
   # Persistent session storage
   shared_preferences: ^2.5.4
+  uuid: ^4.5.1
 
   # Speech-to-text
-  speech_to_text: ^6.6.2
+  speech_to_text: ^7.0.0
 
   # Markdown rendering for chat responses
   flutter_markdown_plus: ^1.0.7
@@ -42,6 +43,14 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/kafa_logo.png"
+  adaptive_icon_background: "#1A5C2E"
+  adaptive_icon_foreground: "assets/images/kafa_logo.png"
 
 flutter:
   uses-material-design: true

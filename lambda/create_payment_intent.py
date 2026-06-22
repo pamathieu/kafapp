@@ -12,7 +12,8 @@ card details client-side — raw card data never touches this function.
 
 Environment variables:
   LIFE_INSURANCE_TABLE  — DynamoDB table name (kopera-life-insurance)
-  STRIPE_SECRET_KEY     — Stripe secret key (sk_test_... / sk_live_...)
+  STRIPE_SECRET_KEY_SSM_PARAM — SSM parameter name holding the Stripe secret
+                                 key (defaults to /kafa/stripe/secret_key_live)
 """
 
 import json
@@ -27,8 +28,10 @@ logger.setLevel(logging.INFO)
 
 _TABLE = os.environ["LIFE_INSURANCE_TABLE"]
 _dynamodb = boto3.client("dynamodb")
+_ssm = boto3.client("ssm")
 
-stripe.api_key = os.environ["STRIPE_SECRET_KEY"]
+_SSM_PARAM = os.environ.get("STRIPE_SECRET_KEY_SSM_PARAM", "/kafa/stripe/secret_key_live")
+stripe.api_key = _ssm.get_parameter(Name=_SSM_PARAM, WithDecryption=True)["Parameter"]["Value"]
 
 # Import after stripe.api_key is set so the module initialises cleanly.
 from payment_schema import build_payment_record  # noqa: E402

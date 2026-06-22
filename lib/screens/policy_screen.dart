@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../providers/language_provider.dart';
 import '../misc/app_strings.dart';
+import '../services/dev_env.dart';
 import 'beneficiaries_screen.dart';
 import 'policy_detail_screen.dart';
 
@@ -35,7 +36,7 @@ class _PolicyScreenState extends State<PolicyScreen> {
     try {
       final memberId = widget.member['memberId'] as String? ?? '';
       final uri = Uri.parse(
-          '$_baseUrl/member/policy?memberId=${Uri.encodeComponent(memberId)}');
+          '$_baseUrl${devPath('/member/policy')}?memberId=${Uri.encodeComponent(memberId)}');
       final response = await http.get(uri);
       if (!mounted) return;
       final data = json.decode(response.body) as Map<String, dynamic>;
@@ -322,7 +323,7 @@ class _PolicyCardState extends State<_PolicyCard> {
                 const SizedBox(height: 8),
                 _InfoRow2(fr ? 'Début' : 'Start Date', startDate),
                 _InfoRow2(fr ? 'Montant assuré' : 'Sum Assured', 'HTG $sumAssured'),
-                _InfoRow2(fr ? 'Prime' : 'Premium', 'HTG $premAmount / $frequency'),
+                _InfoRow2(fr ? 'Prime' : 'Premium', 'US\$$premAmount / $frequency'),
 
                 const Divider(height: 24),
 
@@ -330,10 +331,10 @@ class _PolicyCardState extends State<_PolicyCard> {
                 _SectionTitle(fr ? 'Paiements' : 'Payments'),
                 const SizedBox(height: 8),
                 _InfoRow2(fr ? 'Dernier paiement' : 'Last Payment Date', lastPayDate),
-                _InfoRow2(fr ? 'Dernier montant' : 'Last Amount', lastPayAmount != '—' ? 'HTG $lastPayAmount' : '—'),
+                _InfoRow2(fr ? 'Dernier montant' : 'Last Amount', lastPayAmount != '—' ? 'US\$$lastPayAmount' : '—'),
                 _InfoRow2(fr ? 'Prochaine échéance' : 'Next Due Date', nextDueDate,
                     highlight: nextSchedSK.isNotEmpty),
-                _InfoRow2(fr ? 'Montant dû' : 'Amount Due', nextDueAmount != '—' ? 'HTG $nextDueAmount' : '—',
+                _InfoRow2(fr ? 'Montant dû' : 'Amount Due', nextDueAmount != '—' ? 'US\$$nextDueAmount' : '—',
                     highlight: nextSchedSK.isNotEmpty),
 
                 const SizedBox(height: 16),

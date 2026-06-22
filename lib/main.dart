@@ -6,21 +6,17 @@ import 'providers/auth_provider.dart';
 import 'providers/language_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/member_login_screen.dart';
+import 'screens/set_password_screen.dart';
+import 'screens/admin_dashboard_screen.dart';
 
-// Determined at build time:
-//   Admin portal:  flutter build web --dart-define=PORTAL=admin
-//   Member portal: flutter build web --dart-define=PORTAL=member
 const _portal = String.fromEnvironment('PORTAL', defaultValue: 'admin');
 
-// Stripe publishable key — use pk_test_... for development, pk_live_... for production.
-// Set via --dart-define=STRIPE_KEY=pk_test_... at build time, or replace directly for local dev.
 const _stripeKey = String.fromEnvironment(
   'STRIPE_KEY',
   defaultValue: 'pk_test_REPLACE_ME',
 );
 
 void main() async {
-  // Set up error handling for uncaught exceptions
   FlutterError.onError = (FlutterErrorDetails details) {
     debugPrintStack(
       stackTrace: details.stack,
@@ -30,8 +26,6 @@ void main() async {
 
   WidgetsFlutterBinding.ensureInitialized();
 
-  // flutter_stripe: set publishableKey on all platforms so CardField works.
-  // applySettings() calls dart:io Platform which crashes on web — skip it there.
   final hasRealKey = _stripeKey.isNotEmpty && !_stripeKey.contains('REPLACE_ME');
   if (hasRealKey) {
     try {
@@ -40,22 +34,39 @@ void main() async {
     } catch (_) {}
   }
 
+  // Restore session before the UI is shown so the correct screen renders first.
+  final authProvider = AuthProvider();
+  final hasSession   = await authProvider.tryRestoreSession();
+
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider.value(value: authProvider),
         ChangeNotifierProvider(create: (_) => LanguageProvider()),
       ],
-      child: const KAFAMemberApp(),
+      child: KAFAMemberApp(hasSession: hasSession),
     ),
   );
 }
 
 class KAFAMemberApp extends StatelessWidget {
-  const KAFAMemberApp({super.key});
+  final bool hasSession;
+  const KAFAMemberApp({super.key, required this.hasSession});
 
   @override
   Widget build(BuildContext context) {
+    Widget home;
+    if (_portal == 'member') {
+      final setupToken = kIsWeb ? Uri.base.queryParameters['setup'] : null;
+      home = (setupToken != null && setupToken.isNotEmpty)
+          ? SetPasswordScreen(token: setupToken)
+          : const MemberLoginScreen();
+    } else if (hasSession) {
+      home = const AdminDashboardScreen();
+    } else {
+      home = const LoginScreen();
+    }
+
     return MaterialApp(
       title: _portal == 'member' ? 'KAFA Member Portal' : 'KAFA Admin',
       debugShowCheckedModeBanner: false,
@@ -87,9 +98,7 @@ class KAFAMemberApp extends StatelessWidget {
           ),
         ),
       ),
-      home: _portal == 'member'
-          ? const MemberLoginScreen()
-          : const LoginScreen(),
+      home: home,
     );
   }
 }

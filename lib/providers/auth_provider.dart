@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 
 class AuthProvider extends ChangeNotifier {
@@ -12,12 +13,35 @@ class AuthProvider extends ChangeNotifier {
 
   static const String _loginUrl =
       'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod/auth/login';
+  static const String _sessionKey = 'kafa_admin_session';
 
   bool        get isLoggedIn    => _isLoggedIn;
   bool        get isLoading     => _isLoading;
   String      get adminUsername => _adminUsername;
   String      get errorMessage  => _errorMessage;
   ApiService? get apiService    => _apiService;
+
+  /// Called once in main() before runApp. Restores session from storage if valid.
+  Future<bool> tryRestoreSession() async {
+    try {
+      final prefs  = await SharedPreferences.getInstance();
+      final stored = prefs.getString(_sessionKey);
+      if (stored == null) return false;
+
+      final data = json.decode(stored) as Map<String, dynamic>;
+
+      _isLoggedIn    = true;
+      _adminUsername = data['username'] as String;
+      _apiService    = ApiService(
+        accessKeyId:     data['accessKeyId']     as String,
+        secretAccessKey: data['secretAccessKey'] as String,
+        sessionToken:    data['sessionToken']    as String?,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<bool> login(String username, String password) async {
     _isLoading    = true;
@@ -34,8 +58,6 @@ class AuthProvider extends ChangeNotifier {
       if (response.statusCode == 200) {
         final body = json.decode(response.body);
 
-        // AWS credentials are returned by the Lambda and held in memory only.
-        // They are never written to disk or included in source code.
         final accessKeyId     = body['accessKeyId']     as String;
         final secretAccessKey = body['secretAccessKey'] as String;
         final sessionToken    = body['sessionToken']    as String?;
@@ -47,6 +69,17 @@ class AuthProvider extends ChangeNotifier {
           secretAccessKey: secretAccessKey,
           sessionToken:    sessionToken,
         );
+
+        // Persist session
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_sessionKey, json.encode({
+          'accessKeyId':     accessKeyId,
+          'secretAccessKey': secretAccessKey,
+          'sessionToken':    sessionToken,
+          'username':        username,
+          'savedAt':         DateTime.now().millisecondsSinceEpoch,
+        }));
+
         _isLoading = false;
         notifyListeners();
         return true;
@@ -65,11 +98,13 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  void logout() {
+  Future<void> logout() async {
     _isLoggedIn    = false;
     _adminUsername = '';
     _apiService    = null;
     _errorMessage  = '';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_sessionKey);
     notifyListeners();
   }
 }
