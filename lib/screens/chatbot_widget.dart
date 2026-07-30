@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../misc/app_strings.dart';
 import '../providers/language_provider.dart';
+import '../services/dev_env.dart';
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
@@ -39,8 +40,7 @@ class ChatbotWidget extends StatefulWidget {
 }
 
 class _ChatbotWidgetState extends State<ChatbotWidget> {
-  static const String _chatUrl =
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod/member/chat';
+  static const String _chatUrl = '$kApiBaseUrl/member/chat';
 
   final _textCtrl   = TextEditingController();
   final _scrollCtrl = ScrollController();

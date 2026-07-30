@@ -23,8 +23,7 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
   bool _isLoading       = true; // true initially while checking saved session
   String? _errorMessage;
 
-  static String get _loginUrl =>
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod${devPath('/member/login')}';
+  static String get _loginUrl => '$kApiBaseUrl${devPath('/member/login')}';
 
   @override
   void initState() {
@@ -287,6 +286,21 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
                           onSubmitted: (_) => _login(),
                         ),
 
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: () => _showSetupDialog(context),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: Text(
+                              s('forgotPassword'),
+                              style: const TextStyle(fontSize: 13, color: Color(0xFF1A5C2A)),
+                            ),
+                          ),
+                        ),
+
                         if (_errorMessage != null) ...[
                           const SizedBox(height: 12),
                           Container(
@@ -325,9 +339,9 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
                         const SizedBox(height: 16),
                         TextButton(
                           onPressed: () => _showSetupDialog(context),
-                          child: const Text(
-                            'First time? Set up your password',
-                            style: TextStyle(fontSize: 13, color: Colors.grey),
+                          child: Text(
+                            s('firstTimeSetupPassword'),
+                            style: const TextStyle(fontSize: 13, color: Colors.grey),
                           ),
                         ),
                       ],
@@ -342,10 +356,11 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
     );
   }
 
-  static const _resetUrl =
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod/member/request-password-reset';
+  static const _resetUrl = '$kApiBaseUrl/member/request-password-reset';
 
   void _showSetupDialog(BuildContext context) {
+    final locale = context.read<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
     final identifierCtrl = TextEditingController();
     bool sending = false;
     String? dialogError;
@@ -357,17 +372,17 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          title: const Text('Set Up Your Password'),
+          title: Text(s('setupYourPassword')),
           content: sent
-              ? const Column(
+              ? Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.mark_email_read_outlined, size: 48, color: Color(0xFF1A5C2A)),
-                    SizedBox(height: 12),
+                    const Icon(Icons.mark_email_read_outlined, size: 48, color: Color(0xFF1A5C2A)),
+                    const SizedBox(height: 12),
                     Text(
-                      'Check your email for a setup link. It will expire in 24 hours.',
+                      s('checkEmailSetupLink'),
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 14),
+                      style: const TextStyle(fontSize: 14),
                     ),
                   ],
                 )
@@ -375,17 +390,17 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Enter your member ID, email, or phone to receive a setup link.',
-                      style: TextStyle(fontSize: 13, color: Colors.grey),
+                    Text(
+                      s('enterIdToReceiveLink'),
+                      style: const TextStyle(fontSize: 13, color: Colors.grey),
                     ),
                     const SizedBox(height: 16),
                     TextField(
                       controller: identifierCtrl,
                       autofocus: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Member ID, Email, or Phone',
-                        prefixIcon: Icon(Icons.person_outline),
+                      decoration: InputDecoration(
+                        labelText: s('memberIdEmailPhone'),
+                        prefixIcon: const Icon(Icons.person_outline),
                       ),
                     ),
                     if (dialogError != null) ...[
@@ -398,13 +413,13 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
               ? [
                   FilledButton(
                     onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Done'),
+                    child: Text(s('done')),
                   ),
                 ]
               : [
                   TextButton(
                     onPressed: sending ? null : () => Navigator.pop(ctx),
-                    child: const Text('Cancel'),
+                    child: Text(s('cancel')),
                   ),
                   FilledButton(
                     onPressed: sending
@@ -425,20 +440,20 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
                               } else {
                                 setDialogState(() {
                                   sending = false;
-                                  dialogError = data['error'] ?? 'Something went wrong.';
+                                  dialogError = data['error'] ?? s('somethingWentWrong');
                                 });
                               }
                             } catch (_) {
                               setDialogState(() {
                                 sending = false;
-                                dialogError = 'Connection error. Please try again.';
+                                dialogError = s('connectionError');
                               });
                             }
                           },
                     child: sending
                         ? const SizedBox(width: 16, height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Text('Send Link'),
+                        : Text(s('sendLinkBtn')),
                   ),
                 ],
         ),

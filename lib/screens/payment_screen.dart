@@ -2,10 +2,27 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
+import 'package:provider/provider.dart';
+import '../providers/language_provider.dart';
+import '../misc/app_strings.dart';
 import '../services/payment_service.dart';
 import '../stripe_web_helper.dart'
     if (dart.library.html) '../stripe_web_helper_web.dart';
 import 'payment_confirmation_screen.dart';
+
+/// If [dueDate] is today or in the past, return the 1st of next month for
+/// display only — the backend still receives the original date so that
+/// nextDueDate advancement stays correct.
+String _displayDueDate(String dueDate) {
+  if (dueDate.isEmpty) return dueDate;
+  final due = DateTime.tryParse(dueDate);
+  if (due == null) return dueDate;
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  if (due.isAfter(today)) return dueDate;
+  final next = DateTime(now.year, now.month + 1, 1);
+  return '${next.year}-${next.month.toString().padLeft(2, '0')}-01';
+}
 
 /// Annual premium lookup, by plan code, from the KAFA plan catalog.
 /// Mirrors the pricing shown on the Plans & Coverage screen.
@@ -140,7 +157,7 @@ class _PaymentScreenState extends State<PaymentScreen>
       HapticFeedback.mediumImpact();
       await Navigator.pushReplacement(
         context,
-        PageRouteBuilder(
+        PageRouteBuilder<void>(
           pageBuilder: (_, animation, __) => FadeTransition(
             opacity: animation,
             child: PaymentConfirmationScreen(
@@ -151,6 +168,7 @@ class _PaymentScreenState extends State<PaymentScreen>
           ),
           transitionDuration: const Duration(milliseconds: 500),
         ),
+        result: true,
       );
     } else {
       HapticFeedback.heavyImpact();
@@ -163,12 +181,14 @@ class _PaymentScreenState extends State<PaymentScreen>
 
   @override
   Widget build(BuildContext context) {
+    final locale = context.watch<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
     return Scaffold(
       backgroundColor: _KafaColors.background,
       body: SafeArea(
         child: Column(
           children: [
-            _buildHeader(),
+            _buildHeader(s),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -176,33 +196,34 @@ class _PaymentScreenState extends State<PaymentScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 28),
-                    _buildAmountCard(),
+                    _buildAmountCard(s),
                     if (widget.args.annualAmountCents != null) ...[
                       const SizedBox(height: 20),
-                      _buildFrequencySelector(),
+                      _buildFrequencySelector(s),
                     ],
                     const SizedBox(height: 28),
-                    _buildSectionLabel('Card Details'),
+                    _buildSectionLabel(s('cardDetails')),
                     const SizedBox(height: 12),
-                    _buildCardFields(),
+                    _buildCardFields(s),
                     if (_cardError != null) ...[
                       const SizedBox(height: 10),
                       _buildErrorBanner(_cardError!),
                     ],
                     if (widget.args.periodEnd.isNotEmpty) ...[
                       const SizedBox(height: 28),
-                      _buildSectionLabel('Due Date'),
+                      _buildSectionLabel(s('dueDate')),
                       const SizedBox(height: 12),
                       _buildInfoTile(
-                        label: 'Next payment due',
-                        value: _formatDate(widget.args.periodEnd),
+                        label: s('nextPaymentDue'),
+                        value: AppStrings.formatDate(
+                            _displayDueDate(widget.args.periodEnd), locale),
                         icon: Icons.calendar_today_rounded,
                       ),
                     ],
                     const SizedBox(height: 36),
-                    _buildPayButton(),
+                    _buildPayButton(s),
                     const SizedBox(height: 20),
-                    _buildSecurityNote(),
+                    _buildSecurityNote(s),
                     const SizedBox(height: 32),
                   ],
                 ),
@@ -215,7 +236,7 @@ class _PaymentScreenState extends State<PaymentScreen>
   }
 
   // ── Header ────────────────────────────────────────────────────────────────
-  Widget _buildHeader() {
+  Widget _buildHeader(String Function(String) s) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: const BoxDecoration(
@@ -247,7 +268,7 @@ class _PaymentScreenState extends State<PaymentScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Pay Premium',
+                s('payPremium'),
                 style: TextStyle(
                   color: _KafaColors.textPrimary,
                   fontSize: 17,
@@ -291,7 +312,7 @@ class _PaymentScreenState extends State<PaymentScreen>
   }
 
   // ── Amount card ───────────────────────────────────────────────────────────
-  Widget _buildAmountCard() {
+  Widget _buildAmountCard(String Function(String) s) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
@@ -322,7 +343,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  _annual ? 'Annual Premium' : 'Monthly Premium',
+                  _annual ? s('annualPremium') : s('monthlyPremium'),
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 11,
@@ -346,7 +367,7 @@ class _PaymentScreenState extends State<PaymentScreen>
           ),
           const SizedBox(height: 6),
           Text(
-            'Policy · ${widget.args.policyId}',
+            '${s('policyLabel')} · ${widget.args.policyId}',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.7),
               fontSize: 13,
@@ -358,7 +379,7 @@ class _PaymentScreenState extends State<PaymentScreen>
   }
 
   // ── Billing frequency selector ──────────────────────────────────────────
-  Widget _buildFrequencySelector() {
+  Widget _buildFrequencySelector(String Function(String) s) {
     Widget segment(String label, bool isAnnual) {
       final selected = _annual == isAnnual;
       return Expanded(
@@ -390,14 +411,14 @@ class _PaymentScreenState extends State<PaymentScreen>
         border: Border.all(color: _KafaColors.divider),
       ),
       child: Row(children: [
-        segment('Monthly', false),
-        segment('Annual', true),
+        segment(s('monthly'), false),
+        segment(s('annual'), true),
       ]),
     );
   }
 
   // ── Card fields ───────────────────────────────────────────────────────────
-  Widget _buildCardFields() {
+  Widget _buildCardFields(String Function(String) s) {
     if (!kIsWeb) {
       // Native: single combined CardField
       return Container(
@@ -428,13 +449,13 @@ class _PaymentScreenState extends State<PaymentScreen>
     // Web: three separate Stripe elements
     return Column(
       children: [
-        _buildStripeField('Card Number', stripeCardHtmlView()),
+        _buildStripeField(s('cardNumber'), stripeCardHtmlView()),
         const SizedBox(height: 12),
         Row(
           children: [
-            Expanded(child: _buildStripeField('Expiry', stripeExpiryHtmlView())),
+            Expanded(child: _buildStripeField(s('expiry'), stripeExpiryHtmlView())),
             const SizedBox(width: 12),
-            Expanded(child: _buildStripeField('CVC', stripeCvcHtmlView())),
+            Expanded(child: _buildStripeField(s('cvc'), stripeCvcHtmlView())),
           ],
         ),
       ],
@@ -507,7 +528,7 @@ class _PaymentScreenState extends State<PaymentScreen>
   }
 
   // ── Pay button ────────────────────────────────────────────────────────────
-  Widget _buildPayButton() {
+  Widget _buildPayButton(String Function(String) s) {
     return AnimatedBuilder(
       animation: _pulseAnim,
       builder: (_, child) {
@@ -547,7 +568,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                       ),
                     )
                   : Text(
-                      'Pay ${widget.args.formattedAmount(_chargeAmountCents)}',
+                      '${s('payAmountPrefix')}${widget.args.formattedAmount(_chargeAmountCents)}',
                       style: const TextStyle(
                         color: _KafaColors.background,
                         fontSize: 16,
@@ -589,16 +610,16 @@ class _PaymentScreenState extends State<PaymentScreen>
   }
 
   // ── Security note ─────────────────────────────────────────────────────────
-  Widget _buildSecurityNote() {
+  Widget _buildSecurityNote(String Function(String) s) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
-      children: const [
-        Icon(Icons.lock_outline_rounded,
+      children: [
+        const Icon(Icons.lock_outline_rounded,
             color: _KafaColors.textMuted, size: 13),
-        SizedBox(width: 6),
+        const SizedBox(width: 6),
         Text(
-          'Secured by Stripe · PCI DSS Level 1',
-          style: TextStyle(color: _KafaColors.textMuted, fontSize: 12),
+          s('securedByStripe'),
+          style: const TextStyle(color: _KafaColors.textMuted, fontSize: 12),
         ),
       ],
     );
@@ -617,19 +638,4 @@ class _PaymentScreenState extends State<PaymentScreen>
     );
   }
 
-  String _formatDate(String iso) {
-    // "2026-04-01" → "Apr 1, 2026"
-    try {
-      final parts = iso.split('-');
-      final months = [
-        '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-      ];
-      final month = months[int.parse(parts[1])];
-      final day = int.parse(parts[2]);
-      return '$month $day, ${parts[0]}';
-    } catch (_) {
-      return iso;
-    }
-  }
 }

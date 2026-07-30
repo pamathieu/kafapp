@@ -3566,14 +3566,11 @@ def generate_pdf(member: dict, company: dict, certificate_id: str,
 
 
 def generate_jpeg(pdf_bytes: bytes) -> bytes:
-    try:
-        from pdf2image import convert_from_bytes
-        imgs = convert_from_bytes(pdf_bytes, dpi=150, first_page=1, last_page=1)
-        buf  = io.BytesIO()
-        imgs[0].convert("RGB").save(buf, format="JPEG", quality=90)
-        return buf.getvalue()
-    except Exception:
-        from PIL import Image
-        buf = io.BytesIO()
-        Image.new("RGB", (1122, 794), color=(255, 255, 255)).save(buf, format="JPEG", quality=90)
-        return buf.getvalue()
+    import fitz  # PyMuPDF — no poppler dependency
+    doc  = fitz.open(stream=pdf_bytes, filetype="pdf")
+    page = doc[0]
+    mat  = fitz.Matrix(150 / 72, 150 / 72)  # 150 dpi
+    pix  = page.get_pixmap(matrix=mat, alpha=False)
+    buf  = io.BytesIO()
+    buf.write(pix.tobytes("jpeg"))
+    return buf.getvalue()

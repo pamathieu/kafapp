@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../providers/language_provider.dart';
 import '../misc/app_strings.dart';
+import '../services/dev_env.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Beneficiaries screen — list + add/edit form
@@ -30,8 +31,7 @@ class BeneficiariesScreen extends StatefulWidget {
 }
 
 class _BeneficiariesScreenState extends State<BeneficiariesScreen> {
-  static const _baseUrl =
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
+  static const _baseUrl = kApiBaseUrl;
 
   List<Map<String, dynamic>> _beneficiaries = [];
   bool _loading = true;
@@ -61,7 +61,8 @@ class _BeneficiariesScreenState extends State<BeneficiariesScreen> {
         setState(() { _error = 'HTTP ${response.statusCode}'; _loading = false; });
       }
     } catch (e) {
-      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+      debugPrint('[BeneficiariesScreen] load error: $e');
+      if (mounted) setState(() { _error = 'Something went wrong. Please try again.'; _loading = false; });
     }
   }
 
@@ -237,7 +238,7 @@ class _BeneficiariesScreenState extends State<BeneficiariesScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e'),
+          content: Text('${s('errorPrefix')}$e'),
           backgroundColor: Colors.red.shade700));
     }
   }
@@ -469,7 +470,9 @@ class _ErrorView extends StatelessWidget {
   const _ErrorView({required this.error, required this.onRetry});
 
   @override
-  Widget build(BuildContext context) => Center(
+  Widget build(BuildContext context) {
+    final locale = context.watch<LanguageProvider>().locale;
+    return Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.error_outline, color: Colors.red.shade400, size: 48),
           const SizedBox(height: 12),
@@ -480,7 +483,8 @@ class _ErrorView extends StatelessWidget {
           ElevatedButton(
               onPressed: onRetry,
               style: ElevatedButton.styleFrom(backgroundColor: _green, foregroundColor: Colors.white),
-              child: const Text('Retry')),
+              child: Text(AppStrings.get('retry', locale))),
         ]),
       );
+  }
 }

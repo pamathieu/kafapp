@@ -11,8 +11,11 @@ class AuthProvider extends ChangeNotifier {
   String      _errorMessage  = '';
   ApiService? _apiService;
 
-  static const String _loginUrl =
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod/auth/login';
+  static const String _baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod',
+  );
+  static const String _loginUrl = '$_baseUrl/auth/login';
   static const String _sessionKey = 'kafa_admin_session';
 
   bool        get isLoggedIn    => _isLoggedIn;
@@ -22,13 +25,26 @@ class AuthProvider extends ChangeNotifier {
   ApiService? get apiService    => _apiService;
 
   /// Called once in main() before runApp. Restores session from storage if valid.
+  ///
+  /// AWS STS credentials expire after ~1 hour. Sessions older than that are
+  /// cleared so the admin sees the login screen rather than a dashboard that
+  /// silently returns empty data.
+  static const int _sessionTtlSeconds = 3600;
+
   Future<bool> tryRestoreSession() async {
     try {
       final prefs  = await SharedPreferences.getInstance();
       final stored = prefs.getString(_sessionKey);
       if (stored == null) return false;
 
-      final data = json.decode(stored) as Map<String, dynamic>;
+      final data    = json.decode(stored) as Map<String, dynamic>;
+      final savedAt = data['savedAt'] as int? ?? 0;
+      final ageMs   = DateTime.now().millisecondsSinceEpoch - savedAt;
+
+      if (ageMs > _sessionTtlSeconds * 1000) {
+        await prefs.remove(_sessionKey);
+        return false;
+      }
 
       _isLoggedIn    = true;
       _adminUsername = data['username'] as String;

@@ -27,6 +27,7 @@ class AdminDashboardScreen extends StatefulWidget {
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   int _tab = 0;
   String? _deepLinkProspectId;
+  String _memberFilter = 'All';
 
   @override
   void initState() {
@@ -59,9 +60,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             orElse: () => LanguageProvider.supportedLanguages.first);
 
     final tabs = [
-      _OverviewTab(locale: locale, onGoMembers: () => setState(() => _tab = 1),
-                   onGoProspects: () => setState(() => _tab = 2)),
-      _MembersTab(locale: locale),
+      _OverviewTab(
+        locale: locale,
+        onGoMembers: () => setState(() { _memberFilter = 'All'; _tab = 1; }),
+        onGoActiveMembers: () => setState(() { _memberFilter = 'Active'; _tab = 1; }),
+        onGoInactiveMembers: () => setState(() { _memberFilter = 'Inactive'; _tab = 1; }),
+        onGoProspects: () => setState(() => _tab = 2),
+      ),
+      _MembersTab(locale: locale, initialFilter: _memberFilter),
       ProspectsScreen(embedded: true, locale: locale, deepLinkId: _deepLinkProspectId),
       ChatsScreen(embedded: true, locale: locale),
       const ReportsScreen(embedded: true),
@@ -84,7 +90,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           PopupMenuButton<String>(
             offset: const Offset(0, 48),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            tooltip: 'Language',
+            tooltip: AppStrings.get('languageTooltip', locale),
             onSelected: (code) =>
                 context.read<LanguageProvider>().setLocale(code),
             itemBuilder: (_) => [
@@ -132,7 +138,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           // Logout
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
-            tooltip: 'Logout',
+            tooltip: AppStrings.get('logout', locale),
             onPressed: _logout,
           ),
         ],
@@ -161,14 +167,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               icon: const Icon(Icons.person_search_outlined),
               activeIcon: const Icon(Icons.person_search),
               label: AppStrings.get('adminProspects', locale)),
-          const BottomNavigationBarItem(
-              icon: Icon(Icons.chat_bubble_outline),
-              activeIcon: Icon(Icons.chat_bubble),
-              label: 'Chats'),
-          const BottomNavigationBarItem(
-              icon: Icon(Icons.bar_chart_outlined),
-              activeIcon: Icon(Icons.bar_chart),
-              label: 'Reports'),
+          BottomNavigationBarItem(
+              icon: const Icon(Icons.chat_bubble_outline),
+              activeIcon: const Icon(Icons.chat_bubble),
+              label: AppStrings.get('chats', locale)),
+          BottomNavigationBarItem(
+              icon: const Icon(Icons.bar_chart_outlined),
+              activeIcon: const Icon(Icons.bar_chart),
+              label: AppStrings.get('reportsNav', locale)),
         ],
       ),
     );
@@ -182,8 +188,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 class _OverviewTab extends StatefulWidget {
   final String locale;
   final VoidCallback onGoMembers;
+  final VoidCallback onGoActiveMembers;
+  final VoidCallback onGoInactiveMembers;
   final VoidCallback onGoProspects;
-  const _OverviewTab({required this.locale, required this.onGoMembers, required this.onGoProspects});
+  const _OverviewTab({
+    required this.locale,
+    required this.onGoMembers,
+    required this.onGoActiveMembers,
+    required this.onGoInactiveMembers,
+    required this.onGoProspects,
+  });
 
   @override
   State<_OverviewTab> createState() => _OverviewTabState();
@@ -222,7 +236,7 @@ class _OverviewTabState extends State<_OverviewTab> {
   Widget build(BuildContext context) {
     final locale = widget.locale;
     String s(String k) => AppStrings.get(k, locale);
-    final activeCount   = _members.where((m) => m.status).length;
+    final activeCount   = _members.where((m) => m.status == 'Active').length;
     final inactiveCount = _members.length - activeCount;
 
     return RefreshIndicator(
@@ -246,11 +260,11 @@ class _OverviewTabState extends State<_OverviewTab> {
             Row(children: [
               Expanded(child: _StatCard(label: s('adminTotalMembers'), value: '${_members.length}', icon: Icons.people, color: _green, onTap: widget.onGoMembers)),
               const SizedBox(width: 12),
-              Expanded(child: _StatCard(label: s('active'), value: '$activeCount', icon: Icons.check_circle_outline, color: Colors.green.shade600, onTap: widget.onGoMembers)),
+              Expanded(child: _StatCard(label: s('active'), value: '$activeCount', icon: Icons.check_circle_outline, color: Colors.green.shade600, onTap: widget.onGoActiveMembers)),
             ]),
             const SizedBox(height: 12),
             Row(children: [
-              Expanded(child: _StatCard(label: s('inactive'), value: '$inactiveCount', icon: Icons.remove_circle_outline, color: Colors.orange, onTap: widget.onGoMembers)),
+              Expanded(child: _StatCard(label: s('inactive'), value: '$inactiveCount', icon: Icons.remove_circle_outline, color: Colors.orange, onTap: widget.onGoInactiveMembers)),
               const SizedBox(width: 12),
               Expanded(child: _StatCard(label: s('adminProspects'), value: '${_prospects.length}', icon: Icons.person_search, color: _gold, onTap: widget.onGoProspects)),
             ]),
@@ -348,6 +362,7 @@ class _RecentProspectRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final locale = context.watch<LanguageProvider>().locale;
     final first = prospect['firstName'] as String? ?? '';
     final last  = prospect['lastName']  as String? ?? '';
     final name  = '$first $last'.trim();
@@ -374,7 +389,7 @@ class _RecentProspectRow extends StatelessWidget {
         const SizedBox(width: 10),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(name.isEmpty ? '(No name)' : name,
+            Text(name.isEmpty ? AppStrings.get('noName', locale) : name,
                 style: const TextStyle(
                     fontWeight: FontWeight.w600, fontSize: 13)),
             Text(phone,
@@ -427,17 +442,17 @@ class _RecentMemberRow extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: BoxDecoration(
-            color: member.status
+            color: member.status == 'Active'
                 ? Colors.green.shade50
                 : Colors.orange.shade50,
             borderRadius: BorderRadius.circular(20),
           ),
           child: Text(
-            member.status ? AppStrings.get('active', locale) : AppStrings.get('inactive', locale),
+            member.status == 'Active' ? AppStrings.get('active', locale) : AppStrings.get('inactive', locale),
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w600,
-              color: member.status
+              color: member.status == 'Active'
                   ? Colors.green.shade700
                   : Colors.orange.shade700,
             ),
@@ -454,7 +469,8 @@ class _RecentMemberRow extends StatelessWidget {
 
 class _MembersTab extends StatefulWidget {
   final String locale;
-  const _MembersTab({required this.locale});
+  final String initialFilter;
+  const _MembersTab({required this.locale, this.initialFilter = 'All'});
 
   @override
   State<_MembersTab> createState() => _MembersTabState();
@@ -466,13 +482,23 @@ class _MembersTabState extends State<_MembersTab> {
   bool _loading = true;
   String? _error;
   final _searchCtrl = TextEditingController();
-  String _statusFilter = 'All';
+  late String _statusFilter;
 
   @override
   void initState() {
     super.initState();
+    _statusFilter = widget.initialFilter;
     _load();
     _searchCtrl.addListener(_filter);
+  }
+
+  @override
+  void didUpdateWidget(_MembersTab old) {
+    super.didUpdateWidget(old);
+    if (widget.initialFilter != old.initialFilter) {
+      setState(() => _statusFilter = widget.initialFilter);
+      _filter();
+    }
   }
 
   @override
@@ -491,7 +517,8 @@ class _MembersTabState extends State<_MembersTab> {
       setState(() { _all = members; _loading = false; });
       _filter();
     } catch (e) {
-      setState(() { _error = e.toString(); _loading = false; });
+      debugPrint('[AdminDashboard] load error: $e');
+      setState(() { _error = 'Something went wrong. Please try again.'; _loading = false; });
     }
   }
 
@@ -504,8 +531,8 @@ class _MembersTabState extends State<_MembersTab> {
             m.memberId.toLowerCase().contains(q) ||
             m.phone.toLowerCase().contains(q);
         final matchesS = _statusFilter == 'All' ||
-            (_statusFilter == 'Active' && m.status) ||
-            (_statusFilter == 'Inactive' && !m.status);
+            (_statusFilter == 'Active' && m.status == 'Active') ||
+            (_statusFilter == 'Inactive' && m.status != 'Active');
         return matchesQ && matchesS;
       }).toList();
     });
@@ -692,17 +719,17 @@ class _MembersTabState extends State<_MembersTab> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: m.status
+                            color: m.status == 'Active'
                                 ? Colors.green.shade50
                                 : Colors.orange.shade50,
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
-                            m.status ? AppStrings.get('active', widget.locale) : AppStrings.get('inactive', widget.locale),
+                            m.status == 'Active' ? AppStrings.get('active', widget.locale) : AppStrings.get('inactive', widget.locale),
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w600,
-                              color: m.status
+                              color: m.status == 'Active'
                                   ? Colors.green.shade700
                                   : Colors.orange.shade700,
                             ),

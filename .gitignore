@@ -12,6 +12,10 @@ android/key.properties
 .env
 .env.*
 
+# Local dev environment (Stripe sandbox testing) — venv/binaries only, scripts are tracked
+dev/venv/
+dev/bin/
+
 # Sensitive debug output (contains real member PII captured during testing)
 response.json
 iac/response.json

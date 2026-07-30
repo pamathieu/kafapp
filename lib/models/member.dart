@@ -8,12 +8,14 @@ class Member {
   String email;
   String identificationNumber;
   String identificationType;
-  bool status;
+  String status;
+  String? reason;
   String notes;
   String sex;
   Map<String, dynamic>? certificate;
   String? issuedDate;
   Map<String, dynamic>? locality; // {commune, code}
+  String? setupToken;
 
   Member({
     required this.memberId,
@@ -25,12 +27,14 @@ class Member {
     this.email = '',
     this.identificationNumber = '',
     this.identificationType = '',
-    this.status = true,
+    this.status = 'Active',
+    this.reason,
     this.notes = '',
     this.sex = '',
     this.certificate,
     this.issuedDate,
     this.locality,
+    this.setupToken,
   });
 
   factory Member.fromJson(Map<String, dynamic> json) {
@@ -44,20 +48,24 @@ class Member {
       email: json['email'] ?? '',
       identificationNumber: json['identification_number'] ?? '',
       identificationType: json['identification_type'] ?? '',
-      status: _parseBool(json['status']),
+      status: _parseStatus(json['status']),
+      reason: json['reason'] as String?,
       notes: json['notes'] ?? '',
       sex: json['sex'] ?? '',
       certificate: json['certificate'] as Map<String, dynamic>?,
       issuedDate: json['issued_date'] ?? json['issuedDate'],
       locality: json['locality'] as Map<String, dynamic>?,
+      setupToken: json['setupToken'] as String?,
     );
   }
 
-  static bool _parseBool(dynamic value) {
-    if (value == null) return true;
-    if (value is bool) return value;
-    if (value is String) return value.toLowerCase() == 'true';
-    return true;
+  static String _parseStatus(dynamic value) {
+    if (value == null) return 'Active';
+    if (value is String && (value == 'Active' || value == 'Pending' || value == 'Inactive')) return value;
+    // Legacy bool support during migration
+    if (value is bool) return value ? 'Active' : 'Inactive';
+    if (value is String) return value.toLowerCase() == 'true' ? 'Active' : 'Inactive';
+    return 'Active';
   }
 
   Map<String, dynamic> toJson() => {
@@ -85,7 +93,8 @@ class Member {
     String? email,
     String? identificationNumber,
     String? identificationType,
-    bool? status,
+    String? status,
+    String? reason,
     String? notes,
     String? sex,
     Map<String, dynamic>? locality,
@@ -101,6 +110,7 @@ class Member {
       identificationNumber: identificationNumber ?? this.identificationNumber,
       identificationType: identificationType ?? this.identificationType,
       status: status ?? this.status,
+      reason: reason ?? this.reason,
       notes: notes ?? this.notes,
       sex: sex ?? this.sex,
       certificate: certificate,

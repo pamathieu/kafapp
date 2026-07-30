@@ -36,8 +36,7 @@ class DocumentsScreen extends StatefulWidget {
 }
 
 class _DocumentsScreenState extends State<DocumentsScreen> {
-  static const _baseUrl =
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
+  static const _baseUrl = kApiBaseUrl;
 
   List<Map<String, dynamic>> _documents = [];
   bool _loading = true;
@@ -67,7 +66,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
         setState(() { _error = 'HTTP ${response.statusCode}'; _loading = false; });
       }
     } catch (e) {
-      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+      debugPrint('[DocumentsScreen] load error: $e');
+      if (mounted) setState(() { _error = 'Something went wrong. Please try again.'; _loading = false; });
     }
   }
 
@@ -133,7 +133,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
               Padding(
                 padding: const EdgeInsets.only(left: 4),
                 child: Text(
-                  'Note: Vous serez redirigé vers un lien sécurisé pour téléverser votre fichier.',
+                  s('uploadRedirectNote'),
                   style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
                 ),
               ),
@@ -164,7 +164,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                       if (nameCtrl.text.trim().isEmpty) return;
                       Navigator.pop(ctx, true);
                     },
-                    child: const Text('Continuer'),
+                    child: Text(s('continueLabel')),
                   ),
                 ),
               ]),
@@ -391,7 +391,9 @@ class _ErrorView extends StatelessWidget {
   const _ErrorView({required this.error, required this.onRetry});
 
   @override
-  Widget build(BuildContext context) => Center(
+  Widget build(BuildContext context) {
+    final locale = context.watch<LanguageProvider>().locale;
+    return Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.error_outline, color: Colors.red.shade400, size: 48),
           const SizedBox(height: 12),
@@ -403,7 +405,8 @@ class _ErrorView extends StatelessWidget {
               onPressed: onRetry,
               style: ElevatedButton.styleFrom(
                   backgroundColor: _green, foregroundColor: Colors.white),
-              child: const Text('Retry')),
+              child: Text(AppStrings.get('retry', locale))),
         ]),
       );
+  }
 }

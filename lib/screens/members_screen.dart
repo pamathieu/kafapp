@@ -65,7 +65,8 @@ class _MembersScreenState extends State<MembersScreen> {
       if (!mounted) return;
       if (!silent) {
         setState(() {
-          _error = e.toString();
+          debugPrint('[MembersScreen] load error: $e');
+          _error = 'Something went wrong. Please try again.';
           _isLoading = false;
         });
       }
@@ -84,8 +85,8 @@ class _MembersScreenState extends State<MembersScreen> {
             m.address.toLowerCase().contains(query);
 
         final matchesStatus = _filterStatus == 'All' ||
-            (_filterStatus == 'Active' && m.status) ||
-            (_filterStatus == 'Inactive' && !m.status);
+            (_filterStatus == 'Active' && m.status == 'Active') ||
+            (_filterStatus == 'Inactive' && m.status != 'Active');
 
         return matchesQuery && matchesStatus;
       }).toList();
@@ -120,8 +121,8 @@ class _MembersScreenState extends State<MembersScreen> {
     final locale = context.watch<LanguageProvider>().locale;
     String s(String key) => AppStrings.get(key, locale);
 
-    final activeCount = _allMembers.where((m) => m.status).length;
-    final inactiveCount = _allMembers.where((m) => !m.status).length;
+    final activeCount = _allMembers.where((m) => m.status == 'Active').length;
+    final inactiveCount = _allMembers.where((m) => m.status != 'Active').length;
 
     // Filter display labels (translated) mapped to internal keys
     final filters = <String, String>{
@@ -423,7 +424,7 @@ class _MemberCard extends StatelessWidget {
               // Avatar
               CircleAvatar(
                 radius: 24,
-                backgroundColor: member.status
+                backgroundColor: member.status == 'Active'
                     ? const Color(0xFFC8A96E).withOpacity(0.15)
                     : Colors.grey.shade200,
                 child: Text(
@@ -431,7 +432,7 @@ class _MemberCard extends StatelessWidget {
                       ? member.fullName[0].toUpperCase()
                       : '?',
                   style: TextStyle(
-                    color: member.status
+                    color: member.status == 'Active'
                         ? const Color(0xFFC8A96E)
                         : Colors.grey,
                     fontWeight: FontWeight.bold,
@@ -483,20 +484,20 @@ class _MemberCard extends StatelessWidget {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: member.status
+                      color: member.status == 'Active'
                           ? Colors.green.shade50
                           : Colors.red.shade50,
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: member.status
+                        color: member.status == 'Active'
                             ? Colors.green.shade300
                             : Colors.red.shade300,
                       ),
                     ),
                     child: Text(
-                      member.status ? s('active') : s('inactive'),
+                      member.status == 'Active' ? s('active') : s('inactive'),
                       style: TextStyle(
-                        color: member.status
+                        color: member.status == 'Active'
                             ? Colors.green.shade700
                             : Colors.red.shade700,
                         fontSize: 11,

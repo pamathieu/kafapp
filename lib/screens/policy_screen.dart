@@ -11,15 +11,20 @@ import 'policy_detail_screen.dart';
 class PolicyScreen extends StatefulWidget {
   final Map<String, dynamic> member;
   final bool embedded;
-  const PolicyScreen({super.key, required this.member, this.embedded = false});
+  final VoidCallback? onPaymentMade;
+  const PolicyScreen({
+    super.key,
+    required this.member,
+    this.embedded = false,
+    this.onPaymentMade,
+  });
 
   @override
   State<PolicyScreen> createState() => _PolicyScreenState();
 }
 
 class _PolicyScreenState extends State<PolicyScreen> {
-  static const _baseUrl =
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
+  static const _baseUrl = kApiBaseUrl;
 
   List<Map<String, dynamic>> _policies = [];
   bool _loading = true;
@@ -46,7 +51,8 @@ class _PolicyScreenState extends State<PolicyScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() { _error = e.toString(); _loading = false; });
+      debugPrint('[PolicyScreen] load error: $e');
+      setState(() { _error = 'Something went wrong. Please try again.'; _loading = false; });
     }
   }
 
@@ -58,7 +64,7 @@ class _PolicyScreenState extends State<PolicyScreen> {
           child: CircularProgressIndicator(color: Color(0xFF1A5C2A)));
     }
     if (_error != null) {
-      return _ErrorView(error: _error!, onRetry: _loadPolicies);
+      return _ErrorView(error: _error!, onRetry: _loadPolicies, locale: locale);
     }
     if (_policies.isEmpty) {
       return _EmptyView(locale: locale);
@@ -71,6 +77,7 @@ class _PolicyScreenState extends State<PolicyScreen> {
         member: widget.member,
         locale: locale,
         onRefresh: _loadPolicies,
+        onPaymentMade: widget.onPaymentMade,
       ),
     );
   }
@@ -84,7 +91,7 @@ class _PolicyScreenState extends State<PolicyScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
-        title: Text(locale == 'fr' ? 'Mes Polices' : 'My Policies',
+        title: Text(AppStrings.get('myPolicies', locale),
             style: const TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF1A5C2A),
         foregroundColor: Colors.white,
@@ -108,11 +115,13 @@ class _PolicyCard extends StatefulWidget {
   final Map<String, dynamic> member;
   final String locale;
   final VoidCallback onRefresh;
+  final VoidCallback? onPaymentMade;
   const _PolicyCard({
     required this.data,
     required this.member,
     required this.locale,
     required this.onRefresh,
+    this.onPaymentMade,
   });
 
   @override
@@ -120,8 +129,7 @@ class _PolicyCard extends StatefulWidget {
 }
 
 class _PolicyCardState extends State<_PolicyCard> {
-  static const _baseUrl =
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
+  static const _baseUrl = kApiBaseUrl;
 
   List<Map<String, dynamic>> _beneficiaries    = [];
   bool                       _loadingBenefits  = true;
@@ -229,7 +237,10 @@ class _PolicyCardState extends State<_PolicyCard> {
         ),
         transitionDuration: const Duration(milliseconds: 300),
       ),
-    ).then((_) => widget.onRefresh());
+    ).then((_) {
+      widget.onRefresh();
+      widget.onPaymentMade?.call();
+    });
   }
 
 
@@ -238,15 +249,24 @@ class _PolicyCardState extends State<_PolicyCard> {
 
   @override
   Widget build(BuildContext context) {
-    final fr = widget.locale == 'fr';
     final policyNo    = _policy['policyNo']    ?? '—';
     final productCode = _policy['productCode'] ?? '—';
-    final status      = _policy['policyStatus'] ?? '—';
+    final rawStatus   = _policy['policyStatus'] as String? ?? '—';
+    final status      = switch (rawStatus.toUpperCase()) {
+      'ACTIVE'    => s('active'),
+      'PENDING'   => s('adminStatusPending'),
+      'LAPSED'    => s('lapsedStatus'),
+      'CANCELLED' => s('cancelledStatus'),
+      _           => rawStatus,
+    };
     final startDate   = _policy['startDate']   ?? '—';
     final sumAssured  = _policy['sumAssured']  ?? '—';
     final premAmount  = _policy['premiumAmount'] ?? '—';
-    final frequency   = _policy['frequency']   ?? '—';
-    final isActive    = status == 'ACTIVE';
+    final rawFrequency = _policy['frequency'] as String? ?? '—';
+    final frequency = rawFrequency.toUpperCase() == 'MONTHLY'
+        ? s('monthly')
+        : rawFrequency;
+    final isActive    = rawStatus.toUpperCase() == 'ACTIVE';
 
     // Last payment
     final lastPayDate   = _lastPay['paymentDate']  ?? '—';
@@ -319,22 +339,22 @@ class _PolicyCardState extends State<_PolicyCard> {
               children: [
 
                 // ── Policy info ──────────────────────────────────────────────
-                _SectionTitle(fr ? 'Détails de la police' : 'Policy Details'),
+                _SectionTitle(s('policyInformationSection')),
                 const SizedBox(height: 8),
-                _InfoRow2(fr ? 'Début' : 'Start Date', startDate),
-                _InfoRow2(fr ? 'Montant assuré' : 'Sum Assured', 'HTG $sumAssured'),
-                _InfoRow2(fr ? 'Prime' : 'Premium', 'US\$$premAmount / $frequency'),
+                _InfoRow2(s('startDateLabel'), startDate),
+                _InfoRow2(s('coverageAmountLabel'), 'HTG $sumAssured'),
+                _InfoRow2(s('premiumLabel'), 'US\$$premAmount / $frequency'),
 
                 const Divider(height: 24),
 
                 // ── Payment summary ──────────────────────────────────────────
-                _SectionTitle(fr ? 'Paiements' : 'Payments'),
+                _SectionTitle(s('paymentHistory')),
                 const SizedBox(height: 8),
-                _InfoRow2(fr ? 'Dernier paiement' : 'Last Payment Date', lastPayDate),
-                _InfoRow2(fr ? 'Dernier montant' : 'Last Amount', lastPayAmount != '—' ? 'US\$$lastPayAmount' : '—'),
-                _InfoRow2(fr ? 'Prochaine échéance' : 'Next Due Date', nextDueDate,
+                _InfoRow2(s('lastPaymentDateLabel'), lastPayDate),
+                _InfoRow2(s('lastAmountLabel'), lastPayAmount != '—' ? 'US\$$lastPayAmount' : '—'),
+                _InfoRow2(s('nextDueDateLabel'), nextDueDate,
                     highlight: nextSchedSK.isNotEmpty),
-                _InfoRow2(fr ? 'Montant dû' : 'Amount Due', nextDueAmount != '—' ? 'US\$$nextDueAmount' : '—',
+                _InfoRow2(s('dueNowLabel'), nextDueAmount != '—' ? 'US\$$nextDueAmount' : '—',
                     highlight: nextSchedSK.isNotEmpty),
 
                 const SizedBox(height: 16),
@@ -342,11 +362,11 @@ class _PolicyCardState extends State<_PolicyCard> {
                 // ── Claims list ──────────────────────────────────────────────
                 if (_claims.isNotEmpty) ...[
                   const Divider(height: 24),
-                  _SectionTitle(fr ? 'Réclamations' : 'Claims'),
+                  _SectionTitle(s('claimsLabel')),
                   const SizedBox(height: 8),
                   ..._claims.map((c) {
                     final claim = c as Map<String, dynamic>;
-                    return _ClaimTile(claim: claim);
+                    return _ClaimTile(claim: claim, locale: widget.locale);
                   }),
                 ],
 
@@ -414,7 +434,7 @@ class _PolicyCardState extends State<_PolicyCard> {
                   child: OutlinedButton.icon(
                     onPressed: _openPolicyDetail,
                     icon: const Icon(Icons.open_in_new_rounded, size: 16),
-                    label: Text(fr ? 'Voir les détails' : 'View Details'),
+                    label: Text(s('viewDetailsLabel')),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFF1A5C2A),
                       side: const BorderSide(color: Color(0xFF1A5C2A)),
@@ -479,7 +499,8 @@ class _InfoRow2 extends StatelessWidget {
 
 class _ClaimTile extends StatelessWidget {
   final Map<String, dynamic> claim;
-  const _ClaimTile({required this.claim});
+  final String locale;
+  const _ClaimTile({required this.claim, required this.locale});
 
   Color _statusColor(String s) {
     switch (s) {
@@ -491,7 +512,14 @@ class _ClaimTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final status = claim['claimStatus'] ?? 'SUBMITTED';
+    String s(String k) => AppStrings.get(k, locale);
+    final rawStatus = claim['claimStatus'] as String? ?? 'SUBMITTED';
+    final status = switch (rawStatus.toUpperCase()) {
+      'APPROVED'  => s('claimStatusApproved'),
+      'REJECTED'  => s('claimStatusRejected'),
+      'SUBMITTED' => s('claimStatusSubmitted'),
+      _           => rawStatus,
+    };
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -515,7 +543,7 @@ class _ClaimTile extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: _statusColor(status).withValues(alpha: 0.12),
+              color: _statusColor(rawStatus.toUpperCase()).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
@@ -523,7 +551,7 @@ class _ClaimTile extends StatelessWidget {
               style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
-                  color: _statusColor(status)),
+                  color: _statusColor(rawStatus.toUpperCase())),
             ),
           ),
         ],
@@ -590,7 +618,8 @@ class _BeneficiaryTile extends StatelessWidget {
 class _ErrorView extends StatelessWidget {
   final String error;
   final VoidCallback onRetry;
-  const _ErrorView({required this.error, required this.onRetry});
+  final String locale;
+  const _ErrorView({required this.error, required this.onRetry, required this.locale});
   @override
   Widget build(BuildContext context) => Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -600,7 +629,9 @@ class _ErrorView extends StatelessWidget {
               textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.grey)),
           const SizedBox(height: 16),
-          ElevatedButton(onPressed: onRetry, child: const Text('Retry')),
+          ElevatedButton(
+              onPressed: onRetry,
+              child: Text(AppStrings.get('retry', locale))),
         ]),
       );
 }
@@ -614,9 +645,7 @@ class _EmptyView extends StatelessWidget {
           Icon(Icons.policy_outlined, color: Colors.grey.shade400, size: 64),
           const SizedBox(height: 16),
           Text(
-            locale == 'fr'
-                ? 'Aucune police trouvée'
-                : 'No policies found',
+            AppStrings.get('noPoliciesFound', locale),
             style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
           ),
         ]),

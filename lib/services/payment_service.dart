@@ -81,7 +81,7 @@ class PaymentService {
       debugPrint('[PaymentService] Unexpected error: $e');
       return PaymentResult(
         success: false,
-        errorMessage: e.toString().replaceFirst('Exception: ', ''),
+        errorMessage: 'Unable to process payment.',
       );
     }
   }

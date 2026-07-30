@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../providers/language_provider.dart';
 import '../misc/app_strings.dart';
+import '../services/dev_env.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Express Enrollment screen
@@ -43,8 +44,7 @@ class EnrollmentFormScreen extends StatefulWidget {
 }
 
 class _EnrollmentFormScreenState extends State<EnrollmentFormScreen> {
-  static const _baseUrl =
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
+  static const _baseUrl = kApiBaseUrl;
 
   final _nameCtrl    = TextEditingController();
   final _phoneCtrl   = TextEditingController();
@@ -114,7 +114,7 @@ class _EnrollmentFormScreenState extends State<EnrollmentFormScreen> {
       if (!mounted) return;
       setState(() => _submitting = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e'),
+          content: Text('${s('errorPrefix')}$e'),
           backgroundColor: Colors.red.shade700));
     }
   }

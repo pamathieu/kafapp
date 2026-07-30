@@ -6,8 +6,10 @@ import 'providers/auth_provider.dart';
 import 'providers/language_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/member_login_screen.dart';
+import 'screens/member_dashboard_screen.dart';
 import 'screens/set_password_screen.dart';
 import 'screens/admin_dashboard_screen.dart';
+import 'services/session_service.dart';
 
 const _portal = String.fromEnvironment('PORTAL', defaultValue: 'admin');
 
@@ -37,6 +39,7 @@ void main() async {
   // Restore session before the UI is shown so the correct screen renders first.
   final authProvider = AuthProvider();
   final hasSession   = await authProvider.tryRestoreSession();
+  final memberSession = _portal == 'member' ? await SessionService.loadSession() : null;
 
   runApp(
     MultiProvider(
@@ -44,23 +47,29 @@ void main() async {
         ChangeNotifierProvider.value(value: authProvider),
         ChangeNotifierProvider(create: (_) => LanguageProvider()),
       ],
-      child: KAFAMemberApp(hasSession: hasSession),
+      child: KAFAMemberApp(hasSession: hasSession, memberSession: memberSession),
     ),
   );
 }
 
 class KAFAMemberApp extends StatelessWidget {
   final bool hasSession;
-  const KAFAMemberApp({super.key, required this.hasSession});
+  final Map<String, dynamic>? memberSession;
+  const KAFAMemberApp({super.key, required this.hasSession, this.memberSession});
 
   @override
   Widget build(BuildContext context) {
     Widget home;
     if (_portal == 'member') {
       final setupToken = kIsWeb ? Uri.base.queryParameters['setup'] : null;
-      home = (setupToken != null && setupToken.isNotEmpty)
-          ? SetPasswordScreen(token: setupToken)
-          : const MemberLoginScreen();
+      if (setupToken != null && setupToken.isNotEmpty) {
+        // Setup links always take priority over any stored session.
+        home = SetPasswordScreen(token: setupToken);
+      } else if (memberSession != null) {
+        home = MemberDashboardScreen(member: memberSession!);
+      } else {
+        home = const MemberLoginScreen();
+      }
     } else if (hasSession) {
       home = const AdminDashboardScreen();
     } else {

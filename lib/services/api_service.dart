@@ -5,7 +5,14 @@ import '../models/member.dart';
 import 'dev_env.dart';
 
 class ApiService {
-  static const String _baseUrl   = 'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
+  static const String _baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod',
+  );
+  static const String _apiEnvSuffix = String.fromEnvironment(
+    'API_ENV_SUFFIX',
+    defaultValue: '',
+  );
   static const String _region    = 'us-east-1';
   static const String _service   = 'execute-api';
   static const String _companyId = 'KAFA-001';
@@ -105,7 +112,7 @@ class ApiService {
   /// GET /retrieve?phone= — returns {pdf: url, jpeg: url} (no auth)
   Future<Map<String, String>> getCertificateLinks(String phone) async {
     final uri = Uri.parse(
-        '$_baseUrl/retrieve?phone=${Uri.encodeComponent(phone)}');
+        '$_baseUrl/retrieve$_apiEnvSuffix?phone=${Uri.encodeComponent(phone)}');
     final response = await http.get(uri);
     if (response.statusCode == 200) {
       final body = json.decode(response.body);
@@ -119,9 +126,27 @@ class ApiService {
         'Failed to retrieve certificate links: ${response.statusCode} ${response.body}');
   }
 
+  /// POST /admin/shorten — create a custom short link stored in DynamoDB
+  Future<String> shortenUrl(String url) async {
+    try {
+      final uri = Uri.parse('$_baseUrl/admin/shorten');
+      final response = await http
+          .post(uri,
+              headers: {'Content-Type': 'application/json'},
+              body: json.encode({'url': url, 'base_url': kMemberPortalUrl}))
+          .timeout(const Duration(seconds: 8));
+      if (response.statusCode == 200) {
+        final body = json.decode(response.body);
+        final short = body['short'] as String? ?? '';
+        if (short.isNotEmpty) return short;
+      }
+    } catch (_) {}
+    return url;
+  }
+
   /// POST /certificates — generate a certificate for a member (SigV4)
   Future<Map<String, dynamic>> generateCertificate(String memberId) async {
-    final uri  = Uri.parse('$_baseUrl/certificates');
+    final uri  = Uri.parse('$_baseUrl/certificates$_apiEnvSuffix');
     final body = json.encode({'memberId': memberId, 'companyId': _companyId});
     final headers  = _signRequest(method: 'POST', uri: uri, body: body);
     final response = await http.post(uri, headers: headers, body: body);
@@ -175,6 +200,31 @@ class ApiService {
     final data = json.decode(response.body);
     if (response.statusCode == 201) return data['referenceNo'] as String;
     throw Exception(data['error'] ?? 'Payment failed');
+  }
+
+  /// POST /member/shares/manual — admin records a non-Stripe share purchase
+  /// (cash, MonCash, bank transfer). Returns the new share's APR.
+  Future<double> recordSharePayment({
+    required String memberId,
+    required String shareType, // 'membership' | 'preferred'
+    required int amountCents,
+    required String paymentMethod,
+    String externalRef = '',
+  }) async {
+    final uri  = Uri.parse('$_baseUrl/member$_apiEnvSuffix/shares/manual');
+    final body = json.encode({
+      'member_id':      memberId,
+      'company_id':     _companyId,
+      'share_type':     shareType,
+      'amount_cents':   amountCents,
+      'payment_method': paymentMethod,
+      'external_ref':   externalRef,
+    });
+    final response = await http.post(uri,
+        headers: {'Content-Type': 'application/json'}, body: body);
+    final data = json.decode(response.body);
+    if (response.statusCode == 201) return (data['apr'] as num).toDouble();
+    throw Exception(data['error'] ?? 'Share collection failed');
   }
 
   /// POST /member/acknowledge-payment — member dismisses notification (no SigV4)
@@ -243,6 +293,25 @@ class ApiService {
     throw Exception(error['error'] ?? 'Failed to set credentials');
   }
 
+  /// POST /members/send-password-setup — admin emails member a setup link.
+  /// Returns (message, setupLink). setupLink is non-null only in dev.
+  Future<(String, String?)> sendMemberPasswordSetupEmail(String memberId) async {
+    final uri  = Uri.parse('$_baseUrl${devPath('/members/send-password-setup')}');
+    final body = json.encode({
+      'memberId':  memberId,
+      'companyId': _companyId,
+    });
+    final headers  = _signRequest(method: 'POST', uri: uri, body: body);
+    final response = await http.post(uri, headers: headers, body: body);
+    final data = json.decode(response.body);
+    if (response.statusCode == 200) {
+      final message   = data['message'] as String? ?? 'Password setup email sent.';
+      final setupLink = data['setupLink'] as String?;
+      return (message, setupLink);
+    }
+    throw Exception(data['error'] ?? 'Failed to send password setup email');
+  }
+
   /// GET /companies — returns current sequence counter from kopera-company
   Future<int> getCompanySequence() async {
     final uri     = Uri.parse('$_baseUrl/companies?companyId=$_companyId');
@@ -265,6 +334,18 @@ class ApiService {
       return List<Map<String, dynamic>>.from(data['payments'] ?? []);
     }
     throw Exception('Failed to load Stripe payments: ${response.statusCode}');
+  }
+
+  /// GET /member/shares?memberId= — fetch a member's share purchases (SigV4)
+  Future<List<Map<String, dynamic>>> getMemberShares(String memberId) async {
+    final uri     = Uri.parse('$_baseUrl/member/shares?memberId=${Uri.encodeComponent(memberId)}');
+    final headers = _signRequest(method: 'GET', uri: uri, body: '');
+    final response = await http.get(uri, headers: headers);
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return List<Map<String, dynamic>>.from(data['shares'] ?? []);
+    }
+    throw Exception('Failed to load shares: ${response.statusCode}');
   }
 
   /// POST /members/policies/create — admin creates a policy for a member (SigV4)
@@ -387,7 +468,7 @@ class ApiService {
   }
 
   Future<List<Map<String, dynamic>>> getProspects() async {
-    final uri     = Uri.parse('$_baseUrl/prospects');
+    final uri     = Uri.parse('$_baseUrl${devPath('/prospects')}');
     final headers = _signRequest(method: 'GET', uri: uri, body: '');
     final response = await http.get(uri, headers: headers);
     if (response.statusCode == 200) {
@@ -399,7 +480,7 @@ class ApiService {
 
   Future<Map<String, dynamic>> updateProspectStatus(
       String prospectId, String status, {String? note}) async {
-    final uri  = Uri.parse('$_baseUrl/prospects/${Uri.encodeComponent(prospectId)}');
+    final uri  = Uri.parse('$_baseUrl${devPath('/prospects')}/${Uri.encodeComponent(prospectId)}');
     final payload = <String, dynamic>{'status': status};
     if (note != null) payload['note'] = note;
     final body = json.encode(payload);
@@ -413,7 +494,7 @@ class ApiService {
   }
 
   Future<void> saveProspectNote(String prospectId, String note) async {
-    final uri  = Uri.parse('$_baseUrl/prospects/${Uri.encodeComponent(prospectId)}');
+    final uri  = Uri.parse('$_baseUrl${devPath('/prospects')}/${Uri.encodeComponent(prospectId)}');
     final body = json.encode({'note': note});
     final headers = _signRequest(method: 'PATCH', uri: uri, body: body);
     final response = await http.patch(uri, headers: headers, body: body);

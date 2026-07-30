@@ -31,7 +31,6 @@ class _CreateMemberScreenState extends State<CreateMemberScreen> {
   final _idNumberCtrl   = TextEditingController();
   final _idTypeCtrl     = TextEditingController();
   final _notesCtrl      = TextEditingController();
-  bool _status = true;
   String _sex = '';
 
   @override
@@ -136,7 +135,7 @@ class _CreateMemberScreenState extends State<CreateMemberScreen> {
         email:                _emailCtrl.text.trim(),
         identificationNumber: _idNumberCtrl.text.trim(),
         identificationType:   _idTypeCtrl.text.trim(),
-        status:               _status,
+        status:               'Pending',
         sex:                  _sex,
         notes:                _notesCtrl.text.trim(),
         locality:             _selectedLocality,
@@ -149,7 +148,8 @@ class _CreateMemberScreenState extends State<CreateMemberScreen> {
     } catch (e) {
       setState(() {
         _isSaving = false;
-        _errorMessage = e.toString().replaceFirst('Exception: ', '');
+        debugPrint('[CreateMember] error: $e');
+        _errorMessage = 'Something went wrong. Please try again.';
       });
     }
   }
@@ -328,12 +328,15 @@ class _CreateMemberScreenState extends State<CreateMemberScreen> {
                   _buildCard(
                     title: s('sectionStatus'),
                     children: [
-                      SwitchListTile(
-                        value: _status,
-                        onChanged: (v) => setState(() => _status = v),
-                        title: Text(_status ? s('active') : s('inactive')),
-                        activeColor: const Color(0xFF1A5C2A),
-                        contentPadding: EdgeInsets.zero,
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          s('inactive'),
+                          style: const TextStyle(
+                            color: Color(0xFF6B7280),
+                            fontSize: 14,
+                          ),
+                        ),
                       ),
                     ],
                   ),

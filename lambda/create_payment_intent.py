@@ -30,8 +30,11 @@ _TABLE = os.environ["LIFE_INSURANCE_TABLE"]
 _dynamodb = boto3.client("dynamodb")
 _ssm = boto3.client("ssm")
 
+# Local dev sets STRIPE_SECRET_KEY directly (sandbox sk_test_...) to skip SSM
+# entirely — deployed Lambdas leave this unset and always fetch from SSM.
 _SSM_PARAM = os.environ.get("STRIPE_SECRET_KEY_SSM_PARAM", "/kafa/stripe/secret_key_live")
-stripe.api_key = _ssm.get_parameter(Name=_SSM_PARAM, WithDecryption=True)["Parameter"]["Value"]
+stripe.api_key = os.environ.get("STRIPE_SECRET_KEY") or \
+    _ssm.get_parameter(Name=_SSM_PARAM, WithDecryption=True)["Parameter"]["Value"]
 
 # Import after stripe.api_key is set so the module initialises cleanly.
 from payment_schema import build_payment_record  # noqa: E402

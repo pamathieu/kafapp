@@ -1,7 +1,12 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
+import '../providers/language_provider.dart';
+import '../misc/app_strings.dart';
 import '../services/dev_env.dart';
+import '../services/session_service.dart';
+import 'member_dashboard_screen.dart';
 import 'member_login_screen.dart';
 
 class SetPasswordScreen extends StatefulWidget {
@@ -20,9 +25,9 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
   bool   _obscure2    = true;
   String? _error;
   bool   _success     = false;
+  bool   _showLoginButton = false;
 
-  static String get _loginUrl =>
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod${devPath('/member/login')}';
+  static String get _loginUrl => '$kApiBaseUrl${devPath('/member/login')}';
 
   @override
   void dispose() {
@@ -32,19 +37,21 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
   }
 
   Future<void> _submit() async {
+    final locale = context.read<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
     final password = _passwordCtrl.text.trim();
     final confirm  = _confirmCtrl.text.trim();
 
     if (password.isEmpty || confirm.isEmpty) {
-      setState(() => _error = 'Please fill in both fields.');
+      setState(() => _error = s('fillBothFields'));
       return;
     }
     if (password.length < 6) {
-      setState(() => _error = 'Password must be at least 6 characters.');
+      setState(() => _error = s('passwordMinLength'));
       return;
     }
     if (password != confirm) {
-      setState(() => _error = 'Passwords do not match.');
+      setState(() => _error = s('passwordsDoNotMatch'));
       return;
     }
 
@@ -59,40 +66,93 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
 
       if (res.statusCode == 200) {
-        setState(() { _loading = false; _success = true; });
+        final member = data['member'] as Map<String, dynamic>;
+        try { await SessionService.saveSession(member); } catch (_) {}
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => MemberDashboardScreen(member: member)),
+        );
+        return;
       } else if (res.statusCode == 409) {
         setState(() {
           _loading = false;
-          _error = 'A password is already set for this account. Please log in normally.';
+          _error = s('passwordAlreadySetLoginNormally');
+          _showLoginButton = true;
         });
       } else if (res.statusCode == 410) {
         setState(() {
           _loading = false;
-          _error = 'This setup link has expired. Use the login screen to request a new one.';
+          _error = s('setupLinkExpired');
         });
       } else if (res.statusCode == 401) {
         setState(() {
           _loading = false;
-          _error = 'Invalid setup link. Please use the link from your email or request a new one.';
+          _error = s('invalidSetupLink');
         });
       } else {
         setState(() {
           _loading = false;
-          _error = data['error'] ?? 'Something went wrong. Please try again.';
+          _error = data['error'] ?? s('somethingWentWrong');
         });
       }
     } catch (_) {
       setState(() {
         _loading = false;
-        _error = 'Connection error. Please check your internet and try again.';
+        _error = s('connectionErrorCheckInternet');
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final langProvider = context.watch<LanguageProvider>();
+    final locale = langProvider.locale;
+    String s(String key) => AppStrings.get(key, locale);
+
+    final currentLang = LanguageProvider.supportedLanguages
+        .firstWhere((l) => l['code'] == locale,
+            orElse: () => LanguageProvider.supportedLanguages.first);
+
+    final langDropdown = PopupMenuButton<String>(
+      offset: const Offset(0, 40),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      onSelected: (code) => context.read<LanguageProvider>().setLocale(code),
+      itemBuilder: (_) => LanguageProvider.supportedLanguages
+          .map((lang) => PopupMenuItem<String>(
+                value: lang['code'],
+                child: Row(children: [
+                  Text(lang['label']!,
+                      style: TextStyle(
+                          fontWeight: lang['code'] == locale
+                              ? FontWeight.bold
+                              : FontWeight.normal)),
+                  if (lang['code'] == locale) ...[
+                    const Spacer(),
+                    const Icon(Icons.check, size: 16, color: Color(0xFF1A5C2A)),
+                  ],
+                ]),
+              ))
+          .toList(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.language, color: Colors.white70, size: 18),
+          const SizedBox(width: 4),
+          Text(currentLang['label']!.split(' ').first,
+              style: const TextStyle(color: Colors.white70, fontSize: 13)),
+          const Icon(Icons.arrow_drop_down, color: Colors.white70, size: 18),
+        ]),
+      ),
+    );
+
     return Scaffold(
       backgroundColor: const Color(0xFF1A5C2A),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        automaticallyImplyLeading: false,
+        actions: [langDropdown],
+      ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(32),
@@ -133,21 +193,25 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
                       children: [
                         const Icon(Icons.check_circle, color: Color(0xFF1A5C2A), size: 56),
                         const SizedBox(height: 16),
-                        const Text('Password Created!',
-                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold,
+                        Text(s('passwordCreatedTitle'),
+                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold,
                                 color: Color(0xFF1A5C2A))),
                         const SizedBox(height: 8),
-                        const Text('Your account is ready. You can now log in.',
+                        Text(s('accountReadyLogin'),
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.black54)),
+                            style: const TextStyle(color: Colors.black54)),
                         const SizedBox(height: 24),
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed: () => Navigator.of(context).pushReplacement(
-                              MaterialPageRoute(builder: (_) => const MemberLoginScreen()),
-                            ),
-                            child: const Text('Go to Login'),
+                            onPressed: () async {
+                              await SessionService.clearSession();
+                              if (!context.mounted) return;
+                              Navigator.of(context).pushReplacement(
+                                MaterialPageRoute(builder: (_) => const MemberLoginScreen()),
+                              );
+                            },
+                            child: Text(s('goToLogin')),
                           ),
                         ),
                       ],
@@ -163,8 +227,8 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Create Your Password',
-                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold,
+                        Text(s('createYourPassword'),
+                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold,
                                 color: Color(0xFF1A5C2A))),
                         const SizedBox(height: 24),
 
@@ -172,7 +236,7 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
                           controller: _passwordCtrl,
                           obscureText: _obscure1,
                           decoration: InputDecoration(
-                            labelText: 'New Password',
+                            labelText: s('newPassword'),
                             suffixIcon: IconButton(
                               icon: Icon(_obscure1 ? Icons.visibility : Icons.visibility_off),
                               onPressed: () => setState(() => _obscure1 = !_obscure1),
@@ -185,7 +249,7 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
                           controller: _confirmCtrl,
                           obscureText: _obscure2,
                           decoration: InputDecoration(
-                            labelText: 'Confirm Password',
+                            labelText: s('confirmPassword'),
                             suffixIcon: IconButton(
                               icon: Icon(_obscure2 ? Icons.visibility : Icons.visibility_off),
                               onPressed: () => setState(() => _obscure2 = !_obscure2),
@@ -198,6 +262,23 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
                           const SizedBox(height: 12),
                           Text(_error!,
                               style: const TextStyle(color: Colors.red, fontSize: 13)),
+                          if (_showLoginButton) ...[
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFF1A5C2A),
+                                  side: const BorderSide(color: Color(0xFF1A5C2A)),
+                                ),
+                                onPressed: () => Navigator.of(context).pushReplacement(
+                                  MaterialPageRoute(
+                                      builder: (_) => const MemberLoginScreen()),
+                                ),
+                                child: Text(s('goToLogin')),
+                              ),
+                            ),
+                          ],
                         ],
 
                         const SizedBox(height: 24),
@@ -209,8 +290,8 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
                                 ? const SizedBox(width: 20, height: 20,
                                     child: CircularProgressIndicator(
                                         strokeWidth: 2, color: Colors.white))
-                                : const Text('Create Password',
-                                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                : Text(s('createPasswordBtn'),
+                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                           ),
                         ),
                       ],

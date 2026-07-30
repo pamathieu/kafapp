@@ -40,6 +40,7 @@ def lambda_handler(event, context):
                 'phone':           item.get('phone', ''),
                 'email':           item.get('email', ''),
                 'memberNumber':    item.get('memberNumber', ''),
+                'plan':            item.get('plan') or data.get('plan', ''),
                 'message':         item.get('message', ''),
                 'createdAt':       item.get('createdAt', ''),
                 'address':         item.get('address') or data.get('address', ''),

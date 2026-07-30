@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/language_provider.dart';
 import '../misc/app_strings.dart';
+import '../services/dev_env.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Funeral Services screen — partner directory
@@ -47,8 +48,7 @@ class FuneralServicesScreen extends StatefulWidget {
 }
 
 class _FuneralServicesScreenState extends State<FuneralServicesScreen> {
-  static const _baseUrl =
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
+  static const _baseUrl = kApiBaseUrl;
 
   List<Map<String, dynamic>> _partners = [];
   bool _loading = true;

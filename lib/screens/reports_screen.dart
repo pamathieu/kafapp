@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/language_provider.dart';
+import '../misc/app_strings.dart';
 import '../models/member.dart';
 
 const _green = Color(0xFF1A5C2A);
@@ -51,6 +53,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final locale = context.watch<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
     final body = _loading
         ? const Center(child: CircularProgressIndicator(color: _green))
         : RefreshIndicator(
@@ -60,54 +64,54 @@ class _ReportsScreenState extends State<ReportsScreen> {
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Reports',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: _green)),
+                Text(s('reportsTitle'),
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: _green)),
                 const SizedBox(height: 16),
                 _RegistrationReport(members: _members, prospects: _prospects),
                 const SizedBox(height: 24),
-                const _PlaceholderReport(
-                  title: '2. Financial Report',
-                  subtitle: 'If members pay online',
+                _PlaceholderReport(
+                  title: s('section2Title'),
+                  subtitle: s('section2Subtitle'),
                   rows: [
-                    'Number of payments received',
-                    'Total amount collected',
-                    'Pending payments',
-                    'Declined or failed payments',
-                    'Available balance',
+                    s('paymentsReceived'),
+                    s('totalAmountCollected'),
+                    s('pendingPayments'),
+                    s('declinedPayments'),
+                    s('availableBalance'),
                   ],
                 ),
                 const SizedBox(height: 24),
-                const _PlaceholderReport(
-                  title: '3. Site Activity Report',
-                  subtitle: "Measures the site's effectiveness",
+                _PlaceholderReport(
+                  title: s('section3Title'),
+                  subtitle: s('section3Subtitle'),
                   rows: [
-                    'Number of visitors',
-                    'Average time spent on the site',
-                    'Visitor origin (Haiti, United States, Canada, etc.)',
-                    'Devices used (phone, computer)',
-                    'Number of people who started registration',
-                    'Number of people who completed registration',
+                    s('numberOfVisitors'),
+                    s('avgTimeOnSite'),
+                    s('visitorOrigin'),
+                    s('devicesUsed'),
+                    s('startedRegistration'),
+                    s('completedRegistration'),
                   ],
                 ),
                 const SizedBox(height: 24),
-                const _PlaceholderReport(
-                  title: '4. Customer Service Report',
+                _PlaceholderReport(
+                  title: s('section4Title'),
                   rows: [
-                    'Number of requests received',
-                    'Number of complaints',
-                    'Average response time',
-                    'Number of issues resolved',
+                    s('requestsReceived'),
+                    s('numberOfComplaints'),
+                    s('avgResponseTime'),
+                    s('issuesResolved'),
                   ],
                 ),
                 const SizedBox(height: 24),
-                const _PlaceholderReport(
-                  title: '5. Security Report',
+                _PlaceholderReport(
+                  title: s('section5Title'),
                   rows: [
-                    'Suspicious login attempts',
-                    'Blocked accounts',
-                    'Backups performed',
-                    'System errors',
-                    'Site availability (uptime)',
+                    s('suspiciousLogins'),
+                    s('blockedAccounts'),
+                    s('backupsPerformed'),
+                    s('systemErrors'),
+                    s('siteAvailability'),
                   ],
                 ),
               ]),
@@ -117,7 +121,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     if (widget.embedded) return Container(color: _bg, child: body);
     return Scaffold(
       backgroundColor: _bg,
-      appBar: AppBar(backgroundColor: _green, title: const Text('Reports')),
+      appBar: AppBar(backgroundColor: _green, title: Text(s('reportsTitle'))),
       body: body,
     );
   }
@@ -134,6 +138,8 @@ class _RegistrationReport extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final locale = context.watch<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
     final total = prospects.length;
     int countStatus(String s) => prospects
         .where((p) => (p['status'] as String? ?? 'pending').toLowerCase() == s)
@@ -151,25 +157,28 @@ class _RegistrationReport extends StatelessWidget {
     final female = members.where((m) => m.sex.toLowerCase() == 'f' || m.sex.toLowerCase() == 'female').length;
     final unspecifiedSex = members.length - male - female;
 
-    final ageBuckets = <String, int>{'Under 18': 0, '18-30': 0, '31-50': 0, '51+': 0, 'Unknown': 0};
+    final under18 = s('under18');
+    final age51Plus = s('age51Plus');
+    final unknownLabel = s('unknownLabel');
+    final ageBuckets = <String, int>{under18: 0, '18-30': 0, '31-50': 0, age51Plus: 0, unknownLabel: 0};
     for (final m in members) {
       final age = _ageFromDob(m.dateOfBirth);
       if (age == null) {
-        ageBuckets['Unknown'] = ageBuckets['Unknown']! + 1;
+        ageBuckets[unknownLabel] = ageBuckets[unknownLabel]! + 1;
       } else if (age < 18) {
-        ageBuckets['Under 18'] = ageBuckets['Under 18']! + 1;
+        ageBuckets[under18] = ageBuckets[under18]! + 1;
       } else if (age <= 30) {
         ageBuckets['18-30'] = ageBuckets['18-30']! + 1;
       } else if (age <= 50) {
         ageBuckets['31-50'] = ageBuckets['31-50']! + 1;
       } else {
-        ageBuckets['51+'] = ageBuckets['51+']! + 1;
+        ageBuckets[age51Plus] = ageBuckets[age51Plus]! + 1;
       }
     }
 
     final communeCounts = <String, int>{};
     for (final m in members) {
-      final commune = m.communeName.isNotEmpty ? m.communeName : 'Unknown';
+      final commune = m.communeName.isNotEmpty ? m.communeName : unknownLabel;
       communeCounts[commune] = (communeCounts[commune] ?? 0) + 1;
     }
     final sortedCommunes = communeCounts.entries.toList()
@@ -185,34 +194,34 @@ class _RegistrationReport extends StatelessWidget {
     final sortedMonths = monthlyTrend.keys.toList()..sort();
 
     return ReportCard(
-      title: '1. Member Registration Reports',
+      title: s('section1Title'),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _kv('Total registrations received', '$total'),
-        _kv('Validated registrations', '$validated'),
-        _kv('Pending registrations', '$pending'),
-        _kv('Rejected registrations', '$rejected'),
+        _kv(s('totalRegistrations'), '$total'),
+        _kv(s('validatedRegistrations'), '$validated'),
+        _kv(s('pendingRegistrations'), '$pending'),
+        _kv(s('rejectedRegistrations'), '$rejected'),
         const Divider(height: 20),
-        const Text('Breakdown by gender', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+        Text(s('breakdownByGender'), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
         const SizedBox(height: 6),
-        _kv('Male', '$male'),
-        _kv('Female', '$female'),
-        _kv('Unspecified', '$unspecifiedSex'),
+        _kv(s('male'), '$male'),
+        _kv(s('female'), '$female'),
+        _kv(s('unspecified'), '$unspecifiedSex'),
         const Divider(height: 20),
-        const Text('Breakdown by age', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+        Text(s('breakdownByAge'), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
         const SizedBox(height: 6),
         ...ageBuckets.entries.map((e) => _kv(e.key, '${e.value}')),
         const Divider(height: 20),
-        const Text('Breakdown by commune', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+        Text(s('breakdownByCommune'), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
         const SizedBox(height: 6),
         if (sortedCommunes.isEmpty)
-          Text('No data', style: TextStyle(fontSize: 12, color: Colors.grey.shade500))
+          Text(s('noData'), style: TextStyle(fontSize: 12, color: Colors.grey.shade500))
         else
           ...sortedCommunes.take(8).map((e) => _kv(e.key, '${e.value}')),
         const Divider(height: 20),
-        const Text('Monthly trend of registrations', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+        Text(s('monthlyTrendRegistrations'), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
         const SizedBox(height: 6),
         if (sortedMonths.isEmpty)
-          Text('No data', style: TextStyle(fontSize: 12, color: Colors.grey.shade500))
+          Text(s('noData'), style: TextStyle(fontSize: 12, color: Colors.grey.shade500))
         else
           ...sortedMonths.map((m) => _kv(m, '${monthlyTrend[m]}')),
       ]),
@@ -243,6 +252,8 @@ class MonthlyDashboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final locale = context.watch<LanguageProvider>().locale;
+    String tr(String key) => AppStrings.get(key, locale);
     final now = DateTime.now();
     final monthKey = '${now.year}-${now.month.toString().padLeft(2, '0')}';
 
@@ -255,23 +266,24 @@ class MonthlyDashboard extends StatelessWidget {
         .where((p) => (p['status'] as String? ?? '').toLowerCase() == 'accepted')
         .length;
     final pendingMembers = prospects.where((p) {
-      final s = (p['status'] as String? ?? '').toLowerCase();
-      return s.isEmpty || s == 'new' || s == 'pending';
+      final st = (p['status'] as String? ?? '').toLowerCase();
+      return st.isEmpty || st == 'new' || st == 'pending';
     }).length;
 
+    final notYetTracked = tr('notYetTracked');
     return ReportCard(
-      title: '6. Monthly Dashboard',
+      title: tr('section6Title'),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _kv('Number of new members registered', '$newMembersThisMonth'),
-        _kv('Number of validated members', '$validatedMembers'),
-        _kv('Number of pending members', '$pendingMembers'),
-        _kv('Site visitors', 'Not yet tracked'),
-        _kv('Amount of contributions collected', 'Not yet tracked'),
-        _kv('Number of insurance policies taken out', 'Not yet tracked'),
-        _kv('Number of claims received', 'Not yet tracked'),
-        _kv('Number of claims processed', 'Not yet tracked'),
-        _kv('Number of complaints', 'Not yet tracked'),
-        _kv('System security and availability status', 'Not yet tracked'),
+        _kv(tr('newMembersRegistered'), '$newMembersThisMonth'),
+        _kv(tr('validatedMembersCount'), '$validatedMembers'),
+        _kv(tr('pendingMembersCount'), '$pendingMembers'),
+        _kv(tr('siteVisitors'), notYetTracked),
+        _kv(tr('contributionsCollected'), notYetTracked),
+        _kv(tr('policiesTakenOut'), notYetTracked),
+        _kv(tr('claimsReceived'), notYetTracked),
+        _kv(tr('claimsProcessed'), notYetTracked),
+        _kv(tr('numberOfComplaints'), notYetTracked),
+        _kv(tr('systemSecurityStatus'), notYetTracked),
       ]),
     );
   }
@@ -289,11 +301,12 @@ class _PlaceholderReport extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final notYetTracked = AppStrings.get('notYetTracked', context.watch<LanguageProvider>().locale);
     return ReportCard(
       title: title,
       subtitle: subtitle,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start,
-          children: rows.map((r) => _kv(r, 'Not yet tracked')).toList()),
+          children: rows.map((r) => _kv(r, notYetTracked)).toList()),
     );
   }
 }

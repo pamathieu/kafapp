@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/language_provider.dart';
+import '../misc/app_strings.dart';
 import '../models/member.dart';
 
 const _green = Color(0xFF1A5C2A);
@@ -55,7 +57,8 @@ class _ChatsScreenState extends State<ChatsScreen> with SingleTickerProviderStat
         _loading          = false;
       });
     } catch (e) {
-      setState(() { _error = e.toString(); _loading = false; });
+      debugPrint('[ChatsScreen] load error: $e');
+      setState(() { _error = 'Something went wrong. Please try again.'; _loading = false; });
     }
   }
 
@@ -71,8 +74,8 @@ class _ChatsScreenState extends State<ChatsScreen> with SingleTickerProviderStat
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white60,
             tabs: [
-              Tab(text: 'Prospects (${_prospectSessions.length})'),
-              Tab(text: 'Members (${_memberSessions.length})'),
+              Tab(text: '${AppStrings.get('adminProspects', widget.locale)} (${_prospectSessions.length})'),
+              Tab(text: '${AppStrings.get('adminMembers', widget.locale)} (${_memberSessions.length})'),
             ],
           ),
         ),
@@ -97,7 +100,7 @@ class _ChatsScreenState extends State<ChatsScreen> with SingleTickerProviderStat
       backgroundColor: _bg,
       appBar: AppBar(
         backgroundColor: _green,
-        title: const Text('Chat History', style: TextStyle(color: Colors.white)),
+        title: Text(AppStrings.get('chatHistory', widget.locale), style: const TextStyle(color: Colors.white)),
       ),
       body: body,
     );
@@ -115,8 +118,9 @@ class _SessionList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (sessions.isEmpty) {
-      return const Center(
-        child: Text('No conversations yet.', style: TextStyle(color: Colors.grey)),
+      return Center(
+        child: Text(AppStrings.get('noConversationsYet', context.watch<LanguageProvider>().locale),
+            style: const TextStyle(color: Colors.grey)),
       );
     }
     return RefreshIndicator(
@@ -314,8 +318,8 @@ class _MessageBubbles extends StatelessWidget {
                   if (message['fromCache'] == true)
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
-                      child: Text('cached',
-                          style: TextStyle(fontSize: 10, color: _gold)),
+                      child: Text(AppStrings.get('cached', context.watch<LanguageProvider>().locale),
+                          style: const TextStyle(fontSize: 10, color: _gold)),
                     ),
                 ],
               ),

@@ -1,15 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import '../providers/language_provider.dart';
 import '../misc/app_strings.dart';
 import '../services/session_service.dart';
 import '../services/dev_env.dart';
+import '../services/share_service.dart';
 import 'member_login_screen.dart';
 import 'policy_screen.dart';
 import 'plans_screen.dart';
@@ -19,6 +22,7 @@ import 'death_report_screen.dart';
 import 'enrollment_form_screen.dart';
 import 'quick_quote_screen.dart';
 import 'payment_screen.dart';
+import 'shares_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Colour palette
@@ -38,20 +42,24 @@ class MemberDashboardScreen extends StatefulWidget {
 class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
   int _tab = 0;
   bool _hasPolicy = true;
+  bool _showPaymentSuccess = false;
 
   final _chatPanelKey = GlobalKey<_DashboardChatPanelState>();
+  final _dashboardTabKey = GlobalKey<_DashboardTabState>();
 
   // Live member data — refreshed from server on init so notifications are current
   late Map<String, dynamic> _member;
 
   Timer? _refreshTimer;
 
-  static const _baseUrl =
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
+  static const _baseUrl = kApiBaseUrl;
 
   @override
   void initState() {
     super.initState();
+    if (kIsWeb && Uri.base.queryParameters['payment'] == 'success') {
+      _showPaymentSuccess = true;
+    }
     
     // Validate member data before using
     try {
@@ -124,8 +132,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
     if (memberId.isEmpty) return;
     try {
       final uri = Uri.parse(
-          'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod'
-          '${devPath('/member/policy')}?memberId=${Uri.encodeComponent(memberId)}');
+          '$kApiBaseUrl${devPath('/member/policy')}?memberId=${Uri.encodeComponent(memberId)}');
       final response = await http.get(uri);
       if (!mounted) return;
       final data = json.decode(response.body) as Map<String, dynamic>;
@@ -145,8 +152,9 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
       String s(String key) => AppStrings.get(key, locale);
 
       final member = _member;
-      final name = member['full_name'] as String? ?? 'Member';
-      final isActive = member['status'] == true || member['status'] == 'true';
+      final name = member['full_name'] as String? ?? s('memberFallback');
+      final isActive = member['status'] == 'Active';
+      final isPendingStatus = member['status'] == 'Pending';
 
       Future<void> handleLogout() async {
         await SessionService.clearSession();
@@ -159,12 +167,26 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
 
       final tabs = [
         _DashboardTab(
+          key: _dashboardTabKey,
           member: _member,
           onGoPolicies: () => _goTab(1),
           onOpenChat: () => _chatPanelKey.currentState?.expand(),
+          onPaymentMade: () => setState(() => _showPaymentSuccess = true),
         ),
-        PolicyScreen(member: _member, embedded: true),
-        _ServicesTab(member: _member, locale: locale),
+        PolicyScreen(
+          member: _member,
+          embedded: true,
+          onPaymentMade: () {
+            _dashboardTabKey.currentState?.refresh();
+            setState(() => _showPaymentSuccess = true);
+          },
+        ),
+        _ServicesTab(
+          member: _member,
+          locale: locale,
+          onMemberUpdated: (fresh) => setState(() => _member = fresh),
+          onPaymentMade: () => setState(() => _showPaymentSuccess = true),
+        ),
         _ProfileTab(
           member: _member,
           locale: locale,
@@ -198,6 +220,7 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
           name: name,
           locale: locale,
           isActive: isActive,
+          isPendingStatus: isPendingStatus,
           hasPolicy: _hasPolicy,
           onLogout: () async {
             await SessionService.clearSession();
@@ -211,7 +234,35 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
               context.read<LanguageProvider>().setLocale(code),
           member: _member,
         ),
-        body: IndexedStack(index: _tab, children: tabs),
+        body: Column(
+          children: [
+            if (!isActive && member['reason'] == 'Did not pay membership share')
+              _PendingMembershipBanner(
+                text: () {
+                  final paid = double.tryParse(member['membershipSharesPaid']?.toString() ?? '') ?? 0.0;
+                  if (paid > 0) {
+                    final remaining = (50.0 - paid).clamp(0.0, 50.0);
+                    return s('pendingMembershipShareRemaining')
+                        .replaceAll('{amount}', '\$${remaining.toStringAsFixed(2)}');
+                  }
+                  return s('pendingMembershipShareWarning');
+                }(),
+                memberId: member['memberId'] as String? ?? '',
+                memberName: name,
+                onMemberUpdated: (fresh) => setState(() => _member = fresh),
+              ),
+            if (_showPaymentSuccess)
+              _PaymentSuccessBanner(
+                locale: locale,
+                onSeeReceipt: () {
+                  setState(() => _showPaymentSuccess = false);
+                  _dashboardTabKey.currentState?.scrollToPayments();
+                },
+                onDismiss: () => setState(() => _showPaymentSuccess = false),
+              ),
+            Expanded(child: IndexedStack(index: _tab, children: tabs)),
+          ],
+        ),
         bottomNavigationBar: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -237,6 +288,8 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
     } catch (e) {
       // If build fails, clear session and return to login
       debugPrint('Dashboard build error: $e');
+      final locale = context.read<LanguageProvider>().locale;
+      String s(String key) => AppStrings.get(key, locale);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           SessionService.clearSession().then((_) {
@@ -257,20 +310,96 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
             children: [
               const Icon(Icons.error_outline, size: 48, color: Colors.red),
               const SizedBox(height: 16),
-              const Text('An error occurred. Redirecting to login...'),
+              Text(s('errorOccurredRedirecting')),
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: () => Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(builder: (_) => const MemberLoginScreen()),
                   (_) => false,
                 ),
-                child: const Text('Go to Login'),
+                child: Text(s('goToLogin')),
               ),
             ],
           ),
         ),
       );
     }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Pending membership share banner
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PendingMembershipBanner extends StatelessWidget {
+  final String text;
+  final String memberId;
+  final String memberName;
+  final void Function(Map<String, dynamic>) onMemberUpdated;
+
+  const _PendingMembershipBanner({
+    required this.text,
+    required this.memberId,
+    required this.memberName,
+    required this.onMemberUpdated,
+  });
+
+  Future<void> _payShare(BuildContext context) async {
+    final paid = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SharesScreen(
+          memberId: memberId,
+          memberName: memberName,
+          isPending: true,
+        ),
+      ),
+    );
+    if (paid != true) return;
+    try {
+      final uri = Uri.parse(
+          '$kApiBaseUrl/members?memberId=${Uri.encodeComponent(memberId)}&companyId=KAFA-001');
+      final response = await http.get(uri);
+      if (response.statusCode != 200) return;
+      final fresh = json.decode(response.body) as Map<String, dynamic>;
+      fresh.remove('credentials');
+      await SessionService.saveSession(fresh);
+      onMemberUpdated(fresh);
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final locale = context.watch<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      color: Colors.orange.shade50,
+      child: Row(
+        children: [
+          Icon(Icons.warning_amber_rounded, color: Colors.orange.shade800, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(color: Colors.orange.shade900, fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
+          const SizedBox(width: 10),
+          TextButton(
+            onPressed: () => _payShare(context),
+            style: TextButton.styleFrom(
+              backgroundColor: Colors.orange.shade800,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: Text(s('payNow'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -282,6 +411,7 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String name;
   final String locale;
   final bool isActive;
+  final bool isPendingStatus;
   final bool hasPolicy;
   final VoidCallback onLogout;
   final void Function(String) onLocaleChange;
@@ -291,6 +421,7 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.name,
     required this.locale,
     required this.isActive,
+    required this.isPendingStatus,
     required this.hasPolicy,
     required this.onLogout,
     required this.onLocaleChange,
@@ -366,8 +497,11 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color:
-                      isActive ? Colors.green.shade100 : Colors.grey.shade200,
+                  color: isActive
+                      ? Colors.green.shade100
+                      : isPendingStatus
+                          ? Colors.amber.shade100
+                          : Colors.grey.shade200,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -375,16 +509,24 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
                       size: 8,
                       color: isActive
                           ? Colors.green.shade700
-                          : Colors.grey.shade500),
+                          : isPendingStatus
+                              ? Colors.amber.shade700
+                              : Colors.grey.shade500),
                   const SizedBox(width: 6),
                   Text(
-                    isActive ? s('activeMember') : s('inactiveMember'),
+                    isActive
+                        ? s('activeMember')
+                        : isPendingStatus
+                            ? s('pendingMember')
+                            : s('inactiveMember'),
                     style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                         color: isActive
                             ? Colors.green.shade700
-                            : Colors.grey.shade600),
+                            : isPendingStatus
+                                ? Colors.amber.shade700
+                                : Colors.grey.shade600),
                   ),
                 ]),
               ),
@@ -472,8 +614,7 @@ class _AlertsBellButton extends StatefulWidget {
 }
 
 class _AlertsBellButtonState extends State<_AlertsBellButton> {
-  static const _baseUrl =
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
+  static const _baseUrl = kApiBaseUrl;
   bool _paymentDismissed = false;
 
   Map<String, dynamic>? get _paymentNotif {
@@ -498,8 +639,7 @@ class _AlertsBellButtonState extends State<_AlertsBellButton> {
   }
 
   List<Map<String, dynamic>> _buildAlerts(String Function(String) s) {
-    final isActive =
-        widget.member['status'] == true || widget.member['status'] == 'true';
+    final isActive = widget.member['status'] == 'Active';
     final alerts = <Map<String, dynamic>>[];
 
     // Payment notification at the top
@@ -549,10 +689,11 @@ class _AlertsBellButtonState extends State<_AlertsBellButton> {
             ...alerts.map((a) {
               if (a['type'] == 'payment') {
                 final notif = a['data'] as Map<String, dynamic>;
-                final amount = notif['amountPaid']?.toString() ?? '—';
+                final rawAmount = notif['amountPaid']?.toString() ?? '—';
+                final isUsd = (notif['currency'] as String? ?? 'usd').toLowerCase() == 'usd';
+                final amount = rawAmount == '—' ? rawAmount : (isUsd ? 'US\$$rawAmount' : 'HTG $rawAmount');
                 final rawDate = notif['paymentDate'] as String? ?? '—';
-                final date = AppStrings.formatDate(rawDate, widget.locale);
-                final ref = notif['referenceNo'] as String? ?? '—';
+                final date = AppStrings.formatDateTime(rawDate, widget.locale);
                 final policyNo = notif['policyNo'] as String? ?? '—';
                 final method = notif['paymentMethod'] as String? ?? '—';
                 final period = notif['paymentPeriod'] as String? ?? '';
@@ -590,9 +731,8 @@ class _AlertsBellButtonState extends State<_AlertsBellButton> {
                         const SizedBox(height: 8),
                         if (period.isNotEmpty) _NotifRow(s('periodLabel'), period),
                         _NotifRow(s('collectedOnLabel'), date),
-                        _NotifRow(s('policyPrefix'), policyNo),
+                        _NotifRow(s('paymentTypeLabel'), policyNo),
                         _NotifRow(s('methodLabel'), method),
-                        _NotifRow(s('referenceLabel'), ref),
                         const SizedBox(height: 10),
                         SizedBox(
                           width: double.infinity,
@@ -686,11 +826,14 @@ class _DashboardTab extends StatefulWidget {
   final Map<String, dynamic> member;
   final VoidCallback onGoPolicies;
   final VoidCallback onOpenChat;
+  final VoidCallback? onPaymentMade;
 
   const _DashboardTab({
+    super.key,
     required this.member,
     required this.onGoPolicies,
     required this.onOpenChat,
+    this.onPaymentMade,
   });
 
   @override
@@ -701,15 +844,45 @@ class _DashboardTabState extends State<_DashboardTab>
     with SingleTickerProviderStateMixin {
   List<Map<String, dynamic>> _policies = [];
   bool _loadingPolicies = true;
+  List<Map<String, dynamic>> _shares = [];
+  bool _loadingShares = true;
   bool _quickActExpanded = true;
   bool _optionsOpen = false;
   Timer? _refreshTimer;
 
+  final _shareService = ShareService();
+  final _scrollCtrl = ScrollController();
+  final _payHistoryKey = GlobalKey();
+
   late final AnimationController _qaCtrl;
   late final Animation<double> _qaAnim;
 
-  static const String _baseUrl =
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
+  static const String _baseUrl = kApiBaseUrl;
+
+  int _paymentEntryCount() {
+    var count = 0;
+    for (final entry in _policies) {
+      count += (entry['paymentHistory'] as List<dynamic>? ?? []).length;
+    }
+    count += _shares.where((s) => s['status'] != 'FAILED').length;
+    return count;
+  }
+
+  /// Called by sibling tabs (e.g. after a premium payment or share purchase
+  /// made from the Policies tab) so the Payments Overview card reflects it
+  /// immediately instead of waiting for the 20s background poll. Polls for a
+  /// while since a successful client-side payment can resolve before the
+  /// Stripe webhook has actually recorded it server-side (webhook delivery
+  /// latency varies, e.g. several seconds via the `stripe listen` CLI
+  /// forwarder in local dev).
+  Future<void> refresh() async {
+    final before = _paymentEntryCount();
+    for (var attempt = 0; attempt < 20; attempt++) {
+      await Future.wait([_fetchPolicies(), _fetchShares()]);
+      if (_paymentEntryCount() > before) break;
+      if (attempt < 19) await Future.delayed(const Duration(seconds: 1));
+    }
+  }
 
   @override
   void initState() {
@@ -723,20 +896,35 @@ class _DashboardTabState extends State<_DashboardTab>
     final memberId = widget.member['memberId'] as String? ?? '';
     if (memberId.isNotEmpty) {
       _fetchPolicies();
+      _fetchShares();
       // Silently re-fetch so payments/policy changes made elsewhere (e.g. by
       // an admin) show up here without the member needing to reload.
-      _refreshTimer =
-          Timer.periodic(const Duration(seconds: 20), (_) => _fetchPolicies());
+      _refreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+        _fetchPolicies();
+        _fetchShares();
+      });
     } else {
-      setState(() => _loadingPolicies = false);
+      setState(() {
+        _loadingPolicies = false;
+        _loadingShares = false;
+      });
     }
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _scrollCtrl.dispose();
     _qaCtrl.dispose();
     super.dispose();
+  }
+
+  void scrollToPayments() {
+    final ctx = _payHistoryKey.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(ctx,
+          duration: const Duration(milliseconds: 400), curve: Curves.easeOut);
+    }
   }
 
   void _openChat() => widget.onOpenChat();
@@ -749,6 +937,99 @@ class _DashboardTabState extends State<_DashboardTab>
       return '${parts.isNotEmpty ? parts.first : text}.';
     } catch (_) {
       return 'Contact KAFA for authorization.';
+    }
+  }
+
+  Future<void> _handleDashboardPayNow(BuildContext ctx) async {
+    if (_policies.isEmpty) return;
+    final locale = context.read<LanguageProvider>().locale;
+    String s(String k) => AppStrings.get(k, locale);
+    if (_policies.length > 1) {
+      await _showDashboardPolicyPicker(ctx, s);
+    } else {
+      await _navigateDashboardPayment(ctx, s, _policies.first);
+    }
+  }
+
+  Future<void> _showDashboardPolicyPicker(
+      BuildContext ctx, String Function(String) s) async {
+    await showModalBottomSheet(
+      context: ctx,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(s('selectPolicyToPay'),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+            const SizedBox(height: 12),
+            ..._policies.map((entry) {
+              final pol = entry['policy'] as Map<String, dynamic>? ?? {};
+              final policyNo = pol['policyNo'] as String? ?? '—';
+              final productCode = pol['productCode'] as String? ?? '—';
+              final premium = pol['premiumAmount']?.toString() ?? '—';
+              return ListTile(
+                leading: const Icon(Icons.policy_outlined, color: _green),
+                title: Text(policyNo,
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text('$productCode  ·  US\$$premium'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await _navigateDashboardPayment(ctx, s, entry);
+                },
+              );
+            }),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _navigateDashboardPayment(BuildContext ctx,
+      String Function(String) s, Map<String, dynamic> entry) async {
+    final pol = entry['policy'] as Map<String, dynamic>? ?? {};
+    final memberId = widget.member['memberId'] as String? ?? '';
+    final memberName =
+        (widget.member['full_name'] as String?)?.trim() ?? s('memberFallback');
+    final policyId = pol['policyNo'] as String? ?? '';
+    final premiumRaw = pol['premiumAmount']?.toString() ?? '0';
+    final nextDueDate = pol['nextDueDate'] as String? ?? '';
+    final amountCents = ((double.tryParse(premiumRaw) ?? 0) * 100).round();
+    final paid = await Navigator.push<bool>(
+      ctx,
+      MaterialPageRoute(
+        builder: (_) => PaymentScreen(
+          args: PaymentArgs(
+            memberId: memberId,
+            policyId: policyId,
+            memberName: memberName,
+            amountCents: amountCents,
+            periodStart: '',
+            periodEnd: nextDueDate,
+            currency: 'usd',
+            productCode: pol['productCode'] as String?,
+          ),
+        ),
+      ),
+    );
+    if (paid == true) {
+      widget.onPaymentMade?.call();
+      refresh();
     }
   }
 
@@ -784,6 +1065,21 @@ class _DashboardTabState extends State<_DashboardTab>
     }
   }
 
+  Future<void> _fetchShares() async {
+    final memberId = widget.member['memberId'] as String? ?? '';
+    try {
+      final shares = await _shareService.getShares(memberId);
+      if (mounted) {
+        setState(() {
+          _shares = shares;
+          _loadingShares = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingShares = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     try {
@@ -791,9 +1087,10 @@ class _DashboardTabState extends State<_DashboardTab>
       String s(String key) => AppStrings.get(key, locale);
 
       final member = widget.member;
-      final name = (member['full_name'] as String?)?.trim() ?? 'Member';
+      final name = (member['full_name'] as String?)?.trim() ?? s('memberFallback');
       final memberId = (member['memberId'] as String?)?.trim() ?? '';
-      final isActive = member['status'] == true || member['status'] == 'true';
+      final isActive = member['status'] == 'Active';
+      final isPendingStatus = member['status'] == 'Pending';
       final totalPolicies = _policies.length;
       final activePolicies = _policies.where((p) {
         try {
@@ -814,13 +1111,34 @@ class _DashboardTabState extends State<_DashboardTab>
 
       final firstName = name.contains(' ') ? name.split(' ').first : name;
 
+      // ── Payments overview: premium installments (per policy) + share purchases ──
+      double premiumsPaid = 0;
+      int premiumCount = 0;
+      for (final entry in _policies) {
+        final history = entry['paymentHistory'] as List<dynamic>? ?? [];
+        for (final p in history) {
+          premiumsPaid += (p['amountPaid'] as num? ?? 0).toDouble();
+          premiumCount++;
+        }
+      }
+      double sharesPaid = 0;
+      int shareCount = 0;
+      for (final share in _shares) {
+        if (share['status'] == 'SUCCEEDED') {
+          sharesPaid += (share['amount'] as num? ?? 0).toDouble();
+          shareCount++;
+        }
+      }
+      final loadingPayments = _loadingPolicies || _loadingShares;
+
       return Column(
         children: [
           Expanded(
             child: RefreshIndicator(
-              onRefresh: _fetchPolicies,
+              onRefresh: () => Future.wait([_fetchPolicies(), _fetchShares()]),
               color: _green,
               child: SingleChildScrollView(
+                controller: _scrollCtrl,
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 92),
                 child: Column(
@@ -836,12 +1154,16 @@ class _DashboardTabState extends State<_DashboardTab>
                       Text(
                         isActive
                             ? s('membershipActive')
-                            : s('membershipInactive'),
+                            : isPendingStatus
+                                ? s('membershipPending')
+                                : s('membershipInactive'),
                         style: TextStyle(
                             fontSize: 13,
                             color: isActive
                                 ? Colors.green.shade700
-                                : Colors.grey.shade600),
+                                : isPendingStatus
+                                    ? Colors.amber.shade700
+                                    : Colors.grey.shade600),
                       ),
 
                       // ── No-policy inline warning + options dropdown ───────────────────
@@ -977,6 +1299,18 @@ class _DashboardTabState extends State<_DashboardTab>
                     ],
                     const SizedBox(height: 16),
 
+                    // ── Payments overview ─────────────────────────────────────────────
+                    _PaymentsOverviewCard(
+                      loading: loadingPayments,
+                      totalPaid: premiumsPaid + sharesPaid,
+                      transactionCount: premiumCount + shareCount,
+                      premiumsPaid: premiumsPaid,
+                      premiumCount: premiumCount,
+                      sharesPaid: sharesPaid,
+                      shareCount: shareCount,
+                    ),
+                    const SizedBox(height: 16),
+
                     // ── Summary cards row ─────────────────────────────────────────────
                     IntrinsicHeight(
                       child: Row(
@@ -1000,35 +1334,7 @@ class _DashboardTabState extends State<_DashboardTab>
                                 nextPayDate: nextPayDate,
                                 premiumAmount: premiumAmount,
                                 locale: locale,
-                                onPayNow: () {
-                                  final policyId =
-                                      firstPolicyMap?['policyNo'] as String? ??
-                                          '';
-                                  final premiumRaw =
-                                      firstPolicyMap?['premiumAmount']
-                                              ?.toString() ??
-                                          '0';
-                                  final amountCents =
-                                      ((double.tryParse(premiumRaw) ?? 0) * 100)
-                                          .round();
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => PaymentScreen(
-                                        args: PaymentArgs(
-                                          memberId: memberId,
-                                          policyId: policyId,
-                                          memberName: name,
-                                          amountCents: amountCents,
-                                          periodStart: '',
-                                          periodEnd: nextPayDate,
-                                          currency: 'usd',
-                                          productCode: firstPolicyMap?['productCode'] as String?,
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                },
+                                onPayNow: () => _handleDashboardPayNow(context),
                               ),
                             ),
                         ],
@@ -1100,7 +1406,7 @@ class _DashboardTabState extends State<_DashboardTab>
                                 color: const Color(0xFF7B1FA2),
                                 isFirst: false,
                                 isLast: false,
-                                onTap: widget.onGoPolicies,
+                                onTap: scrollToPayments,
                               ),
                             _QuickAction(
                               icon: Icons.headset_mic,
@@ -1112,12 +1418,38 @@ class _DashboardTabState extends State<_DashboardTab>
                               onTap: () => _showSupportSheet(context, s),
                             ),
                             _QuickAction(
+                              icon: Icons.savings_outlined,
+                              label: s('buySharesTitle'),
+                              subtitle: isActive
+                                  ? s('buySharesServiceSub')
+                                  : s('payShareToActivateSub'),
+                              color: const Color(0xFF8B6914),
+                              isFirst: false,
+                              isLast: false,
+                              onTap: () async {
+                                final purchased = await Navigator.push<bool>(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => SharesScreen(
+                                      memberId: memberId,
+                                      memberName: name,
+                                      isPending: !isActive,
+                                    ),
+                                  ),
+                                );
+                                if (purchased == true) {
+                                  widget.onPaymentMade?.call();
+                                  refresh();
+                                }
+                              },
+                            ),
+                            _QuickAction(
                               icon: Icons.crisis_alert,
                               label: s('deathEmergency'),
                               subtitle: s('deathEmergencySub'),
                               color: const Color(0xFFB71C1C),
                               isFirst: false,
-                              isLast: true,
+                              isLast: false,
                               onTap: () => Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -1129,9 +1461,33 @@ class _DashboardTabState extends State<_DashboardTab>
                                 ),
                               ),
                             ),
+                            _QuickAction(
+                              icon: Icons.language,
+                              label: s('visitWebsite'),
+                              subtitle: s('visitWebsiteSub'),
+                              color: const Color(0xFF1A5C2A),
+                              isFirst: false,
+                              isLast: true,
+                              onTap: () => launchUrl(
+                                Uri.parse('https://kafayiti.com'),
+                                mode: LaunchMode.externalApplication,
+                              ),
+                            ),
                           ]),
                         ),
                       ]),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // ── Payment History ───────────────────────────────────────
+                    SizedBox(
+                      key: _payHistoryKey,
+                      width: double.infinity,
+                      child: _SectionCard(
+                        title: s('paymentHistory'),
+                        icon: Icons.history,
+                        child: _buildPaymentHistoryList(context, locale, s),
+                      ),
                     ),
                   ]),
             ),
@@ -1141,6 +1497,8 @@ class _DashboardTabState extends State<_DashboardTab>
     );
     } catch (e) {
       debugPrint('Dashboard tab build error: $e');
+      final locale = context.read<LanguageProvider>().locale;
+      String s(String key) => AppStrings.get(key, locale);
       return Scaffold(
         backgroundColor: _green,
         body: Center(
@@ -1149,12 +1507,12 @@ class _DashboardTabState extends State<_DashboardTab>
             children: [
               const Icon(Icons.error_outline, size: 48, color: Colors.white),
               const SizedBox(height: 16),
-              const Text('An error occurred',
-                  style: TextStyle(fontSize: 16, color: Colors.white)),
+              Text(s('errorOccurred'),
+                  style: const TextStyle(fontSize: 16, color: Colors.white)),
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: _fetchPolicies,
-                child: const Text('Retry'),
+                child: Text(s('retry')),
               ),
             ],
           ),
@@ -1220,7 +1578,9 @@ class _DashboardTabState extends State<_DashboardTab>
                   const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
           _SupportTile(
-              icon: Icons.phone, label: s('callUs'), value: '+509 XXXX-XXXX'),
+              icon: Icons.phone,
+              label: s('callUs'),
+              value: '(509) 3500-0326\n(509) 4439-8595\n(850) 321-4670'),
           const Divider(),
           _SupportTile(
               icon: Icons.email, label: s('email'), value: 'kontak@kafayiti.com'),
@@ -1229,6 +1589,216 @@ class _DashboardTabState extends State<_DashboardTab>
               icon: Icons.access_time,
               label: s('hours'),
               value: s('hoursValue')),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildPaymentHistoryList(
+      BuildContext context, String locale, String Function(String) s) {
+    final entries = <Map<String, dynamic>>[];
+
+    for (final entry in _policies) {
+      final pol = entry['policy'] as Map<String, dynamic>? ?? {};
+      final policyNo = pol['policyNo'] as String? ?? '';
+      final history = entry['paymentHistory'] as List<dynamic>? ?? [];
+      for (final p in history) {
+        final pm = p as Map<String, dynamic>;
+        entries.add({
+          'type': 'premium',
+          'label': policyNo.isNotEmpty
+              ? '${s('payPremium')} · $policyNo'
+              : s('payPremium'),
+          'date': pm['paymentDate'] as String? ?? '',
+          'amount': (pm['amountPaid'] as num? ?? 0).toDouble(),
+          'policyNo': policyNo,
+          'period': pm['paymentPeriod'] as String? ?? '',
+          'reference': pm['referenceNo'] as String? ?? '',
+          'status': 'PAID',
+        });
+      }
+    }
+
+    for (final share in _shares) {
+      final rawType = (share['shareType'] as String? ?? '').toLowerCase();
+      entries.add({
+        'type': 'share',
+        'label': rawType == 'preferred'
+            ? s('preferredShare')
+            : s('membershipShare'),
+        'date': share['datetime'] as String? ?? '',
+        'amount': (share['amount'] as num? ?? 0).toDouble(),
+        'shareType': rawType,
+        'shareId': share['shareId'] as String? ?? '',
+        'apr': (share['apr'] as num? ?? 0).toDouble(),
+        'status': share['status'] as String? ?? '',
+      });
+    }
+
+    if (entries.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Text(s('noPaymentRecords'),
+            style: TextStyle(color: Colors.grey.shade500, fontSize: 13)),
+      );
+    }
+
+    entries.sort((a, b) =>
+        (b['date'] as String).compareTo(a['date'] as String));
+
+    return Column(
+      children: entries.map((e) {
+        final isPremium = e['type'] == 'premium';
+        final amount = e['amount'] as double;
+        final date = e['date'] as String;
+        final label = e['label'] as String;
+        final displayDate = date.length >= 10 ? date.substring(0, 10) : date;
+
+        return InkWell(
+          onTap: () => _showPaymentReceipt(context, e, locale, s),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: isPremium
+                      ? Colors.green.shade50
+                      : const Color(0xFFF5F0E8),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isPremium ? Icons.shield_outlined : Icons.savings_outlined,
+                  color: isPremium ? _green : const Color(0xFF8B6914),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Text(label,
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A1A))),
+                  if (displayDate.isNotEmpty)
+                    Text(AppStrings.formatDate(displayDate, locale),
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey.shade500)),
+                ]),
+              ),
+              Row(children: [
+                Text('US\$${amount.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: _green)),
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_right,
+                    size: 16, color: Colors.grey.shade400),
+              ]),
+            ]),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  void _showPaymentReceipt(BuildContext context, Map<String, dynamic> e,
+      String locale, String Function(String) s) {
+    final isPremium = e['type'] == 'premium';
+    final amount = e['amount'] as double;
+    final date = e['date'] as String;
+    final status = e['status'] as String? ?? '';
+    final displayDate =
+        AppStrings.formatDate(date.length >= 10 ? date.substring(0, 10) : date, locale);
+
+    final Color accentColor = isPremium ? _green : const Color(0xFF8B6914);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 36),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          // Drag handle
+          Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 20),
+
+          // Icon + title
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.1),
+                shape: BoxShape.circle),
+            child: Icon(
+              isPremium ? Icons.shield_outlined : Icons.savings_outlined,
+              color: accentColor,
+              size: 28,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(s('receiptTitle'),
+              style: const TextStyle(
+                  fontSize: 18, fontWeight: FontWeight.bold,
+                  color: Color(0xFF1A1A1A))),
+          const SizedBox(height: 4),
+          Text('US\$${amount.toStringAsFixed(2)}',
+              style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w700,
+                  color: accentColor)),
+          const SizedBox(height: 20),
+          const Divider(),
+          const SizedBox(height: 12),
+
+          // Detail rows
+          _ReceiptRow(label: s('paymentTypeLabel'), value: e['label'] as String),
+          _ReceiptRow(label: s('dateLabel'), value: displayDate),
+          if (isPremium) ...[
+            if ((e['policyNo'] as String).isNotEmpty)
+              _ReceiptRow(
+                  label: s('policyPrefix'),
+                  value: e['policyNo'] as String),
+            if ((e['period'] as String).isNotEmpty)
+              _ReceiptRow(
+                  label: s('periodLabel'),
+                  value: e['period'] as String),
+            if ((e['reference'] as String).isNotEmpty)
+              _ReceiptRow(
+                  label: s('referenceLabel'),
+                  value: e['reference'] as String),
+          ] else ...[
+            if ((e['shareId'] as String).isNotEmpty)
+              _ReceiptRow(
+                  label: s('referenceLabel'),
+                  value: e['shareId'] as String),
+            if ((e['apr'] as double) > 0)
+              _ReceiptRow(
+                  label: 'APR',
+                  value: '${(e['apr'] as double).toStringAsFixed(2)}%'),
+          ],
+          if (status.isNotEmpty)
+            _ReceiptRow(
+                label: s('statusLabel'),
+                value: status,
+                valueColor: (status == 'PAID' || status == 'SUCCEEDED')
+                    ? Colors.green.shade700
+                    : Colors.orange.shade700),
+          const SizedBox(height: 8),
         ]),
       ),
     );
@@ -1374,6 +1944,8 @@ class _DashboardChatPanelState extends State<_DashboardChatPanel>
 
   @override
   Widget build(BuildContext context) {
+    final locale = context.watch<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
     final panelH = MediaQuery.of(context).size.height * 0.55;
 
     return AnimatedContainer(
@@ -1413,9 +1985,9 @@ class _DashboardChatPanelState extends State<_DashboardChatPanel>
                       color: Colors.white, size: 15),
                 ),
                 const SizedBox(width: 10),
-                const Text(
-                  'Chat',
-                  style: TextStyle(
+                Text(
+                  s('chatHeader'),
+                  style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                       color: Color(0xFF1A1A1A)),
@@ -1690,8 +2262,7 @@ class _TransactionsTab extends StatefulWidget {
 }
 
 class _TransactionsTabState extends State<_TransactionsTab> {
-  static const String _baseUrl =
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
+  static const String _baseUrl = kApiBaseUrl;
 
   bool _loading = true;
   List<Map<String, dynamic>> _policies = [];
@@ -1869,20 +2440,20 @@ class _TransactionsTabState extends State<_TransactionsTab> {
             ),
             const SizedBox(height: 20),
             _SectionCard(
-              title: s('paymentHistory'),
-              icon: Icons.history,
-              child: _policies.isEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Text(s('noPaymentRecords'),
-                          style: TextStyle(
-                              color: Colors.grey.shade500, fontSize: 13)),
-                    )
-                  : Column(
-                      children: _policies
-                          .map((p) =>
-                              _PaymentHistoryTile(policy: p, locale: locale))
-                          .toList()),
+                title: s('paymentHistory'),
+                icon: Icons.history,
+                child: _policies.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text(s('noPaymentRecords'),
+                            style: TextStyle(
+                                color: Colors.grey.shade500, fontSize: 13)),
+                      )
+                    : Column(
+                        children: _policies
+                            .map((p) =>
+                                _PaymentHistoryTile(policy: p, locale: locale))
+                            .toList()),
             ),
           ],
         ]),
@@ -1891,14 +2462,70 @@ class _TransactionsTabState extends State<_TransactionsTab> {
   }
 
   void _handlePayNow(BuildContext context, String Function(String) s) {
-    final firstEntry = _policies.isNotEmpty ? _policies.first : null;
-    final firstPolicy = firstEntry?['policy'] as Map<String, dynamic>?;
-    final premiumRaw = firstPolicy?['premiumAmount']?.toString() ?? '0';
-    final policyId = firstPolicy?['policyNo'] as String? ?? '';
-    final nextDueDate = firstPolicy?['nextDueDate'] as String? ?? '';
+    if (_policies.length > 1) {
+      _showPolicyPicker(context, s);
+    } else {
+      _navigateToPayment(context, s, _policies.first);
+    }
+  }
+
+  void _showPolicyPicker(BuildContext context, String Function(String) s) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(s('selectPolicyToPay'),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+            const SizedBox(height: 12),
+            ..._policies.map((entry) {
+              final pol = entry['policy'] as Map<String, dynamic>? ?? {};
+              final policyNo = pol['policyNo'] as String? ?? '—';
+              final productCode = pol['productCode'] as String? ?? '—';
+              final premium = pol['premiumAmount']?.toString() ?? '—';
+              return ListTile(
+                leading: const Icon(Icons.policy_outlined, color: _green),
+                title: Text(policyNo,
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text('$productCode  ·  US\$$premium'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(context);
+                  _navigateToPayment(context, s, entry);
+                },
+              );
+            }),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _navigateToPayment(BuildContext context, String Function(String) s,
+      Map<String, dynamic> entry) {
+    final pol = entry['policy'] as Map<String, dynamic>? ?? {};
+    final policyId = pol['policyNo'] as String? ?? '';
+    final premiumRaw = pol['premiumAmount']?.toString() ?? '0';
+    final nextDueDate = pol['nextDueDate'] as String? ?? '';
     final memberId = widget.member['memberId'] as String? ?? '';
     final memberName =
-        (widget.member['full_name'] as String?)?.trim() ?? 'Member';
+        (widget.member['full_name'] as String?)?.trim() ?? s('memberFallback');
     final amountCents = ((double.tryParse(premiumRaw) ?? 0) * 100).round();
 
     Navigator.push(
@@ -1913,7 +2540,7 @@ class _TransactionsTabState extends State<_TransactionsTab> {
             periodStart: '',
             periodEnd: nextDueDate,
             currency: 'usd',
-            productCode: firstPolicy?['productCode'] as String?,
+            productCode: pol['productCode'] as String?,
           ),
         ),
       ),
@@ -1924,6 +2551,139 @@ class _TransactionsTabState extends State<_TransactionsTab> {
 // ─────────────────────────────────────────────────────────────────────────────
 //  Reusable small widgets
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ── Payments overview: premiums + share purchases, combined ──────────────────
+
+class _PaymentsOverviewCard extends StatelessWidget {
+  final bool loading;
+  final double totalPaid;
+  final int transactionCount;
+  final double premiumsPaid;
+  final int premiumCount;
+  final double sharesPaid;
+  final int shareCount;
+
+  const _PaymentsOverviewCard({
+    required this.loading,
+    required this.totalPaid,
+    required this.transactionCount,
+    required this.premiumsPaid,
+    required this.premiumCount,
+    required this.sharesPaid,
+    required this.shareCount,
+  });
+
+  String _money(double v) => '\$${v.toStringAsFixed(2)}';
+
+  @override
+  Widget build(BuildContext context) {
+    final locale = context.watch<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2))
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: const BoxDecoration(
+                  color: Color(0xFFFFF8E1), shape: BoxShape.circle),
+              child: const Icon(Icons.receipt_long_outlined,
+                  color: Color(0xFF8B6914), size: 20),
+            ),
+            const SizedBox(width: 10),
+            Text(s('paymentsOverview'),
+                style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1A1A1A))),
+          ]),
+          const SizedBox(height: 14),
+          if (loading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 4),
+              child: SizedBox(
+                height: 18, width: 18,
+                child: CircularProgressIndicator(strokeWidth: 2, color: _green),
+              ),
+            )
+          else ...[
+            Row(children: [
+              Expanded(
+                child: _PaymentStat(
+                    label: s('totalPaid'), value: _money(totalPaid))),
+              Expanded(
+                child: _PaymentStat(
+                    label: s('transactions'), value: '$transactionCount')),
+            ]),
+            if (transactionCount > 0) ...[
+              const Divider(height: 24),
+              Row(children: [
+                Expanded(
+                  child: _PaymentStat(
+                    label: s('premiums'),
+                    value: '${_money(premiumsPaid)} ($premiumCount)',
+                    small: true,
+                  ),
+                ),
+                Expanded(
+                  child: _PaymentStat(
+                    label: s('sharesTitle'),
+                    value: '${_money(sharesPaid)} ($shareCount)',
+                    small: true,
+                  ),
+                ),
+              ]),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PaymentStat extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool small;
+
+  const _PaymentStat({
+    required this.label,
+    required this.value,
+    this.small = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: TextStyle(
+                fontSize: small ? 11 : 12, color: Colors.grey.shade500)),
+        const SizedBox(height: 4),
+        Text(value,
+            style: TextStyle(
+                fontSize: small ? 13 : 18,
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFF1A1A1A))),
+      ],
+    );
+  }
+}
 
 // ── Member ID + status + policy count ────────────────────────────────────────
 
@@ -2379,6 +3139,76 @@ class _PaymentHistoryTile extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Payment Success Banner (shown after Stripe Checkout redirect)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PaymentSuccessBanner extends StatelessWidget {
+  final String locale;
+  final VoidCallback onSeeReceipt;
+  final VoidCallback onDismiss;
+
+  const _PaymentSuccessBanner({
+    required this.locale,
+    required this.onSeeReceipt,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    String s(String key) => AppStrings.get(key, locale);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      color: const Color(0xFF1A5C2A),
+      child: Row(
+        children: [
+          const Icon(Icons.check_circle, color: Colors.white, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  s('paymentSuccessTitle'),
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13),
+                ),
+                Text(
+                  s('paymentSuccessSubtitle'),
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: onSeeReceipt,
+            style: TextButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF1A5C2A),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6)),
+            ),
+            child: Text(s('seeReceipt'),
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: onDismiss,
+            child: const Icon(Icons.close, color: Colors.white70, size: 18),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Payment Notification Banner
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2395,8 +3225,7 @@ class _PaymentNotificationBanner extends StatefulWidget {
 
 class _PaymentNotificationBannerState
     extends State<_PaymentNotificationBanner> {
-  static const _baseUrl =
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
+  static const _baseUrl = kApiBaseUrl;
 
   bool _dismissed = false;
 
@@ -2422,10 +3251,11 @@ class _PaymentNotificationBannerState
     final seen = notif['seen'] == true || notif['seen'] == 'true';
     if (seen || _dismissed) return const SizedBox.shrink();
 
-    final amount = notif['amountPaid']?.toString() ?? '—';
+    final rawAmount = notif['amountPaid']?.toString() ?? '—';
+    final isUsd = (notif['currency'] as String? ?? 'usd').toLowerCase() == 'usd';
+    final amount = rawAmount == '—' ? rawAmount : (isUsd ? 'US\$$rawAmount' : 'HTG $rawAmount');
     final rawDate = notif['paymentDate'] as String? ?? '—';
-    final date = AppStrings.formatDate(rawDate, widget.locale);
-    final ref = notif['referenceNo'] as String? ?? '—';
+    final date = AppStrings.formatDateTime(rawDate, widget.locale);
     final policyNo = notif['policyNo'] as String? ?? '—';
     final method = notif['paymentMethod'] as String? ?? '—';
     final paymentPeriod = notif['paymentPeriod'] as String? ?? '';
@@ -2465,9 +3295,8 @@ class _PaymentNotificationBannerState
         if (paymentPeriod.isNotEmpty)
           _NotifRow(s('periodLabel'), paymentPeriod),
         _NotifRow(s('collectedOnLabel'), date),
-        _NotifRow(s('policyPrefix'), policyNo),
+        _NotifRow(s('paymentTypeLabel'), policyNo),
         _NotifRow(s('methodLabel'), method),
-        _NotifRow(s('referenceLabel'), ref),
         const SizedBox(height: 10),
         SizedBox(
           width: double.infinity,
@@ -2518,8 +3347,57 @@ class _NotifRow extends StatelessWidget {
 class _ServicesTab extends StatelessWidget {
   final Map<String, dynamic> member;
   final String locale;
+  final void Function(Map<String, dynamic>) onMemberUpdated;
+  final VoidCallback? onPaymentMade;
 
-  const _ServicesTab({required this.member, required this.locale});
+  const _ServicesTab({
+    required this.member,
+    required this.locale,
+    required this.onMemberUpdated,
+    this.onPaymentMade,
+  });
+
+  /// Re-fetches the member record after a share purchase.
+  ///
+  /// For a full membership payment the webhook activates the member
+  /// (status → true). For a partial payment the webhook records
+  /// membershipSharesPaid. Either way the webhook fires asynchronously
+  /// after the Stripe confirmation resolves client-side, so we poll until
+  /// one of those fields reflects the webhook result.
+  Future<void> _refreshAfterSharePurchase() async {
+    final memberId = member['memberId'] as String? ?? '';
+    final companyId = member['companyId'] as String? ?? 'KAFA-001';
+    if (memberId.isEmpty) return;
+    // Snapshot the paid amount before the payment so we can detect a change.
+    final previousPaid = double.tryParse(
+            member['membershipSharesPaid']?.toString() ?? '') ??
+        0.0;
+    for (var attempt = 0; attempt < 20; attempt++) {
+      try {
+        final uri = Uri.parse(
+            '$kApiBaseUrl${devPath('/member/profile')}?memberId=${Uri.encodeComponent(memberId)}'
+            '&companyId=${Uri.encodeComponent(companyId)}');
+        final response = await http.get(uri);
+        if (response.statusCode != 200) return;
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        final fresh = data['member'] as Map<String, dynamic>?;
+        if (fresh == null) return;
+        fresh.remove('credentials');
+        await SessionService.saveSession(fresh);
+        onMemberUpdated(fresh);
+        // Full payment: member activated.
+        if (fresh['status'] == 'Active') break;
+        // Partial payment: break when the webhook has updated the running total.
+        final freshPaid = double.tryParse(
+                fresh['membershipSharesPaid']?.toString() ?? '') ??
+            0.0;
+        if (freshPaid > previousPaid) break;
+      } catch (_) {
+        break;
+      }
+      if (attempt < 19) await Future.delayed(const Duration(seconds: 1));
+    }
+  }
 
   String s(String k) => AppStrings.get(k, locale);
 
@@ -2538,7 +3416,9 @@ class _ServicesTab extends StatelessWidget {
                   const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
           _SupportTile(
-              icon: Icons.phone, label: s('callUs'), value: '+509 XXXX-XXXX'),
+              icon: Icons.phone,
+              label: s('callUs'),
+              value: '(509) 3500-0326\n(509) 4439-8595\n(850) 321-4670'),
           const Divider(),
           _SupportTile(
               icon: Icons.email, label: s('email'), value: 'kontak@kafayiti.com'),
@@ -2608,6 +3488,35 @@ class _ServicesTab extends StatelessWidget {
                   email:          member['email']     as String?),
             ),
           ),
+        ),
+        const SizedBox(height: 12),
+
+        // Buy Shares card
+        _ServiceCard(
+          icon: Icons.savings_outlined,
+          iconColor: const Color(0xFF8B6914),
+          accentColor: const Color(0xFFFFF8E1),
+          title: s('buySharesTitle'),
+          subtitle: member['status'] != 'Active'
+              ? s('payShareToActivateSub')
+              : s('buySharesServiceSub'),
+          onTap: () async {
+            final purchased = await Navigator.push<bool>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => SharesScreen(
+                  memberId: memberId,
+                  memberName: member['full_name'] as String? ?? '',
+                  isPending: member['status'] == 'Pending' &&
+                      member['reason'] == 'Did not pay membership share',
+                ),
+              ),
+            );
+            if (purchased == true) {
+              onPaymentMade?.call();
+              _refreshAfterSharePurchase();
+            }
+          },
         ),
         const SizedBox(height: 12),
 
@@ -2785,8 +3694,7 @@ class _ProfileTab extends StatefulWidget {
 }
 
 class _ProfileTabState extends State<_ProfileTab> {
-  static const String _baseUrl =
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
+  static const String _baseUrl = kApiBaseUrl;
 
   bool _isEditing = false;
   bool _isSaving = false;
@@ -2891,7 +3799,8 @@ class _ProfileTabState extends State<_ProfileTab> {
       if (mounted) {
         setState(() {
           _isSaving = false;
-          _error = e.toString().replaceFirst('Exception: ', '');
+          debugPrint('[MemberDashboard] save error: $e');
+          _error = 'Something went wrong. Please try again.';
         });
       }
     }
@@ -2923,7 +3832,8 @@ class _ProfileTabState extends State<_ProfileTab> {
     final issuedDate = member['issued_date'] as String? ??
         member['issuedDate'] as String? ??
         '';
-    final isActive = member['status'] == true || member['status'] == 'true';
+    final isActive = member['status'] == 'Active';
+    final isPendingStatus = member['status'] == 'Pending';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
@@ -2950,7 +3860,11 @@ class _ProfileTabState extends State<_ProfileTab> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
               decoration: BoxDecoration(
-                color: isActive ? Colors.green.shade100 : Colors.grey.shade200,
+                color: isActive
+                    ? Colors.green.shade100
+                    : isPendingStatus
+                        ? Colors.amber.shade100
+                        : Colors.grey.shade200,
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -2958,16 +3872,24 @@ class _ProfileTabState extends State<_ProfileTab> {
                     size: 8,
                     color: isActive
                         ? Colors.green.shade700
-                        : Colors.grey.shade500),
+                        : isPendingStatus
+                            ? Colors.amber.shade700
+                            : Colors.grey.shade500),
                 const SizedBox(width: 6),
                 Text(
-                  isActive ? s('activeMember') : s('inactiveMember'),
+                  isActive
+                      ? s('activeMember')
+                      : isPendingStatus
+                          ? s('pendingMember')
+                          : s('inactiveMember'),
                   style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                       color: isActive
                           ? Colors.green.shade700
-                          : Colors.grey.shade600),
+                          : isPendingStatus
+                              ? Colors.amber.shade700
+                              : Colors.grey.shade600),
                 ),
               ]),
             ),
@@ -3209,6 +4131,38 @@ class _OptionsButton extends StatelessWidget {
           const Spacer(),
           Icon(Icons.arrow_forward_ios, size: 14, color: color),
         ]),
+      ),
+    );
+  }
+}
+
+class _ReceiptRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  const _ReceiptRow({required this.label, required this.value, this.valueColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(label,
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
+          ),
+          Expanded(
+            child: Text(value,
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: valueColor ?? const Color(0xFF1A1A1A))),
+          ),
+        ],
       ),
     );
   }

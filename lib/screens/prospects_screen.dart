@@ -1,7 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../models/member.dart';
 import '../providers/auth_provider.dart';
+import '../services/dev_env.dart';
 import '../misc/app_strings.dart';
 
 // Status helpers
@@ -83,7 +87,8 @@ class _ProspectsScreenState extends State<ProspectsScreen> {
       _filter();
       _handleDeepLink();
     } catch (e) {
-      setState(() { _error = e.toString(); _loading = false; });
+      debugPrint('[ProspectsScreen] load error: $e');
+      setState(() { _error = 'Something went wrong. Please try again.'; _loading = false; });
     }
   }
 
@@ -416,9 +421,10 @@ class _ProspectDetailScreen extends StatefulWidget {
 class _ProspectDetailScreenState extends State<_ProspectDetailScreen> {
   late String _status;
   bool _saving = false;
-  bool _savingNote = false; // used by _saveNote
+  bool _savingNote = false;
   String? _successMsg;
   String? _createdMemberId;
+  String? _setupLink;
   late TextEditingController _noteCtrl;
 
   @override
@@ -427,6 +433,33 @@ class _ProspectDetailScreenState extends State<_ProspectDetailScreen> {
     _status = (widget.prospect['status'] as String? ?? 'pending').toLowerCase();
     _noteCtrl = TextEditingController(
         text: widget.prospect['accepterNote'] as String? ?? '');
+    if (_status == 'accepted') _loadSetupLink();
+  }
+
+  Future<void> _loadSetupLink() async {
+    try {
+      final api      = context.read<AuthProvider>().apiService!;
+      final memberId = widget.prospect['memberId'] as String?;
+      Member? member;
+
+      if (memberId != null && memberId.isNotEmpty) {
+        member = await api.getMember(memberId);
+      } else {
+        // Fall back: find member by matching phone from the members list.
+        final phone = (widget.prospect['phone'] as String? ?? '').trim();
+        if (phone.isEmpty) return;
+        final all = await api.listMembers();
+        member = all.cast<Member?>().firstWhere(
+          (m) => m?.phone == phone,
+          orElse: () => null,
+        );
+      }
+
+      final token = member?.setupToken;
+      if (token != null && token.isNotEmpty && mounted) {
+        setState(() => _setupLink = '$kMemberPortalUrl?setup=$token');
+      }
+    } catch (_) {}
   }
 
   @override
@@ -479,14 +512,64 @@ class _ProspectDetailScreenState extends State<_ProspectDetailScreen> {
           _successMsg = _statusLabel(newStatus);
         }
       });
+      if (result['memberCreated'] == true && mounted) {
+        final link = result['setupLink'] as String?;
+        if (link != null) {
+          setState(() => _setupLink = link);
+          _showShareSheet(link);
+        }
+      }
     } catch (e) {
+      debugPrint('[ProspectsScreen] save error: $e');
       setState(() { _saving = false; });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+          const SnackBar(content: Text('Something went wrong. Please try again.'), backgroundColor: Colors.red),
         );
       }
     }
+  }
+
+  void _showShareSheet(String setupLink) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _ShareSheet(
+        setupLink: setupLink,
+        whatsAppUrl: _buildWhatsAppUrl(setupLink),
+      ),
+    );
+  }
+
+  String _buildWhatsAppUrl(String setupLink) {
+    final p         = widget.prospect;
+    final firstName = p['firstName'] as String? ?? '';
+    final lastName  = p['lastName']  as String? ?? '';
+    final name      = '$firstName $lastName'.trim();
+    final memberId  = _createdMemberId ?? '';
+    // Normalize to E.164: 10-digit NANP numbers need a leading 1.
+    var phone = (p['phone'] as String? ?? '').replaceAll(RegExp(r'[^0-9]'), '');
+    if (phone.length == 10) phone = '1$phone';
+
+    final message = 'Congratulations, $name! 🎉\n\n'
+        'We are pleased to inform you that your KAFA membership application has been *approved*. '
+        'Welcome to the KAFA family!\n\n'
+        '*Your Member Number*\n'
+        '$memberId\n\n'
+        'You can continue your account setup here:\n'
+        '$setupLink\n\n'
+        'If you have any questions, feel free to reach us:\n'
+        '📧 kontak@kafayiti.com\n'
+        '📞 (509) 3500-0326 / (509) 4439-8595\n'
+        '🌐 kafayiti.com\n\n'
+        'KAFA — 874 Rue Ste Catherine, Léogâne, Haïti';
+
+    final encoded = Uri.encodeComponent(message);
+    return phone.isNotEmpty
+        ? 'https://wa.me/$phone?text=$encoded'
+        : 'https://wa.me/?text=$encoded';
   }
 
   String _statusLabelLocalized(String status, String Function(String) s) {
@@ -507,13 +590,14 @@ class _ProspectDetailScreenState extends State<_ProspectDetailScreen> {
       await api.saveProspectNote(id, _noteCtrl.text.trim());
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Note saved'), backgroundColor: _green),
+          SnackBar(content: Text(AppStrings.get('noteSaved', widget.locale)), backgroundColor: _green),
         );
       }
     } catch (e) {
+      debugPrint('[ProspectsScreen] note save error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+          const SnackBar(content: Text('Something went wrong. Please try again.'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -538,6 +622,22 @@ class _ProspectDetailScreenState extends State<_ProspectDetailScreen> {
         title: Text(fullName.isEmpty ? s('adminProspects') : fullName,
             style: const TextStyle(color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          if (_status == 'accepted')
+            IconButton(
+              icon: const Icon(Icons.share, color: Colors.white),
+              tooltip: 'Share',
+              onPressed: () {
+                if (_setupLink != null) {
+                  _showShareSheet(_setupLink!);
+                } else {
+                  _loadSetupLink().then((_) {
+                    if (_setupLink != null && mounted) _showShareSheet(_setupLink!);
+                  });
+                }
+              },
+            ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -621,6 +721,33 @@ class _ProspectDetailScreenState extends State<_ProspectDetailScreen> {
                   ]),
                 ),
               ],
+              if (_status == 'accepted') ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    icon: const Icon(Icons.share, size: 18),
+                    label: const Text('Share'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _green,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: () {
+                      if (_setupLink != null) {
+                        _showShareSheet(_setupLink!);
+                      } else {
+                        _loadSetupLink().then((_) {
+                          if (_setupLink != null && mounted) {
+                            _showShareSheet(_setupLink!);
+                          }
+                        });
+                      }
+                    },
+                  ),
+                ),
+              ],
             ]),
           ),
           const SizedBox(height: 12),
@@ -629,7 +756,8 @@ class _ProspectDetailScreenState extends State<_ProspectDetailScreen> {
             s('fullName').split(' ').last:   p['lastName'],
             s('phone'):    p['phone'],
             s('email'):    p['email'],
-            'Member #':    p['memberNumber'],
+            s('memberNumberLabel'): p['memberNumber'],
+            s('planLabel'): p['plan'],
           }),
           const SizedBox(height: 12),
           _DetailCard(title: s('sectionPersonalInfo'), fields: {
@@ -643,15 +771,15 @@ class _ProspectDetailScreenState extends State<_ProspectDetailScreen> {
           _DetailCard(title: s('sectionIdentification'), fields: {
             s('idType'):   p['idType'],
             s('idNumber'): p['idNumber'],
-            'Issue':       p['idIssueDetails'],
-            'Expiration':  p['idExpirationDate'],
+            s('issueLabel'):      p['idIssueDetails'],
+            s('expirationLabel'): p['idExpirationDate'],
           }),
           if ((p['message'] as String? ?? '').isNotEmpty) ...[
             const SizedBox(height: 12),
             _DetailCard(title: s('sectionNotes'), fields: {s('notes'): p['message']}),
           ],
           const SizedBox(height: 12),
-          _DetailCard(title: 'Meta', fields: {
+          _DetailCard(title: s('metaLabel'), fields: {
             'ID':        p['id'],
             s('issuedDate'): p['createdAt'],
           }),
@@ -803,6 +931,110 @@ class _DetailCard extends StatelessWidget {
               ),
             )),
       ]),
+    );
+  }
+}
+
+// ── Share sheet ───────────────────────────────────────────────────────────────
+
+class _ShareSheet extends StatefulWidget {
+  final String setupLink;
+  final String whatsAppUrl;
+  const _ShareSheet({required this.setupLink, required this.whatsAppUrl});
+
+  @override
+  State<_ShareSheet> createState() => _ShareSheetState();
+}
+
+class _ShareSheetState extends State<_ShareSheet> {
+  bool _copied = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Share',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 20),
+            _ShareOption(
+              icon: Icons.chat,
+              iconColor: const Color(0xFF25D366),
+              label: 'Send to WhatsApp',
+              onTap: () async {
+                Navigator.pop(context);
+                final uri = Uri.parse(widget.whatsAppUrl);
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              },
+            ),
+            const Divider(height: 24),
+            _ShareOption(
+              icon: _copied ? Icons.check_circle : Icons.link,
+              iconColor: _copied ? _green : Colors.grey.shade700,
+              label: _copied ? 'Link copied!' : 'Copy link',
+              onTap: () async {
+                await Clipboard.setData(ClipboardData(text: widget.setupLink));
+                setState(() => _copied = true);
+                await Future.delayed(const Duration(seconds: 2));
+                if (mounted) setState(() => _copied = false);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ShareOption extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final VoidCallback onTap;
+  const _ShareOption({
+    required this.icon, required this.iconColor,
+    required this.label, required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(children: [
+          Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: iconColor, size: 22),
+          ),
+          const SizedBox(width: 16),
+          Text(label,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
+        ]),
+      ),
     );
   }
 }

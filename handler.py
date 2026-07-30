@@ -23,6 +23,7 @@ Route map (this Lambda handles all routes):
 """
 
 import os
+import re
 import json
 import logging
 import hashlib
@@ -40,12 +41,34 @@ from botocore.awsrequest import AWSRequest
 ################################################################################
 
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.ERROR)
 
 _session  = boto3.session.Session()
 dynamodb  = boto3.resource("dynamodb")
 s3_client = boto3.client("s3")
 ses       = boto3.client("ses", region_name="us-east-1")
+
+def _log_error(context_label: str, error: Exception, extra: dict = None):
+    """Write error as a JSON file to kopera-asset/logs/errors/YYYY-MM-DD/."""
+    try:
+        now = datetime.now(timezone.utc)
+        payload = {
+            "timestamp": now.isoformat(),
+            "function":  os.environ.get("AWS_LAMBDA_FUNCTION_NAME", "handler"),
+            "context":   context_label,
+            "error":     str(error),
+            "type":      type(error).__name__,
+            **(extra or {}),
+        }
+        key = f"logs/errors/{now.strftime('%Y-%m-%d')}/{now.strftime('%H-%M-%S-%f')}_{context_label[:40]}.json"
+        s3_client.put_object(
+            Bucket=ASSETS_BUCKET,
+            Key=key,
+            Body=json.dumps(payload, indent=2),
+            ContentType="application/json",
+        )
+    except Exception:
+        pass  # never let logging crash the handler
 
 MEMBERS_TABLE   = os.environ["MEMBERS_TABLE"]    # kopera-member
 COMPANIES_TABLE = os.environ["COMPANIES_TABLE"]  # kopera-company
@@ -57,14 +80,27 @@ API_BASE_URL    = os.environ["API_BASE_URL"]     # https://<id>.execute-api.<reg
 ADMIN_TABLE      = os.environ.get("ADMIN_TABLE", "kopera-admin")
 LIFE_INSURANCE_TABLE_NAME = os.environ.get("LIFE_INSURANCE_TABLE", "kopera-life-insurance")
 LOCALITIES_TABLE = os.environ.get("LOCALITIES_TABLE", "kopera-localities")
+SHARES_TABLE      = os.environ.get("SHARES_TABLE", "kopera-share")
+PROSPECTS_TABLE   = os.environ.get("PROSPECTS_TABLE", "kopera-prospect")
+SHORTLINKS_TABLE  = os.environ.get("SHORTLINKS_TABLE", "kopera-shortlink")
+MEMBER_PORTAL_URL = os.environ.get("MEMBER_PORTAL_URL", "https://member.kafayiti.com")
 
 ################################################################################
 # Router
 ################################################################################
 
 def lambda_handler(event, context):
-    logger.info("Event: %s", json.dumps(event))
+    try:
+        return _route(event, context)
+    except Exception as exc:
+        _log_error("unhandled", exc, {
+            "method":   event.get("httpMethod", ""),
+            "resource": event.get("resource", ""),
+        })
+        return _resp(500, {"error": "Something went wrong."})
 
+
+def _route(event, context):
     method   = event.get("httpMethod", "")
     resource = event.get("resource", "")
 
@@ -78,8 +114,8 @@ def lambda_handler(event, context):
     if method == "OPTIONS":
         return _resp(200, {})
 
-    # ── GET /lookup?phone= ────────────────────────────────────────────────────
-    if method == "GET" and resource == "/lookup":
+    # ── GET /lookup?phone= (also /retrieve after -dev normalisation) ──────────
+    if method == "GET" and resource in ("/lookup", "/retrieve"):
         return _handle_lookup(event)
 
     # ── GET /members ──────────────────────────────────────────────────────────
@@ -162,6 +198,19 @@ def lambda_handler(event, context):
     if method == "POST" and resource == "/member/login":
         return _handle_member_login(event)
 
+    # ── GET /member/profile — fetch member profile ────────────────────────────
+    if method == "GET" and resource == "/member/profile":
+        params     = event.get("queryStringParameters") or {}
+        member_id  = params.get("memberId")
+        company_id = params.get("companyId", "KAFA-001")
+        if not member_id:
+            return _resp(400, {"error": "memberId required"})
+        item = _db_get_member(member_id, company_id)
+        if not item:
+            return _resp(404, {"error": "Member not found"})
+        safe = {k: v for k, v in item.items() if k not in ("credentials", "setupToken", "setupTokenExpiry")}
+        return _resp(200, {"member": safe})
+
     # ── POST /member/profile/update — member edits their own profile ──────────
     if method == "POST" and resource == "/member/profile/update":
         return _handle_member_profile_update(event)
@@ -169,6 +218,10 @@ def lambda_handler(event, context):
     # ── POST /members/set-credentials — admin sets member password ────────────
     if method == "POST" and resource == "/members/set-credentials":
         return _handle_set_member_credentials(event)
+
+    # ── POST /members/send-password-setup — admin emails member a setup link ──
+    if method == "POST" and resource == "/members/send-password-setup":
+        return _handle_send_password_setup(event)
 
     # ── POST /member/request-password-reset — send setup link by email ────────
     if method == "POST" and resource == "/member/request-password-reset":
@@ -199,7 +252,99 @@ def lambda_handler(event, context):
     if method == "POST" and resource == "/members/policies/create":
         return _handle_create_member_policy(event)
 
+    # ── GET /member/shares — list a member's share purchases ──────────────────
+    if method == "GET" and resource == "/member/shares":
+        return _handle_get_member_shares(event)
+
+    # ── POST /member/payment — admin records a manual premium payment ─────────
+    if method == "POST" and resource == "/member/payment":
+        return _handle_record_member_payment(event)
+
+    # ── POST /member/shares/manual — admin records a manual share purchase ────
+    if method == "POST" and resource == "/member/shares/manual":
+        return _handle_record_member_share(event)
+
+    # ── POST /member/acknowledge-payment — member dismisses the notification ──
+    if method == "POST" and resource == "/member/acknowledge-payment":
+        return _handle_acknowledge_payment(event)
+
+    # ── GET /member/beneficiaries — list beneficiaries for a member ───────────
+    if method == "GET" and resource == "/member/beneficiaries":
+        return _handle_get_member_beneficiaries(event)
+
+    # ── POST /member/beneficiaries — add or update a beneficiary ─────────────
+    if method == "POST" and resource == "/member/beneficiaries":
+        return _handle_save_member_beneficiary(event)
+
+    # ── GET /prospects — list all prospects ───────────────────────────────────
+    if method == "GET" and resource == "/prospects":
+        return _list_prospects()
+
+    # ── PATCH /prospects/{id} — update prospect status / note ─────────────────
+    if method == "PATCH" and resource == "/prospects/{id}":
+        return _update_prospect(event)
+
+    # ── POST /admin/shorten — create a custom short URL ──────────────────────
+    if method == "POST" and resource == "/admin/shorten":
+        return _handle_shorten_url(event)
+
+    # ── GET /r/{code} — redirect short URL to original ───────────────────────
+    if method == "GET" and resource == "/r/{code}":
+        return _handle_redirect(event)
+
     return _resp(404, {"error": f"Route not found: {method} {resource}"})
+
+
+################################################################################
+# POST /admin/shorten  — create a custom short link
+# GET  /r/{code}       — redirect to original URL
+################################################################################
+
+_SHORTLINK_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789"
+_SHORTLINK_TTL_DAYS = 365
+
+
+def _handle_shorten_url(event: dict) -> dict:
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+    url = (body.get("url") or "").strip()
+    if not url:
+        return _resp(400, {"error": "url required"})
+
+    code = "".join(secrets.choice(_SHORTLINK_CHARS) for _ in range(8))
+    expires_at = int((datetime.now(timezone.utc) + timedelta(days=_SHORTLINK_TTL_DAYS)).timestamp())
+
+    dynamodb.Table(SHORTLINKS_TABLE).put_item(Item={
+        "code":       code,
+        "url":        url,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "expires_at": expires_at,
+    })
+
+    base_url = (body.get("base_url") or MEMBER_PORTAL_URL).rstrip("/")
+    short = f"{base_url}/r/{code}"
+    return _resp(200, {"short": short})
+
+
+def _handle_redirect(event: dict) -> dict:
+    code = (event.get("pathParameters") or {}).get("code", "").strip()
+    if not code:
+        return _resp(400, {"error": "code required"})
+
+    item = dynamodb.Table(SHORTLINKS_TABLE).get_item(Key={"code": code}).get("Item")
+    if not item:
+        return _resp(404, {"error": "Link not found or expired"})
+
+    return {
+        "statusCode": 302,
+        "headers": {
+            "Location":                    item["url"],
+            "Access-Control-Allow-Origin": "*",
+        },
+        "body": "",
+    }
 
 
 ################################################################################
@@ -235,8 +380,8 @@ def _handle_lookup(event: dict) -> dict:
     company_id = member["companyId"]
     logger.info("Found member %s in company %s", member_id, company_id)
 
-    # ── Step 2: Confirm via certplatform-prod-api GET /members ────────────────
-    confirmed = _apigw_get(f"/members?memberId={member_id}&companyId={company_id}")
+    # ── Step 2: Confirm record exists in DynamoDB ────────────────────────────
+    confirmed = _db_get_member(member_id, company_id)
     if not confirmed:
         return _resp(404, {
             "error":     "Member found in DynamoDB but could not be confirmed via API",
@@ -274,7 +419,7 @@ def _handle_lookup(event: dict) -> dict:
             "certificate_id": cert.get("certificate_id"),
         })
 
-    # ── Step 5: Return the two S3 links ───────────────────────────────────────
+    # ── Step 5: Return public (unsigned) HTTPS links ─────────────────────────
     return _resp(200, {
         "member_id":      member_id,
         "company_id":     company_id,
@@ -283,8 +428,8 @@ def _handle_lookup(event: dict) -> dict:
         "certificate_id": cert.get("certificate_id"),
         "issued_date":    cert.get("issued_date"),
         "documents": {
-            "pdf":  pdf_url,
-            "jpeg": jpeg_url,
+            "pdf":  {"download_url": _s3_public_url(pdf_url)},
+            "jpeg": {"download_url": _s3_public_url(jpeg_url)},
         },
     })
 
@@ -328,14 +473,13 @@ def _handle_generate_certificate(event: dict) -> dict:
         import io, uuid
         from datetime import datetime, timezone
 
-        member  = _apigw_get(f"/members?memberId={member_id}&companyId={company_id}")
-        company = _apigw_get(f"/companies?companyId={company_id}")
+        member  = _db_get_member(member_id, company_id)
+        company = _db_get_company(company_id)
 
         if not member:  return _resp(404, {"error": f"Member not found: {member_id}"})
         if not company: return _resp(404, {"error": f"Company not found: {company_id}"})
 
-        status = member.get("status", True)
-        is_active = status if isinstance(status, bool) else str(status).lower() == "true"
+        is_active = member.get("status") == "Active"
         if not is_active:
             return _resp(400, {"error": "Cannot generate certificate for an inactive member"})
 
@@ -346,7 +490,7 @@ def _handle_generate_certificate(event: dict) -> dict:
         issued_date    = datetime.now(timezone.utc).strftime("%d / %m / %Y")
         timestamp      = datetime.now(timezone.utc).isoformat()
 
-        pdf_bytes  = generate_pdf(member, company, certificate_id, issued_date, s3_client=s3)
+        pdf_bytes  = generate_pdf(member, company, certificate_id, issued_date, s3_client=s3_client)
         jpeg_bytes = generate_jpeg(pdf_bytes)
 
         prefix      = f"certificates/{company_id}/{member_id}/{certificate_id}"
@@ -377,8 +521,8 @@ def _handle_generate_certificate(event: dict) -> dict:
         })
 
     except Exception as exc:
-        logger.exception("Certificate generation failed")
-        return _resp(500, {"error": str(exc)})
+        _log_error("certificate_generation", exc)
+        return _resp(500, {"error": "Something went wrong."})
 
 
 ################################################################################
@@ -512,6 +656,33 @@ def _apigw_get(path: str) -> dict:
 ################################################################################
 # S3 helpers
 ################################################################################
+
+def _s3_public_url(s3_url: str) -> str:
+    """Convert s3://bucket/key to a permanent public HTTPS URL (bucket must allow public GetObject)."""
+    if not s3_url.startswith("s3://"):
+        return s3_url
+    parts  = s3_url[5:].split("/", 1)
+    bucket = parts[0]
+    key    = parts[1] if len(parts) > 1 else ""
+    return f"https://{bucket}.s3.amazonaws.com/{key}"
+
+
+def _s3_presign(s3_url: str, expiry: int = 3600, filename: str = None) -> str:
+    """Convert s3://bucket/key to a presigned HTTPS download URL."""
+    if not s3_url.startswith("s3://"):
+        return s3_url
+    parts  = s3_url[5:].split("/", 1)
+    bucket = parts[0]
+    key    = parts[1] if len(parts) > 1 else ""
+    params = {"Bucket": bucket, "Key": key}
+    if filename:
+        params["ResponseContentDisposition"] = f'attachment; filename="{filename}"'
+    return s3_client.generate_presigned_url(
+        "get_object",
+        Params=params,
+        ExpiresIn=expiry,
+    )
+
 
 def _s3_object_exists(s3_url: str) -> bool:
     """Check s3://bucket/key exists without downloading."""
@@ -666,12 +837,12 @@ def _handle_create_member(event: dict) -> dict:
     if existing.get("Item"):
         return _resp(409, {"error": f"Member ID '{member_id}' already exists"})
 
-    if phone:
+    if phone and ENVIRONMENT != "dev":
         phone_check = table.scan(FilterExpression=Attr("phone").eq(phone))
         if phone_check.get("Items"):
             return _resp(409, {"error": f"Phone number '{phone}' is already registered to another member"})
 
-    if email:
+    if email and ENVIRONMENT != "dev":
         email_check = table.scan(FilterExpression=Attr("email").eq(email))
         if email_check.get("Items"):
             return _resp(409, {"error": f"Email '{email}' is already registered to another member"})
@@ -687,7 +858,8 @@ def _handle_create_member(event: dict) -> dict:
         "email":                 email,
         "identification_number": body.get("identification_number", ""),
         "identification_type":   body.get("identification_type", ""),
-        "status":                body.get("status", True),
+        "status":                "Pending",
+        "reason":                _SHARE_PENDING_REASON,
         "notes":                 body.get("notes", ""),
     }
 
@@ -836,32 +1008,48 @@ def _handle_member_login(event: dict) -> dict:
     except json.JSONDecodeError:
         return _resp(400, {"error": "Invalid JSON"})
 
-    # ── First-time password setup flow ────────────────────────────────────────
+    # ── Password setup / reset flow ───────────────────────────────────────────
+    # Used both for first-time setup and for resetting an existing password —
+    # a valid, unexpired setup token always overwrites whatever credentials
+    # (if any) are already on file. The token itself is single-use (cleared
+    # immediately below), so there's no security benefit to also blocking on
+    # pre-existing credentials — doing so only broke the reset/change-password
+    # case.
     setup_password = body.get("setupPassword", "").strip()
     setup_token    = body.get("setupToken", "").strip()
     if setup_password and setup_token:
         if len(setup_password) < 6:
             return _resp(400, {"error": "Password must be at least 6 characters"})
         table = dynamodb.Table(MEMBERS_TABLE)
-        resp  = table.scan(FilterExpression=Attr("setupToken").eq(setup_token))
-        items = resp.get("Items", [])
+        scan_kwargs = {"FilterExpression": Attr("setupToken").eq(setup_token)}
+        items = []
+        while True:
+            resp = table.scan(**scan_kwargs)
+            items.extend(resp.get("Items", []))
+            if items or not resp.get("LastEvaluatedKey"):
+                break
+            scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
         if not items:
             return _resp(401, {"error": "Invalid setup link."})
         member = items[0]
-        if member.get("credentials"):
-            return _resp(409, {"error": "Password already set. Please log in normally."})
         expiry_str = member.get("setupTokenExpiry", "")
+        # Token was already consumed (expiry cleared) — credentials exist from a prior use.
+        if not expiry_str and member.get("credentials"):
+            return _resp(409, {"error": "Password already set. Please log in normally."})
         if expiry_str and datetime.fromisoformat(expiry_str) < datetime.now(timezone.utc):
             return _resp(410, {"error": "This setup link has expired. Request a new one from the login screen."})
         pw_hash = hashlib.sha256(setup_password.encode()).hexdigest()
+        # Keep setupToken so future retries still find the member record and get a
+        # clear 409 instead of a blind 401. Only the expiry is cleared (single-use
+        # enforcement comes from the expiry check above on any subsequent attempt).
         table.update_item(
             Key={"memberId": member["memberId"], "companyId": member.get("companyId", "KAFA-001")},
-            UpdateExpression="SET credentials = :h, setupToken = :null, setupTokenExpiry = :null",
+            UpdateExpression="SET credentials = :h, setupTokenExpiry = :null",
             ExpressionAttributeValues={":h": pw_hash, ":null": None},
         )
-        logger.info("First-time password setup for member: %s", member["memberId"])
+        logger.info("Password set/reset for member: %s", member["memberId"])
         safe = {k: v for k, v in member.items() if k not in ("credentials", "setupToken", "setupTokenExpiry")}
-        return _resp(200, {"message": "Password created successfully", "member": safe})
+        return _resp(200, {"message": "Password set successfully", "member": safe})
 
     # ── Normal login flow ─────────────────────────────────────────────────────
     identifier = body.get("identifier", "").strip()   # email OR phone
@@ -877,15 +1065,26 @@ def _handle_member_login(event: dict) -> dict:
     resp  = table.scan(FilterExpression=Attr("email").eq(identifier))
     items = resp.get("Items", [])
 
-    # Fall back to phone match if no email hit
+    # Fall back to phone match — normalize by stripping non-digits so that
+    # "5613034161" matches a stored value of "561-303-4161".
     if not items:
+        digits_only = re.sub(r"\D", "", identifier)
         resp  = table.scan(FilterExpression=Attr("phone").eq(identifier))
         items = resp.get("Items", [])
+        if not items and digits_only:
+            all_resp = table.scan()
+            all_members = all_resp.get("Items", [])
+            while all_resp.get("LastEvaluatedKey"):
+                all_resp = table.scan(ExclusiveStartKey=all_resp["LastEvaluatedKey"])
+                all_members.extend(all_resp.get("Items", []))
+            items = [m for m in all_members if re.sub(r"\D", "", m.get("phone") or "") == digits_only]
 
     if not items:
         return _resp(401, {"error": "No member found with that email or phone number."})
 
-    member = items[0]
+    # When multiple records share the same phone/email (common in test data),
+    # prefer the one that has credentials set.
+    member = next((m for m in items if m.get("credentials")), items[0])
 
     stored_hash = member.get("credentials")
     if not stored_hash:
@@ -999,12 +1198,22 @@ def _handle_request_password_reset(event: dict) -> dict:
     if not items:
         return _resp(200, {"message": "If an account exists, a reset link has been sent to the email on file."})
 
-    member   = items[0]
-    email    = (member.get("email") or "").strip()
-    member_id = member.get("memberId", "")
-
-    if not email:
+    member = items[0]
+    if not (member.get("email") or "").strip():
         return _resp(400, {"error": "No email address on file for this account. Please contact KAFA."})
+
+    link = _send_password_setup_email(member, requested_by_member=True)
+    result = {"message": "If an account exists, a reset link has been sent to the email on file."}
+    if ENVIRONMENT == "dev":
+        result["setupLink"] = link
+    return _resp(200, result)
+
+
+def _send_password_setup_email(member: dict, requested_by_member: bool) -> str:
+    """Generate a setup token for `member`, store it, email a setup link, and return the link."""
+    table = dynamodb.Table(MEMBERS_TABLE)
+    member_id = member.get("memberId", "")
+    email     = (member.get("email") or "").strip()
 
     token  = secrets.token_urlsafe(150)   # 200 URL-safe chars
     expiry = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
@@ -1016,41 +1225,81 @@ def _handle_request_password_reset(event: dict) -> dict:
     )
 
     name = member.get("full_name") or f"{member.get('firstName', '')} {member.get('lastName', '')}".strip() or "Member"
-    link = f"https://member.kafayiti.com?setup={token}"
+    link = f"{MEMBER_PORTAL_URL}?setup={token}"
+    intro = (
+        "Un lien de création de mot de passe a été demandé pour votre compte membre KAFA."
+        if requested_by_member
+        else "Un administrateur KAFA a configuré l'accès au portail pour votre compte membre."
+    )
     html = f"""
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
       <div style="background:#1a5c2e;padding:24px 32px;text-align:center">
-        <h1 style="color:#fff;margin:0;font-size:22px">KAFA — Kooperativ Asirans Fanmi Ayisyen</h1>
+        <h1 style="color:#fff;margin:0;font-size:22px">KAFA — Kooperativ Asirans Fòs Ayiti</h1>
       </div>
       <div style="padding:32px;background:#fff">
-        <h2 style="color:#1a5c2e;margin-top:0">Password Setup Request</h2>
-        <p>Hello {name},</p>
-        <p>A password setup link was requested for your KAFA member account. Click the button below to create your password. <strong>This link expires in 24 hours.</strong></p>
+        <h2 style="color:#1a5c2e;margin-top:0">Création de votre mot de passe</h2>
+        <p>Bonjour {name},</p>
+        <p>{intro} Cliquez sur le bouton ci-dessous pour créer votre mot de passe. <strong>Ce lien expire dans 24 heures.</strong></p>
         <div style="text-align:center;margin:32px 0">
           <a href="{link}"
              style="background:#1a5c2e;color:#fff;padding:14px 32px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:16px;display:inline-block">
-            Set Up Password
+            Créer mon mot de passe
           </a>
         </div>
-        <p style="color:#888;font-size:13px">If you did not request this, you can ignore this email. Your account remains secure.</p>
-        <p>If you have questions, contact us at <a href="mailto:info@kafayiti.com" style="color:#1a5c2e">info@kafayiti.com</a> or call (509) 3500-0326.</p>
+        <p style="color:#888;font-size:13px">Si vous n'avez pas fait cette demande, vous pouvez ignorer cet e-mail. Votre compte reste sécurisé.</p>
+        <p>Des questions ? Contactez-nous à <a href="mailto:info@kafayiti.com" style="color:#1a5c2e">info@kafayiti.com</a> ou appelez le (509) 3500-0326.</p>
       </div>
       <div style="background:#f0f0f0;padding:16px 32px;text-align:center;font-size:12px;color:#888">
         KAFA — 874 Rue Ste Catherine, Léogâne, Haïti
       </div>
     </div>"""
 
-    ses.send_email(
-        Source="KAFA <noreply@kafayiti.com>",
-        Destination={"ToAddresses": [email]},
-        Message={
-            "Subject": {"Data": "KAFA — Password Setup Link"},
-            "Body":    {"Html": {"Data": html}},
-        },
-    )
+    try:
+        ses.send_email(
+            Source="KAFA <noreply@kafayiti.com>",
+            Destination={"ToAddresses": [email]},
+            Message={
+                "Subject": {"Data": "KAFA — Création de votre mot de passe"},
+                "Body":    {"Html": {"Data": html}},
+            },
+        )
+        logger.info("Password setup link sent for member: %s", member_id)
+    except Exception as exc:
+        if ENVIRONMENT == "dev":
+            logger.warning("SES unavailable in dev — email not sent for %s: %s", member_id, exc)
+        else:
+            raise
 
-    logger.info("Password reset link sent for member: %s", member_id)
-    return _resp(200, {"message": "If an account exists, a reset link has been sent to the email on file."})
+    return link
+
+
+################################################################################
+# POST /members/send-password-setup — admin sends member a password setup email
+################################################################################
+
+def _handle_send_password_setup(event: dict) -> dict:
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    member_id  = body.get("memberId", "").strip()
+    company_id = body.get("companyId", "KAFA-001").strip()
+    if not member_id:
+        return _resp(400, {"error": "memberId required"})
+
+    member = _db_get_member(member_id, company_id)
+    if not member:
+        return _resp(404, {"error": "Member not found"})
+
+    if not (member.get("email") or "").strip():
+        return _resp(400, {"error": "No email address on file for this member. Add an email first."})
+
+    link = _send_password_setup_email(member, requested_by_member=False)
+    result = {"message": f"Password setup email sent to {member['email']}"}
+    if ENVIRONMENT == "dev":
+        result["setupLink"] = link
+    return _resp(200, result)
 
 
 ################################################################################
@@ -1144,6 +1393,367 @@ def _handle_get_member_policies(event: dict) -> dict:
         })
 
     return _resp(200, {"policies": policies})
+
+
+################################################################################
+# GET /member/shares — list a member's share purchases (membership + preferred)
+################################################################################
+
+def _handle_get_member_shares(event: dict) -> dict:
+    member_id = (event.get("queryStringParameters") or {}).get("memberId", "").strip()
+    if not member_id:
+        return _resp(400, {"error": "memberId required"})
+
+    from boto3.dynamodb.conditions import Key as _Key
+
+    shares_table = dynamodb.Table(SHARES_TABLE)
+    resp = shares_table.query(
+        KeyConditionExpression=_Key("memberID").eq(member_id),
+        ScanIndexForward=False,  # newest first (shareId is time-ordered)
+    )
+    shares = [
+        {
+            "shareId":       s.get("shareId", ""),
+            "amount":        float(s.get("amount", 0)),
+            "datetime":      s.get("datetime", ""),
+            "shareType":     s.get("share_type", ""),
+            "apr":           float(s.get("APR", 0)),
+            "status":        s.get("status", "PENDING"),
+            "paymentMethod": s.get("paymentMethod", ""),
+            "externalRef":   s.get("externalRef", ""),
+        }
+        for s in resp.get("Items", [])
+    ]
+    return _resp(200, {"shares": shares})
+
+
+################################################################################
+# POST /member/payment — admin records a manual premium payment (cash, MonCash,
+# bank transfer). Stripe card payments go through /payments/create-intent
+# instead — this route is only for the non-Stripe methods.
+################################################################################
+
+_MONTH_NAMES = {
+    'January': 1, 'February': 2, 'March': 3, 'April': 4, 'May': 5, 'June': 6,
+    'July': 7, 'August': 8, 'September': 9, 'October': 10, 'November': 11, 'December': 12,
+}
+
+
+def _parse_period_due_date(period: str, fallback: str) -> str:
+    """'August 2026' -> '2026-08-01'. Falls back if unparseable."""
+    parts = period.strip().split()
+    if len(parts) == 2 and parts[0] in _MONTH_NAMES:
+        try:
+            year = int(parts[1])
+            return f"{year:04d}-{_MONTH_NAMES[parts[0]]:02d}-01"
+        except ValueError:
+            pass
+    return fallback
+
+
+def _set_payment_notification(
+    member_id: str, company_id: str, *,
+    amount, ref_no: str, method: str, item_label: str = "", period: str = "",
+    currency: str = "usd",
+) -> None:
+    """
+    Surfaces a "payment received" notification on the member's next login/
+    refresh (bell icon on the member dashboard). Best-effort — failures here
+    must never block the payment/share collection that triggered it.
+    """
+    try:
+        dynamodb.Table(MEMBERS_TABLE).update_item(
+            Key={"memberId": member_id, "companyId": company_id},
+            UpdateExpression="SET payment_notification = :n",
+            ExpressionAttributeValues={
+                ":n": {
+                    "amountPaid":     Decimal(str(amount)),
+                    "paymentDate":    datetime.now(timezone.utc).isoformat(),
+                    "referenceNo":    ref_no,
+                    "policyNo":       item_label,
+                    "paymentMethod":  method,
+                    "paymentPeriod":  period,
+                    "currency":       currency.lower(),
+                    "seen":           False,
+                }
+            },
+        )
+    except Exception as exc:
+        logger.warning("Could not set payment_notification for %s: %s", member_id, exc)
+
+
+################################################################################
+# POST /member/acknowledge-payment — member dismisses the payment notification
+################################################################################
+
+def _handle_acknowledge_payment(event: dict) -> dict:
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    member_id  = body.get("memberId", "").strip()
+    company_id = body.get("companyId", "KAFA-001").strip()
+    if not member_id:
+        return _resp(400, {"error": "memberId required"})
+
+    try:
+        dynamodb.Table(MEMBERS_TABLE).update_item(
+            Key={"memberId": member_id, "companyId": company_id},
+            UpdateExpression="SET payment_notification.#seen = :true",
+            ExpressionAttributeNames={"#seen": "seen"},
+            ExpressionAttributeValues={":true": True},
+        )
+    except Exception as exc:
+        logger.warning("Could not acknowledge payment for %s: %s", member_id, exc)
+
+    return _resp(200, {"message": "Acknowledged"})
+
+
+def _handle_record_member_payment(event: dict) -> dict:
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    policy_no    = body.get("policyNo", "").strip()
+    member_id    = body.get("memberId", "").strip()
+    company_id   = body.get("companyId", "KAFA-001").strip()
+    method       = (body.get("paymentMethod") or "CASH").strip().upper()
+    external_ref = body.get("externalRef", "").strip()
+    period       = (body.get("paymentPeriod") or "").strip()
+
+    if not policy_no or not member_id:
+        return _resp(400, {"error": "policyNo and memberId are required"})
+    try:
+        amount_dec = Decimal(str(body.get("amount")))
+    except Exception:
+        return _resp(400, {"error": "amount is required"})
+    if amount_dec <= 0:
+        return _resp(400, {"error": "amount must be positive"})
+
+    ins_table = dynamodb.Table(LIFE_INSURANCE_TABLE_NAME)
+    pol_pk = f"POLICY#{policy_no}"
+    policy = ins_table.get_item(Key={"PK": pol_pk, "SK": "METADATA"}).get("Item")
+    if not policy:
+        return _resp(404, {"error": "Policy not found"})
+
+    from boto3.dynamodb.conditions import Key as _Key
+
+    today = datetime.now(timezone.utc).date()
+    ref_no = f"PAY-{secrets.token_hex(6).upper()}"
+
+    sched_resp = ins_table.query(
+        KeyConditionExpression=_Key("PK").eq(pol_pk) & _Key("SK").begins_with("SCHED#")
+    )
+    sched_items = sched_resp.get("Items", [])
+    pending = sorted(
+        (s for s in sched_items if s.get("status") == "PENDING"),
+        key=lambda s: s.get("dueDate", ""),
+    )
+
+    if pending:
+        sched_item = pending[0]
+        paid_due_date_str = sched_item.get("dueDate") or today.isoformat()
+        ins_table.update_item(
+            Key={"PK": pol_pk, "SK": sched_item["SK"]},
+            UpdateExpression=(
+                "SET #s = :paid, paidAmount = :amt, paidDate = :today, "
+                "paymentMethod = :method, externalRef = :ref, referenceNo = :refno"
+            ),
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={
+                ":paid": "PAID",
+                ":amt": amount_dec,
+                ":today": today.isoformat(),
+                ":method": method,
+                ":ref": external_ref,
+                ":refno": ref_no,
+            },
+        )
+    else:
+        paid_due_date_str = _parse_period_due_date(period, today.isoformat())
+        next_no = len(sched_items) + 1
+        ins_table.put_item(Item={
+            "PK": pol_pk,
+            "SK": f"SCHED#{paid_due_date_str}#{next_no:06d}",
+            "entity_type": "SCHEDULE",
+            "policyNo": policy_no,
+            "installmentNo": Decimal(str(next_no)),
+            "dueDate": paid_due_date_str,
+            "amountDue": amount_dec,
+            "status": "PAID",
+            "paidDate": today.isoformat(),
+            "paidAmount": amount_dec,
+            "paymentMethod": method,
+            "externalRef": external_ref,
+            "referenceNo": ref_no,
+        })
+
+    total_paid = Decimal(str(policy.get("totalPaid", 0))) + amount_dec
+    # Advance from the period that was just paid, not from today — otherwise
+    # paying a future-dated installment could regress nextDueDate backward.
+    paid_due = datetime.fromisoformat(paid_due_date_str).date()
+    next_due_dt = paid_due.replace(day=1) + timedelta(days=32)
+    next_due = next_due_dt.replace(day=1).isoformat()
+    ins_table.update_item(
+        Key={"PK": pol_pk, "SK": "METADATA"},
+        UpdateExpression=(
+            "SET totalPaid = :tp, lastPaidDate = :ld, lastPaidAmount = :la, "
+            "nextDueDate = :nd, updatedAt = :u"
+        ),
+        ExpressionAttributeValues={
+            ":tp": total_paid,
+            ":ld": today.isoformat(),
+            ":la": amount_dec,
+            ":nd": next_due,
+            ":u": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+    _set_payment_notification(
+        member_id, company_id,
+        amount=amount_dec, ref_no=ref_no, method=method,
+        item_label=policy_no, period=period,
+    )
+
+    logger.info("Manual payment %s recorded for policy %s (%s %s)",
+                ref_no, policy_no, amount_dec, method)
+    return _resp(201, {"message": "Payment recorded", "referenceNo": ref_no})
+
+
+################################################################################
+# POST /member/shares/manual — admin records a manual share purchase (cash,
+# MonCash, bank transfer). Stripe card purchases go through
+# /member/shares/create-intent instead — this route is only for non-Stripe.
+################################################################################
+
+_MEMBERSHIP_MIN_CENTS    = 100     # $1 minimum per payment
+_MEMBERSHIP_TARGET_CENTS = 5_000   # $50 total to activate
+_PREFERRED_MIN_CENTS     = 50_000
+_SHARE_PENDING_REASON    = "Did not pay membership share"
+
+
+def _sum_membership_shares_cents(member_id: str) -> int:
+    """Returns total SUCCEEDED membership shares paid for member_id, in cents."""
+    from boto3.dynamodb.conditions import Key as _Key
+    table = dynamodb.Table(SHARES_TABLE)
+    resp = table.query(KeyConditionExpression=_Key("memberID").eq(member_id))
+    items = resp.get("Items", [])
+    while resp.get("LastEvaluatedKey"):
+        resp = table.query(
+            KeyConditionExpression=_Key("memberID").eq(member_id),
+            ExclusiveStartKey=resp["LastEvaluatedKey"],
+        )
+        items.extend(resp.get("Items", []))
+    return int(sum(
+        Decimal(str(s.get("amount", 0))) * 100
+        for s in items
+        if s.get("share_type") == "membership" and s.get("status") == "SUCCEEDED"
+    ))
+
+
+def _calculate_preferred_apr(amount_cents: int) -> float:
+    """Mirrors lambda/create_share_intent.py's bracket table exactly."""
+    amount_dollars = amount_cents / 100
+    if amount_dollars >= 11_000:
+        return 12.0
+    if amount_dollars >= 5_001:
+        return 10.0
+    if amount_dollars >= 3_001:
+        return 7.0
+    if amount_dollars >= 2_001:
+        return 6.0
+    if amount_dollars >= 1_001:
+        return 5.0
+    return 4.0
+
+
+def _handle_record_member_share(event: dict) -> dict:
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    member_id    = body.get("member_id", "").strip()
+    company_id   = body.get("company_id", "KAFA-001").strip()
+    share_type   = (body.get("share_type") or "").strip().lower()
+    method       = (body.get("payment_method") or "CASH").strip().upper()
+    external_ref = body.get("external_ref", "").strip()
+
+    try:
+        amount_cents = int(round(float(body.get("amount_cents"))))
+    except (TypeError, ValueError):
+        return _resp(400, {"error": "amount_cents is required"})
+
+    if not member_id:
+        return _resp(400, {"error": "member_id required"})
+    if share_type not in ("membership", "preferred"):
+        return _resp(400, {"error": "share_type must be 'membership' or 'preferred'"})
+
+    member = _db_get_member(member_id, company_id)
+    if not member:
+        return _resp(404, {"error": "Member not found"})
+
+    is_pending = member.get("status") == "Pending"
+
+    if share_type == "membership":
+        if amount_cents < _MEMBERSHIP_MIN_CENTS:
+            return _resp(400, {"error": "Minimum membership share payment is $1."})
+        apr = Decimal("0")
+    else:
+        if is_pending:
+            return _resp(403, {"error": "Pay the member's initial membership share before purchasing a preferred share."})
+        if amount_cents < _PREFERRED_MIN_CENTS:
+            return _resp(400, {"error": "Preferred shares require a $500 minimum."})
+        apr = Decimal(str(_calculate_preferred_apr(amount_cents)))
+
+    now = datetime.now(timezone.utc).isoformat()
+    share_id = f"SHARE#{now}#{secrets.token_hex(4)}"
+
+    shares_table = dynamodb.Table(SHARES_TABLE)
+    shares_table.put_item(Item={
+        "memberID":      member_id,
+        "shareId":       share_id,
+        "companyId":     company_id,
+        "amount":        Decimal(str(amount_cents / 100)),
+        "datetime":      now,
+        "share_type":    share_type,
+        "APR":           apr,
+        "status":        "SUCCEEDED",
+        "paymentMethod": method,
+        "externalRef":   external_ref,
+    })
+
+    if share_type == "membership" and is_pending:
+        total_paid = _sum_membership_shares_cents(member_id)
+        members_table = dynamodb.Table(MEMBERS_TABLE)
+        if total_paid >= _MEMBERSHIP_TARGET_CENTS:
+            members_table.update_item(
+                Key={"memberId": member_id, "companyId": company_id},
+                UpdateExpression="SET #s = :active REMOVE #r, membershipSharesPaid",
+                ExpressionAttributeNames={"#s": "status", "#r": "reason"},
+                ExpressionAttributeValues={":active": "Active"},
+            )
+            logger.info("Member %s activated after admin-recorded membership share", member_id)
+        else:
+            members_table.update_item(
+                Key={"memberId": member_id, "companyId": company_id},
+                UpdateExpression="SET membershipSharesPaid = :paid",
+                ExpressionAttributeValues={":paid": Decimal(str(total_paid / 100))},
+            )
+            logger.info("Member %s partial membership: %d/%d cents",
+                        member_id, total_paid, _MEMBERSHIP_TARGET_CENTS)
+
+    _set_payment_notification(
+        member_id, company_id,
+        amount=amount_cents / 100, ref_no=share_id, method=method,
+        item_label=f"{share_type.capitalize()} Share",
+    )
+
+    logger.info("Admin recorded %s share %s for member %s (%s)",
+                share_type, share_id, member_id, method)
+    return _resp(201, {"message": "Share recorded", "shareId": share_id, "apr": float(apr)})
 
 
 ################################################################################
@@ -1343,8 +1953,8 @@ def _handle_get_member_documents(event: dict) -> dict:
         documents.sort(key=lambda d: d["uploadedAt"], reverse=True)
         return _resp(200, {"documents": documents})
     except Exception as exc:
-        logger.exception("Failed to list documents for %s", member_id)
-        return _resp(500, {"error": str(exc)})
+        _log_error("list_documents", exc, {"memberId": member_id})
+        return _resp(500, {"error": "Something went wrong."})
 
 
 ################################################################################
@@ -1392,6 +2002,304 @@ def _handle_request_document_upload(event: dict) -> dict:
 
 
 ################################################################################
+# GET /member/beneficiaries?memberId=  — list all beneficiaries for a member
+# POST /member/beneficiaries           — create / update a beneficiary
+################################################################################
+
+def _handle_get_member_beneficiaries(event: dict) -> dict:
+    from boto3.dynamodb.conditions import Key as _Key
+
+    member_id = (event.get("queryStringParameters") or {}).get("memberId", "").strip()
+    if not member_id:
+        return _resp(400, {"error": "memberId required"})
+
+    ins_table = dynamodb.Table(LIFE_INSURANCE_TABLE_NAME)
+
+    refs_resp = ins_table.query(
+        KeyConditionExpression=_Key("PK").eq(f"MEMBER#{member_id}")
+    )
+    refs = [r for r in refs_resp.get("Items", []) if r.get("entity_type") == "MEMBER_POLICY_REF"]
+
+    beneficiaries = []
+    for ref in refs:
+        pol_no = ref.get("policyNo", "")
+        if not pol_no:
+            continue
+        bene_resp = ins_table.query(
+            KeyConditionExpression=(
+                _Key("PK").eq(f"POLICY#{pol_no}") &
+                _Key("SK").begins_with("BENEFICIARY#")
+            )
+        )
+        for b in bene_resp.get("Items", []):
+            beneficiaries.append({
+                "beneficiaryId": b.get("SK", ""),
+                "policyNo":      pol_no,
+                "name":          b.get("name", ""),
+                "relationship":  b.get("relationship", ""),
+                "sharePercent":  int(b.get("sharePercent", b.get("percentage", 0))),
+            })
+
+    return _resp(200, {"beneficiaries": beneficiaries})
+
+
+def _handle_save_member_beneficiary(event: dict) -> dict:
+    from boto3.dynamodb.conditions import Key as _Key
+    import uuid
+
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return _resp(400, {"error": "Invalid JSON body"})
+
+    member_id    = body.get("memberId", "").strip()
+    policy_no    = body.get("policyNo", "").strip()
+    name         = body.get("name", "").strip()
+    relationship = body.get("relationship", "").strip()
+    share        = body.get("sharePercent")
+    bene_id      = (body.get("beneficiaryId") or "").strip()
+
+    if not all([member_id, policy_no, name, relationship]) or share is None:
+        return _resp(400, {"error": "memberId, policyNo, name, relationship and sharePercent are required"})
+    try:
+        share = int(share)
+    except (TypeError, ValueError):
+        return _resp(400, {"error": "sharePercent must be an integer"})
+    if not (1 <= share <= 100):
+        return _resp(400, {"error": "sharePercent must be between 1 and 100"})
+
+    ins_table = dynamodb.Table(LIFE_INSURANCE_TABLE_NAME)
+
+    refs_resp = ins_table.query(
+        KeyConditionExpression=_Key("PK").eq(f"MEMBER#{member_id}")
+    )
+    refs = [r for r in refs_resp.get("Items", []) if r.get("entity_type") == "MEMBER_POLICY_REF"]
+    policy_nos = {r.get("policyNo") for r in refs}
+    if policy_no not in policy_nos:
+        return _resp(403, {"error": "Policy does not belong to this member"})
+
+    sk = bene_id if (bene_id and bene_id.startswith("BENEFICIARY#")) else f"BENEFICIARY#{uuid.uuid4().hex[:8].upper()}"
+
+    ins_table.put_item(Item={
+        "PK":           f"POLICY#{policy_no}",
+        "SK":           sk,
+        "entity_type":  "BENEFICIARY",
+        "name":         name,
+        "relationship": relationship,
+        "sharePercent": share,
+        "updatedAt":    datetime.now(timezone.utc).isoformat(),
+    })
+
+    return _resp(200, {"beneficiaryId": sk})
+
+
+################################################################################
+# GET /prospects
+################################################################################
+
+def _list_prospects() -> dict:
+    table = dynamodb.Table(PROSPECTS_TABLE)
+    items = []
+    kwargs: dict = {}
+    while True:
+        resp = table.scan(**kwargs)
+        items.extend(resp.get("Items", []))
+        last = resp.get("LastEvaluatedKey")
+        if not last:
+            break
+        kwargs["ExclusiveStartKey"] = last
+
+    prospects = []
+    for item in items:
+        data = item.get("data") or {}
+        prospects.append({
+            "id":               item.get("id", ""),
+            "firstName":        item.get("firstName", ""),
+            "lastName":         item.get("lastName", ""),
+            "phone":            item.get("phone", ""),
+            "email":            item.get("email", ""),
+            "memberNumber":     item.get("memberNumber", ""),
+            "plan":             item.get("plan") or data.get("plan", ""),
+            "message":          item.get("message", ""),
+            "createdAt":        item.get("createdAt", ""),
+            "address":          item.get("address") or data.get("address", ""),
+            "commune":          item.get("commune") or data.get("commune", ""),
+            "gender":           item.get("gender") or data.get("gender", ""),
+            "profession":       item.get("profession") or data.get("profession", ""),
+            "birthDatePlace":   item.get("birthDatePlace") or data.get("birthDatePlace", ""),
+            "idType":           item.get("idType") or data.get("idType", ""),
+            "idNumber":         item.get("idNumber") or data.get("idNumber", ""),
+            "idIssueDetails":   item.get("idIssueDetails") or data.get("idIssueDetails", ""),
+            "idExpirationDate": item.get("idExpirationDate") or data.get("idExpirationDate", ""),
+            "accepterNote":     item.get("accepterNote", ""),
+            "status":           item.get("status", ""),
+        })
+    prospects.sort(key=lambda p: p.get("createdAt", ""), reverse=True)
+    return _resp(200, {"prospects": prospects, "count": len(prospects)})
+
+
+################################################################################
+# PATCH /prospects/{id}
+################################################################################
+
+_VALID_STATUSES = {"accepted", "pending", "rejected"}
+
+def _update_prospect(event: dict) -> dict:
+    prospect_id = (event.get("pathParameters") or {}).get("id")
+    if not prospect_id:
+        return _resp(400, {"error": "Missing prospect id in path"})
+
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except Exception:
+        return _resp(400, {"error": "Invalid JSON body"})
+
+    new_status = body.get("status", "").lower()
+    note       = body.get("note")
+
+    if not new_status and note is None:
+        return _resp(400, {"error": "Provide at least one of: status, note"})
+    if new_status and new_status not in _VALID_STATUSES:
+        return _resp(400, {"error": f"status must be one of: {', '.join(_VALID_STATUSES)}"})
+
+    prospects = dynamodb.Table(PROSPECTS_TABLE)
+    resp      = prospects.get_item(Key={"id": prospect_id})
+    prospect  = resp.get("Item")
+    if not prospect:
+        return _resp(404, {"error": "Prospect not found"})
+
+    result = {}
+
+    if not new_status:
+        prospects.update_item(
+            Key={"id": prospect_id},
+            UpdateExpression="SET accepterNote = :n, updatedAt = :u",
+            ExpressionAttributeValues={":n": note, ":u": datetime.now(timezone.utc).isoformat()},
+        )
+        return _resp(200, {"prospectId": prospect_id, "noteSaved": True})
+
+    if new_status == "accepted" and prospect.get("status") != "accepted":
+        try:
+            member_id   = _prospect_generate_member_id(prospect)
+            setup_token = _prospect_create_member(prospect, member_id)
+            result["memberId"]      = member_id
+            result["memberCreated"] = True
+            result["setupLink"]     = f"{MEMBER_PORTAL_URL}?setup={setup_token}"
+        except Exception as e:
+            return _resp(500, {"error": f"Failed to create member: {e}"})
+        try:
+            _prospect_send_approval_email(prospect, member_id, setup_token)
+        except Exception as e:
+            print(f"Approval email failed (non-blocking): {e}")
+
+    update_expr  = "SET #s = :s, updatedAt = :u"
+    expr_names   = {"#s": "status"}
+    expr_values  = {":s": new_status, ":u": datetime.now(timezone.utc).isoformat()}
+    if note is not None:
+        update_expr += ", accepterNote = :n"
+        expr_values[":n"] = note
+
+    prospects.update_item(
+        Key={"id": prospect_id},
+        UpdateExpression=update_expr,
+        ExpressionAttributeNames=expr_names,
+        ExpressionAttributeValues=expr_values,
+    )
+
+    if result.get("memberId"):
+        prospects.update_item(
+            Key={"id": prospect_id},
+            UpdateExpression="SET memberId = :m",
+            ExpressionAttributeValues={":m": result["memberId"]},
+        )
+
+    result["prospectId"] = prospect_id
+    result["status"]     = new_status
+    return _resp(200, result)
+
+
+def _prospect_generate_member_id(prospect: dict) -> str:
+    existing = (prospect.get("memberNumber") or "").strip()
+    if existing and len(existing) == 13 and existing.startswith("MK"):
+        return existing
+    resp = dynamodb.Table(COMPANIES_TABLE).update_item(
+        Key={"companyId": "KAFA-001"},
+        UpdateExpression="ADD #seq :one",
+        ExpressionAttributeNames={"#seq": "sequence"},
+        ExpressionAttributeValues={":one": Decimal("1")},
+        ReturnValues="UPDATED_NEW",
+    )
+    seq = int(resp["Attributes"]["sequence"])
+    return f"MK001{seq:08d}"
+
+
+def _prospect_create_member(prospect: dict, member_id: str) -> str:
+    first     = prospect.get("firstName", "")
+    last      = prospect.get("lastName", "")
+    full_name = f"{first} {last}".strip() or "Unknown"
+    data      = prospect.get("data") or {}
+
+    setup_token  = secrets.token_urlsafe(150)
+    token_expiry = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+
+    dynamodb.Table(MEMBERS_TABLE).put_item(Item={
+        "memberId":          member_id,
+        "companyId":         "KAFA-001",
+        "full_name":         full_name,
+        "phone":             prospect.get("phone") or "",
+        "email":             prospect.get("email") or "",
+        "address":           prospect.get("address") or data.get("address") or "",
+        "date_of_birth":     prospect.get("birthDatePlace") or data.get("birthDatePlace") or "",
+        "id_number":         prospect.get("idNumber") or data.get("idNumber") or "",
+        "id_type":           prospect.get("idType") or data.get("idType") or "",
+        "nationality":       "HTI",
+        "status":            "Pending",
+        "reason":            "Did not pay membership share",
+        "notes":             prospect.get("message") or "",
+        "issued_date":       datetime.now(timezone.utc).strftime("%d / %m / %Y"),
+        "createdAt":         datetime.now(timezone.utc).isoformat(),
+        "sourceProspectId":  prospect.get("id", ""),
+        "setupToken":        setup_token,
+        "setupTokenExpiry":  token_expiry,
+    })
+    return setup_token
+
+
+def _prospect_send_approval_email(prospect: dict, member_id: str, setup_token: str) -> None:
+    email = (prospect.get("email") or "").strip()
+    if not email:
+        return
+    first = prospect.get("firstName", "")
+    last  = prospect.get("lastName", "")
+    name  = f"{first} {last}".strip() or "Member"
+    html  = f"""
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
+      <div style="background:#1a5c2e;padding:24px 32px;text-align:center">
+        <h1 style="color:#fff;margin:0;font-size:22px">KAFA — Kooperativ Asirans Fòs Ayiti</h1>
+      </div>
+      <div style="padding:32px;background:#fff">
+        <h2 style="color:#1a5c2e;margin-top:0">Congratulations, {name}! \U0001f389</h2>
+        <p>We are pleased to inform you that your KAFA membership application has been <strong>approved</strong>.</p>
+        <div style="text-align:center;margin:32px 0">
+          <a href="{MEMBER_PORTAL_URL}?setup={setup_token}"
+             style="background:#1a5c2e;color:#fff;padding:14px 32px;border-radius:6px;
+                    text-decoration:none;font-weight:bold;font-size:16px;display:inline-block">
+            Access Member Portal
+          </a>
+        </div>
+      </div>
+    </div>"""
+    ses.send_email(
+        Source="KAFA <noreply@kafayiti.com>",
+        Destination={"ToAddresses": [email]},
+        Message={
+            "Subject": {"Data": "KAFA — Membership Approved! Welcome to the Family"},
+            "Body":    {"Html": {"Data": html}},
+        },
+    )
+
+
+################################################################################
 # HTTP response helper
 ################################################################################
 
@@ -1402,7 +2310,7 @@ def _resp(status_code: int, body: dict) -> dict:
             "Content-Type":                "application/json",
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Content-Sha256",
-            "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+            "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
         },
         "body": json.dumps(body, default=str),
     }

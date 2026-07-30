@@ -1,2 +1,4 @@
 boto3>=1.34.0
-stripe>=8.0.0
+# stripe>=10 dropped dict-style .get() on StripeObject, which stripe_webhook.py
+# relies on to read event payloads — pin below that until it's migrated.
+stripe>=8.0.0,<10

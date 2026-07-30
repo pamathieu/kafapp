@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import '../providers/language_provider.dart';
+import '../misc/app_strings.dart';
 import 'payment_screen.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
@@ -79,21 +82,21 @@ class PolicyDetail {
   }
 }
 
-// ── Color palette (shared with payment screens) ───────────────────────────────
+// ── Color palette ─────────────────────────────────────────────────────────────
 class _K {
-  static const background    = Color(0xFF0D0F14);
-  static const surface       = Color(0xFF161A23);
-  static const card          = Color(0xFF1C2130);
-  static const gold          = Color(0xFFD4A847);
-  static const goldLight     = Color(0xFFECC96A);
-  static const goldDim       = Color(0xFF8A6E2F);
-  static const textPrimary   = Color(0xFFF0EDE6);
-  static const textSecondary = Color(0xFF8A8F9E);
-  static const textMuted     = Color(0xFF4A4F60);
-  static const success       = Color(0xFF3DAA6E);
-  static const warning       = Color(0xFFD4853A);
-  static const error         = Color(0xFFCC4444);
-  static const divider       = Color(0xFF252A38);
+  static const background    = Color(0xFFF2F4F7);
+  static const surface       = Color(0xFFFFFFFF);
+  static const card          = Color(0xFFF2F4F7);
+  static const green         = Color(0xFF1A5C2A);
+  static const greenLight    = Color(0xFF236B35);
+  static const gold          = Color(0xFFC8A96E);
+  static const textPrimary   = Color(0xFF1A1A1A);
+  static const textSecondary = Color(0xFF6B7280);
+  static const textMuted     = Color(0xFF9CA3AF);
+  static const success       = Color(0xFF2E7D32);
+  static const warning       = Color(0xFFF57C00);
+  static const error         = Color(0xFFDC2626);
+  static const divider       = Color(0xFFE5E7EB);
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -112,6 +115,8 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
   late AnimationController _headerAnim;
   late Animation<double> _headerFade;
   late Animation<Offset> _headerSlide;
+  String _locale = 'en';
+  String s(String key) => AppStrings.get(key, _locale);
 
   @override
   void initState() {
@@ -168,6 +173,7 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
 
   @override
   Widget build(BuildContext context) {
+    _locale = context.watch<LanguageProvider>().locale;
     final policy = widget.policy;
     return Scaffold(
       backgroundColor: _K.background,
@@ -219,8 +225,8 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Policy Details',
-                    style: TextStyle(
+                Text(s('policyDetailsTitle'),
+                    style: const TextStyle(
                         color: _K.textPrimary,
                         fontSize: 17,
                         fontWeight: FontWeight.w600)),
@@ -263,13 +269,13 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF1E2438), Color(0xFF131621)],
+          colors: [_K.green, _K.greenLight],
         ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _K.goldDim.withOpacity(0.35)),
+        border: Border.all(color: _K.gold.withOpacity(0.35)),
         boxShadow: [
           BoxShadow(
-            color: _K.gold.withOpacity(0.07),
+            color: _K.green.withOpacity(0.18),
             blurRadius: 28,
             offset: const Offset(0, 10),
           ),
@@ -287,7 +293,7 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
                     Text(
                       policy.planName,
                       style: const TextStyle(
-                        color: _K.textPrimary,
+                        color: Colors.white,
                         fontSize: 20,
                         fontWeight: FontWeight.w600,
                         letterSpacing: -0.3,
@@ -295,9 +301,9 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      'Member · ${policy.memberName}',
+                      '${s('memberLabel')} · ${policy.memberName}',
                       style: const TextStyle(
-                          color: _K.textSecondary, fontSize: 13),
+                          color: Colors.white70, fontSize: 13),
                     ),
                   ],
                 ),
@@ -311,24 +317,24 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
             children: [
               Expanded(
                 child: _statBlock(
-                  label: 'Coverage',
+                  label: s('coverageLabel'),
                   value: policy.formattedCoverage,
                   icon: Icons.shield_outlined,
                 ),
               ),
-              Container(width: 1, height: 44, color: _K.divider),
+              Container(width: 1, height: 44, color: Colors.white24),
               Expanded(
                 child: _statBlock(
-                  label: 'Monthly',
+                  label: s('monthly'),
                   value: policy.formattedPremium,
                   icon: Icons.payments_outlined,
                 ),
               ),
-              Container(width: 1, height: 44, color: _K.divider),
+              Container(width: 1, height: 44, color: Colors.white24),
               Expanded(
                 child: _statBlock(
-                  label: 'Since',
-                  value: _shortDate(policy.startDate),
+                  label: s('sinceLabel'),
+                  value: AppStrings.formatDate(policy.startDate, _locale),
                   icon: Icons.calendar_month_outlined,
                 ),
               ),
@@ -340,19 +346,19 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
             padding:
                 const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: _K.gold.withOpacity(0.08),
+              color: Colors.white.withOpacity(0.15),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: _K.goldDim.withOpacity(0.4)),
+              border: Border.all(color: Colors.white.withOpacity(0.3)),
             ),
             child: Row(
               children: [
                 const Icon(Icons.access_time_rounded,
-                    color: _K.gold, size: 15),
+                    color: Colors.white, size: 15),
                 const SizedBox(width: 8),
                 Text(
-                  'Next payment due ${_longDate(policy.nextDueDate)}',
+                  '${s('nextPaymentDuePrefix')} ${AppStrings.formatDate(policy.nextDueDate, _locale)}',
                   style: const TextStyle(
-                      color: _K.gold,
+                      color: Colors.white,
                       fontSize: 13,
                       fontWeight: FontWeight.w500),
                 ),
@@ -370,35 +376,34 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
       required IconData icon}) {
     return Column(
       children: [
-        Icon(icon, color: _K.goldDim, size: 18),
+        Icon(icon, color: Colors.white70, size: 18),
         const SizedBox(height: 6),
         Text(value,
             style: const TextStyle(
-                color: _K.textPrimary,
+                color: Colors.white,
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
                 letterSpacing: -0.5)),
         const SizedBox(height: 2),
         Text(label,
             style:
-                const TextStyle(color: _K.textSecondary, fontSize: 11)),
+                const TextStyle(color: Colors.white70, fontSize: 11)),
       ],
     );
   }
 
   Widget _statusBadge(PolicyStatus status) {
     final (label, color) = switch (status) {
-      PolicyStatus.active    => ('Active', _K.success),
-      PolicyStatus.pending   => ('Pending', _K.warning),
-      PolicyStatus.lapsed    => ('Lapsed', _K.error),
-      PolicyStatus.cancelled => ('Cancelled', _K.textMuted),
+      PolicyStatus.active    => (s('active'), _K.success),
+      PolicyStatus.pending   => (s('adminStatusPending'), _K.warning),
+      PolicyStatus.lapsed    => (s('lapsedStatus'), _K.error),
+      PolicyStatus.cancelled => (s('cancelledStatus'), _K.textSecondary),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: Colors.white.withOpacity(0.9),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.45)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -432,20 +437,19 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
         controller: _tabController,
         dividerColor: Colors.transparent,
         indicator: BoxDecoration(
-          color: _K.card,
+          color: _K.green,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: _K.goldDim.withOpacity(0.4)),
         ),
         indicatorSize: TabBarIndicatorSize.tab,
-        labelColor: _K.gold,
-        unselectedLabelColor: _K.textMuted,
+        labelColor: Colors.white,
+        unselectedLabelColor: _K.textSecondary,
         labelStyle: const TextStyle(
             fontSize: 13, fontWeight: FontWeight.w600),
         unselectedLabelStyle: const TextStyle(fontSize: 13),
-        tabs: const [
-          Tab(text: 'Overview'),
-          Tab(text: 'Beneficiaries'),
-          Tab(text: 'History'),
+        tabs: [
+          Tab(text: s('overviewTab')),
+          Tab(text: s('beneficiaries')),
+          Tab(text: s('historyTabLabel')),
         ],
       ),
     );
@@ -456,33 +460,32 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
       children: [
-        _sectionLabel('Policy Information'),
+        _sectionLabel(s('policyInformationSection')),
         const SizedBox(height: 12),
         _infoCard([
-          _infoRow('Policy ID', policy.policyId),
-          _infoRow('Plan', policy.planName),
-          _infoRow('Status', _statusText(policy.status)),
-          _infoRow('Start Date', _longDate(policy.startDate)),
-          _infoRow('Coverage Amount', policy.formattedCoverage),
+          _infoRow(s('policyIdLabel'), policy.policyId),
+          _infoRow(s('planLabel'), policy.planName),
+          _infoRow(s('statusLabel'), _statusText(policy.status)),
+          _infoRow(s('startDateLabel'), AppStrings.formatDate(policy.startDate, _locale)),
+          _infoRow(s('coverageAmountLabel'), policy.formattedCoverage),
         ]),
         const SizedBox(height: 24),
-        _sectionLabel('Premium Schedule'),
+        _sectionLabel(s('premiumScheduleSection')),
         const SizedBox(height: 12),
         _infoCard([
-          _infoRow('Monthly Premium', policy.formattedPremium),
-          _infoRow('Next Due Date', _longDate(policy.nextDueDate)),
-          _infoRow('Coverage Period',
-              '${_longDate(policy.nextPeriodStart)} – ${_longDate(policy.nextPeriodEnd)}'),
-          _infoRow('Payment Method', 'Card on file'),
+          _infoRow(s('monthlyPremium'), policy.formattedPremium),
+          _infoRow(s('nextDueDateLabel'), AppStrings.formatDate(policy.nextDueDate, _locale)),
+          _infoRow(s('coveragePeriodLabel'),
+              '${AppStrings.formatDate(policy.nextPeriodStart, _locale)} – ${AppStrings.formatDate(policy.nextPeriodEnd, _locale)}'),
+          _infoRow(s('paymentMethodLabel'), s('cardOnFile')),
         ]),
         const SizedBox(height: 24),
-        _sectionLabel('Coverage Summary'),
+        _sectionLabel(s('coverageSummarySection')),
         const SizedBox(height: 12),
         _coverageTile(
           icon: Icons.family_restroom_rounded,
-          title: 'Life Benefit',
-          subtitle:
-              'Paid to beneficiaries upon member\'s passing',
+          title: s('lifeBenefitTitle'),
+          subtitle: s('lifeBenefitSubtitle'),
           amount: policy.formattedCoverage,
         ),
       ],
@@ -494,7 +497,7 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
       children: [
-        _sectionLabel('Designated Beneficiaries'),
+        _sectionLabel(s('designatedBeneficiariesSection')),
         const SizedBox(height: 12),
         ...policy.beneficiaries.map((b) => _beneficiaryCard(b)),
         const SizedBox(height: 16),
@@ -506,14 +509,14 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
             border: Border.all(color: _K.divider),
           ),
           child: Row(
-            children: const [
-              Icon(Icons.info_outline_rounded,
+            children: [
+              const Icon(Icons.info_outline_rounded,
                   color: _K.textMuted, size: 16),
-              SizedBox(width: 10),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'To update beneficiaries, contact your KAFA cooperative administrator.',
-                  style: TextStyle(color: _K.textSecondary, fontSize: 12),
+                  s('beneficiariesContactNote'),
+                  style: const TextStyle(color: _K.textSecondary, fontSize: 12),
                 ),
               ),
             ],
@@ -538,15 +541,15 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-              color: _K.goldDim.withOpacity(0.2),
+              color: _K.green.withOpacity(0.1),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: _K.goldDim.withOpacity(0.4)),
+              border: Border.all(color: _K.green.withOpacity(0.3)),
             ),
             child: Center(
               child: Text(
                 b.name.isNotEmpty ? b.name[0].toUpperCase() : '?',
                 style: const TextStyle(
-                    color: _K.gold,
+                    color: _K.green,
                     fontSize: 18,
                     fontWeight: FontWeight.w700),
               ),
@@ -573,7 +576,7 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
             padding: const EdgeInsets.symmetric(
                 horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: _K.goldDim.withOpacity(0.15),
+              color: _K.gold.withOpacity(0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
@@ -595,12 +598,12 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          children: const [
-            Icon(Icons.receipt_long_outlined,
+          children: [
+            const Icon(Icons.receipt_long_outlined,
                 color: _K.textMuted, size: 40),
-            SizedBox(height: 12),
-            Text('No payments yet',
-                style: TextStyle(color: _K.textMuted, fontSize: 15)),
+            const SizedBox(height: 12),
+            Text(s('noPaymentsYet'),
+                style: const TextStyle(color: _K.textMuted, fontSize: 15)),
           ],
         ),
       );
@@ -608,7 +611,7 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
       children: [
-        _sectionLabel('Payment History'),
+        _sectionLabel(s('paymentHistory')),
         const SizedBox(height: 12),
         ...policy.paymentHistory.map((p) => _historyRow(p)),
       ],
@@ -668,7 +671,7 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
       decoration: BoxDecoration(
-        color: _K.background,
+        color: _K.surface,
         border: const Border(
             top: BorderSide(color: _K.divider, width: 1)),
       ),
@@ -681,19 +684,19 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
                   const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
-                color: _K.error.withOpacity(0.1),
+                color: _K.error.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(10),
                 border:
                     Border.all(color: _K.error.withOpacity(0.3)),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.warning_amber_rounded,
+                  const Icon(Icons.warning_amber_rounded,
                       color: _K.error, size: 16),
-                  SizedBox(width: 8),
+                  const SizedBox(width: 8),
                   Text(
-                    'This policy is not active. Contact your administrator.',
-                    style: TextStyle(color: _K.error, fontSize: 12),
+                    s('policyNotActiveWarning'),
+                    style: const TextStyle(color: _K.error, fontSize: 12),
                   ),
                 ],
               ),
@@ -704,9 +707,9 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Due now',
-                      style: TextStyle(
-                          color: _K.textMuted, fontSize: 12)),
+                  Text(s('dueNowLabel'),
+                      style: const TextStyle(
+                          color: _K.textSecondary, fontSize: 12)),
                   Text(
                     policy.formattedPremium,
                     style: const TextStyle(
@@ -728,10 +731,10 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
                     decoration: BoxDecoration(
                       gradient: isActive
                           ? const LinearGradient(
-                              colors: [_K.gold, _K.goldLight],
+                              colors: [_K.green, _K.greenLight],
                             )
                           : null,
-                      color: isActive ? null : _K.surface,
+                      color: isActive ? null : _K.card,
                       borderRadius: BorderRadius.circular(14),
                       border: isActive
                           ? null
@@ -739,7 +742,7 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
                       boxShadow: isActive
                           ? [
                               BoxShadow(
-                                color: _K.gold.withOpacity(0.28),
+                                color: _K.green.withOpacity(0.28),
                                 blurRadius: 14,
                                 offset: const Offset(0, 5),
                               ),
@@ -753,16 +756,16 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
                           Icon(
                             Icons.credit_card_rounded,
                             color: isActive
-                                ? _K.background
+                                ? Colors.white
                                 : _K.textMuted,
                             size: 18,
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            'Pay Premium',
+                            s('payPremium'),
                             style: TextStyle(
                               color: isActive
-                                  ? _K.background
+                                  ? Colors.white
                                   : _K.textMuted,
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
@@ -849,10 +852,10 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
               width: 42,
               height: 42,
               decoration: BoxDecoration(
-                color: _K.goldDim.withOpacity(0.15),
+                color: _K.green.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(icon, color: _K.gold, size: 20),
+              child: Icon(icon, color: _K.green, size: 20),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -873,7 +876,7 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
             ),
             Text(amount,
                 style: const TextStyle(
-                    color: _K.gold,
+                    color: _K.green,
                     fontSize: 16,
                     fontWeight: FontWeight.w700)),
           ],
@@ -881,36 +884,10 @@ class _PolicyDetailScreenState extends State<PolicyDetailScreen>
       );
 
   // ── Formatters ────────────────────────────────────────────────────────────
-  String _shortDate(String iso) {
-    try {
-      final p = iso.split('-');
-      const m = [
-        '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-      ];
-      return '${m[int.parse(p[1])]} ${p[0]}';
-    } catch (_) {
-      return iso;
-    }
-  }
-
-  String _longDate(String iso) {
-    try {
-      final p = iso.split('-');
-      const m = [
-        '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-      ];
-      return '${m[int.parse(p[1])]} ${int.parse(p[2])}, ${p[0]}';
-    } catch (_) {
-      return iso;
-    }
-  }
-
-  String _statusText(PolicyStatus s) => switch (s) {
-        PolicyStatus.active    => 'Active',
-        PolicyStatus.pending   => 'Pending',
-        PolicyStatus.lapsed    => 'Lapsed',
-        PolicyStatus.cancelled => 'Cancelled',
+  String _statusText(PolicyStatus status) => switch (status) {
+        PolicyStatus.active    => s('active'),
+        PolicyStatus.pending   => s('adminStatusPending'),
+        PolicyStatus.lapsed    => s('lapsedStatus'),
+        PolicyStatus.cancelled => s('cancelledStatus'),
       };
 }

@@ -1,5 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/language_provider.dart';
+import '../misc/app_strings.dart';
 import 'payment_screen.dart';
+
+String _displayDueDate(String dueDate) {
+  if (dueDate.isEmpty) return dueDate;
+  final due = DateTime.tryParse(dueDate);
+  if (due == null) return dueDate;
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  if (due.isAfter(today)) return dueDate;
+  final next = DateTime(now.year, now.month + 1, 1);
+  return '${next.year}-${next.month.toString().padLeft(2, '0')}-01';
+}
 
 class _C {
   static const background    = Color(0xFFF2F4F7);
@@ -99,6 +113,8 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
 
   @override
   Widget build(BuildContext context) {
+    final locale = context.watch<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
     return Scaffold(
       backgroundColor: _C.background,
       body: SafeArea(
@@ -109,9 +125,9 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
               const SizedBox(height: 60),
               _buildSuccessIcon(),
               const SizedBox(height: 36),
-              _buildConfirmationContent(),
+              _buildConfirmationContent(s),
               const Spacer(),
-              _buildActions(),
+              _buildActions(s),
               const SizedBox(height: 32),
             ],
           ),
@@ -174,7 +190,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
   }
 
   // ── Content ───────────────────────────────────────────────────────────────
-  Widget _buildConfirmationContent() {
+  Widget _buildConfirmationContent(String Function(String) s) {
     return AnimatedBuilder(
       animation: _contentController,
       builder: (_, child) => Transform.translate(
@@ -183,8 +199,8 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
       ),
       child: Column(
         children: [
-          const Text(
-            'Payment Confirmed',
+          Text(
+            s('paymentConfirmed'),
             style: TextStyle(
               color: _C.textPrimary,
               fontSize: 26,
@@ -205,13 +221,13 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
             ),
           ),
           const SizedBox(height: 24),
-          _buildDetailCard(),
+          _buildDetailCard(s),
         ],
       ),
     );
   }
 
-  Widget _buildDetailCard() {
+  Widget _buildDetailCard(String Function(String) s) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -229,20 +245,22 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
       ),
       child: Column(
         children: [
-          _buildDetailRow('Payment ID', widget.paymentId),
+          _buildDetailRow(s('paymentId'), widget.paymentId),
           _buildDivider(),
-          _buildDetailRow('Policy', widget.args.policyId),
+          _buildDetailRow(s('policyLabel'), widget.args.policyId),
           _buildDivider(),
-          _buildDetailRow('Member', widget.args.memberName),
+          _buildDetailRow(s('memberLabel'), widget.args.memberName),
           if (widget.args.periodEnd.isNotEmpty) ...[
             _buildDivider(),
             _buildDetailRow(
-              'Due Date',
-              _fmt(widget.args.periodEnd),
+              s('dueDate'),
+              AppStrings.formatDate(
+                  _displayDueDate(widget.args.periodEnd),
+                  context.read<LanguageProvider>().locale),
             ),
           ],
           _buildDivider(),
-          _buildDetailRow('Status', 'Confirmed', isStatus: true),
+          _buildDetailRow(s('statusLabel'), s('confirmed'), isStatus: true),
         ],
       ),
     );
@@ -265,9 +283,9 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(color: _C.success.withValues(alpha: 0.4)),
                   ),
-                  child: const Text(
-                    'Confirmed',
-                    style: TextStyle(
+                  child: Text(
+                    value,
+                    style: const TextStyle(
                         color: _C.success,
                         fontSize: 12,
                         fontWeight: FontWeight.w600),
@@ -293,7 +311,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
       const Divider(color: _C.divider, height: 1, thickness: 1);
 
   // ── Actions ───────────────────────────────────────────────────────────────
-  Widget _buildActions() {
+  Widget _buildActions(String Function(String) s) {
     return AnimatedBuilder(
       animation: _contentController,
       builder: (_, child) => Opacity(opacity: _contentOpacity.value, child: child!),
@@ -317,10 +335,10 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
                   ),
                 ],
               ),
-              child: const Center(
+              child: Center(
                 child: Text(
-                  'Back to Dashboard',
-                  style: TextStyle(
+                  s('backToDashboard'),
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -334,16 +352,4 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen>
     );
   }
 
-  String _fmt(String iso) {
-    try {
-      final p = iso.split('-');
-      const m = [
-        '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-      ];
-      return '${m[int.parse(p[1])]} ${int.parse(p[2])}, ${p[0]}';
-    } catch (_) {
-      return iso;
-    }
-  }
 }

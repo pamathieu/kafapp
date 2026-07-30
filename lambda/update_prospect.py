@@ -12,6 +12,7 @@ PROSPECTS_TABLE  = os.environ.get('PROSPECTS_TABLE',  'kopera-prospect')
 MEMBERS_TABLE    = os.environ.get('MEMBERS_TABLE',    'kopera-member')
 COMPANIES_TABLE  = os.environ.get('COMPANIES_TABLE',  'kopera-company')
 COMPANY_ID       = os.environ.get('COMPANY_ID',       'KAFA-001')
+MEMBER_PORTAL    = os.environ.get('MEMBER_PORTAL_URL', 'https://member.kafayiti.com')
 COMPANY_CODE     = '001'
 
 CORS = {
@@ -76,6 +77,7 @@ def lambda_handler(event, context):
             setup_token = _create_member(prospect, member_id)
             result['memberId'] = member_id
             result['memberCreated'] = True
+            result['setupLink'] = f'{MEMBER_PORTAL}?setup={setup_token}'
         except Exception as e:
             return _err(500, f'Failed to create member: {str(e)}')
         try:
@@ -104,6 +106,13 @@ def lambda_handler(event, context):
                 ':s': new_status,
                 ':u': datetime.now(timezone.utc).isoformat(),
             },
+        )
+
+    if result.get('memberId'):
+        prospects.update_item(
+            Key={'id': prospect_id},
+            UpdateExpression='SET memberId = :m',
+            ExpressionAttributeValues={':m': result['memberId']},
         )
 
     result['prospectId'] = prospect_id
@@ -151,7 +160,10 @@ def _create_member(prospect, member_id):
         'id_number':         prospect.get('idNumber') or data.get('idNumber') or '',
         'id_type':           prospect.get('idType') or data.get('idType') or '',
         'nationality':       'HTI',
-        'status':            True,
+        # New members start pending until they pay their initial membership
+        # share — share_webhook.py flips status to True once that succeeds.
+        'status':            False,
+        'reason':            'Did not pay membership share',
         'notes':             prospect.get('message') or '',
         'issued_date':       datetime.now(timezone.utc).strftime('%d / %m / %Y'),
         'createdAt':         datetime.now(timezone.utc).isoformat(),
@@ -174,7 +186,7 @@ def _send_approval_email(prospect, member_id, setup_token):
     html  = f"""
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
       <div style="background:#1a5c2e;padding:24px 32px;text-align:center">
-        <h1 style="color:#fff;margin:0;font-size:22px">KAFA — Kooperativ Asirans Fanmi Ayisyen</h1>
+        <h1 style="color:#fff;margin:0;font-size:22px">KAFA — Kooperativ Asirans Fòs Ayiti</h1>
       </div>
       <div style="padding:32px;background:#fff">
         <h2 style="color:#1a5c2e;margin-top:0">Congratulations, {name}! 🎉</h2>

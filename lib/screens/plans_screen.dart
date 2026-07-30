@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../providers/language_provider.dart';
 import '../misc/app_strings.dart';
+import '../services/dev_env.dart';
 import '../widgets/billing_toggle.dart';
 import 'enrollment_form_screen.dart';
 
@@ -86,8 +87,7 @@ class PlansScreen extends StatefulWidget {
 }
 
 class _PlansScreenState extends State<PlansScreen> {
-  static const _baseUrl =
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
+  static const _baseUrl = kApiBaseUrl;
 
   List<Map<String, dynamic>> _plans = [];
   bool _loading = true;
@@ -179,7 +179,7 @@ class _PlansScreenState extends State<PlansScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
+            child: Text(s('ok')),
           ),
         ],
       ),

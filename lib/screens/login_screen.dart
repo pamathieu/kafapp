@@ -124,7 +124,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 // KAFA Logo
                 Image.asset(
-                  'images/kafa_logo.png',
+                  'assets/images/kafa_logo.png',
                   width: 150,
                   height: 150,
                   fit: BoxFit.contain,

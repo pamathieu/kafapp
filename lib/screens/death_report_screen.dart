@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../providers/language_provider.dart';
 import '../misc/app_strings.dart';
+import '../services/dev_env.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Death Emergency / Death Report screen
@@ -41,8 +42,7 @@ class DeathReportScreen extends StatefulWidget {
 }
 
 class _DeathReportScreenState extends State<DeathReportScreen> {
-  static const _baseUrl =
-      'https://8ajfrnzdag.execute-api.us-east-1.amazonaws.com/prod';
+  static const _baseUrl = kApiBaseUrl;
 
   final _declarantNameCtrl  = TextEditingController();
   final _declarantPhoneCtrl = TextEditingController();
@@ -180,8 +180,8 @@ class _DeathReportScreenState extends State<DeathReportScreen> {
         ),
 
         // Policy info (read-only)
-        _InfoRow(label: 'Assuré', value: widget.memberName),
-        _InfoRow(label: 'Numéro de police', value: widget.policyNo),
+        _InfoRow(label: s('insuredLabel'), value: widget.memberName),
+        _InfoRow(label: s('policyNumberLabel'), value: widget.policyNo),
         const SizedBox(height: 20),
 
         // Date of death picker
