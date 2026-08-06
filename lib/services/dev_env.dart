@@ -31,5 +31,8 @@ String devPath(String path) {
   if (path.startsWith('/prospects/') || path == '/prospects') {
     return '/prospects$kApiEnvSuffix${path.substring('/prospects'.length)}';
   }
+  if (path.startsWith('/payments/') || path == '/payments') {
+    return '/payments$kApiEnvSuffix${path.substring('/payments'.length)}';
+  }
   return path;
 }

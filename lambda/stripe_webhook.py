@@ -322,8 +322,11 @@ def lambda_handler(event, _context):
         logger.error("Webhook parse error: %s", exc)
         return _cors(400, {"error": "Bad request"})
 
-    event_type = stripe_event["type"]
-    data_obj   = stripe_event["data"]["object"]
+    # Parse raw payload as plain dict — newer Stripe SDK returns StripeObject
+    # which doesn't support .get(), so we use the already-verified JSON instead.
+    event_dict = json.loads(payload)
+    event_type = event_dict["type"]
+    data_obj   = event_dict["data"]["object"]
     intent_id  = data_obj.get("id") or data_obj.get("payment_intent")
 
     logger.info("Received %s for intent %s", event_type, intent_id)
@@ -337,8 +340,8 @@ def lambda_handler(event, _context):
         if charge_id:
             try:
                 charge = stripe.Charge.retrieve(charge_id)
-                receipt_url = charge.get("receipt_url", "")
-            except stripe.error.StripeError:
+                receipt_url = charge.receipt_url or ""
+            except Exception:
                 pass
 
     elif event_type == "payment_intent.payment_failed":

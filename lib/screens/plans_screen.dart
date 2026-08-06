@@ -131,57 +131,21 @@ class _PlansScreenState extends State<PlansScreen> {
     }
   }
 
-  void _showUpgradeDialog(BuildContext context, String locale,
-      String planName, int premium) {
-    String s(String k) => AppStrings.get(k, locale);
-    showDialog(
+  void _showSwitchPlanSheet(BuildContext context, String locale,
+      Map<String, dynamic> plan) {
+    showModalBottomSheet(
       context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          s('upgradePlanTitle').replaceAll('{plan}', planName),
-          style: const TextStyle(fontWeight: FontWeight.bold, color: _green),
-        ),
-        content: Text(
-          s('upgradePlanConfirm')
-              .replaceAll('{plan}', planName)
-              .replaceAll('{price}', '$premium'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(s('upgradePlanCancel')),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: _green, foregroundColor: Colors.white),
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text(s('upgradePlanSuccess')),
-                backgroundColor: _green,
-              ));
-            },
-            child: Text(s('upgradePlanSubmit')),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showDocumentUnavailable(BuildContext context, String locale) {
-    String s(String k) => AppStrings.get(k, locale);
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        content: Text(s('documentUnavailable')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(s('ok')),
-          ),
-        ],
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _SwitchPlanSheet(
+        memberId:        widget.memberId,
+        memberName:      widget.memberName,
+        phone:           widget.phone,
+        email:           widget.email,
+        currentPlanCode: widget.currentPlanCode,
+        targetPlan:      plan,
+        locale:          locale,
       ),
     );
   }
@@ -227,10 +191,8 @@ class _PlansScreenState extends State<PlansScreen> {
                     final code  = (plan['planCode'] as String? ?? '').toUpperCase();
                     final isCurrent = widget.currentPlanCode != null &&
                         widget.currentPlanCode!.toUpperCase().contains(code);
-                    // Upgrade only from Basic → Standard, w/ policies, not current.
-                    // Funeral Savings is a separate product, not a coverage tier upgrade.
-                    final showUpgrade =
-                        _hasPolicies && !isCurrent && code == 'STANDARD';
+                    // Show "Switch to this plan" for any non-current plan when member has a policy.
+                    final showUpgrade = _hasPolicies && !isCurrent;
 
                     return _PlanCard(
                       plan:         plan,
@@ -245,13 +207,8 @@ class _PlansScreenState extends State<PlansScreen> {
                       phone:        widget.phone,
                       email:        widget.email,
                       onUpgrade:    showUpgrade
-                          ? () {
-                              final planName = AppStrings.get('planStandard', locale);
-                              final premium  = (plan['premiumAmount'] as num?)?.toInt() ?? 0;
-                              _showUpgradeDialog(context, locale, planName, premium);
-                            }
+                          ? () => _showSwitchPlanSheet(context, locale, plan)
                           : null,
-                      onViewMore:   () => _showDocumentUnavailable(context, locale),
                     );
                   }),
                   const SizedBox(height: 16),
@@ -296,14 +253,13 @@ class _PlanCard extends StatelessWidget {
   final bool isCurrent;
   final int tierIndex;
   final bool showUpgrade;
-  final bool showActions; // View More + Apply (members w/o policy)
+  final bool showActions; // Apply button (members w/o policy)
   final bool annual;
   final String memberId;
   final String memberName;
   final String? phone;
   final String? email;
   final VoidCallback? onUpgrade;
-  final VoidCallback onViewMore;
 
   const _PlanCard({
     required this.plan,
@@ -315,7 +271,6 @@ class _PlanCard extends StatelessWidget {
     required this.annual,
     required this.memberId,
     required this.memberName,
-    required this.onViewMore,
     this.phone,
     this.email,
     this.onUpgrade,
@@ -331,13 +286,6 @@ class _PlanCard extends StatelessWidget {
     Color(0xFFE3F2FD),
     Color(0xFFE8F5E9),
     Color(0xFFFFF8E1),
-  ];
-
-  // "View More" button color matches plan tier
-  static const _viewMoreColors = [
-    Color(0xFF1565C0),
-    _green,
-    _gold,
   ];
 
   @override
@@ -360,7 +308,6 @@ class _PlanCard extends StatelessWidget {
 
     final tierColor   = tierIndex < _tierColors.length  ? _tierColors[tierIndex]   : _green;
     final accentColor = tierIndex < _tierAccents.length ? _tierAccents[tierIndex] : const Color(0xFFE8F5E9);
-    final viewMoreColor = tierIndex < _viewMoreColors.length ? _viewMoreColors[tierIndex] : _green;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -527,24 +474,6 @@ class _PlanCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   if (showActions) ...[
-                    // View More
-                    OutlinedButton(
-                      onPressed: onViewMore,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: viewMoreColor,
-                        side: BorderSide(color: viewMoreColor),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 8),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
-                        textStyle: const TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.bold),
-                      ),
-                      child: Text(s('viewMore')),
-                    ),
-                    const SizedBox(width: 8),
                     // Apply
                     ElevatedButton(
                       onPressed: () => Navigator.push(
@@ -610,6 +539,185 @@ class _PlanCard extends StatelessWidget {
       buf.write(str[i]);
     }
     return buf.toString();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Plan switch request bottom sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SwitchPlanSheet extends StatefulWidget {
+  final String memberId;
+  final String memberName;
+  final String? phone;
+  final String? email;
+  final String? currentPlanCode;
+  final Map<String, dynamic> targetPlan;
+  final String locale;
+
+  const _SwitchPlanSheet({
+    required this.memberId,
+    required this.memberName,
+    required this.targetPlan,
+    required this.locale,
+    this.phone,
+    this.email,
+    this.currentPlanCode,
+  });
+
+  @override
+  State<_SwitchPlanSheet> createState() => _SwitchPlanSheetState();
+}
+
+class _SwitchPlanSheetState extends State<_SwitchPlanSheet> {
+  static const _baseUrl = kApiBaseUrl;
+
+  final _notesCtrl = TextEditingController();
+  bool _submitting = false;
+  bool _submitted  = false;
+
+  @override
+  void dispose() {
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    setState(() => _submitting = true);
+    try {
+      final code = (widget.targetPlan['planCode'] as String? ?? '').toUpperCase();
+      final body = json.encode({
+        'memberId':    widget.memberId,
+        'name':        widget.memberName,
+        'phone':       widget.phone  ?? '',
+        'email':       widget.email  ?? '',
+        'plan':        code,
+        'currentPlan': widget.currentPlanCode ?? '',
+        'notes':       _notesCtrl.text.trim(),
+        'requestType': 'SWITCH',
+      });
+      final resp = await http.post(
+        Uri.parse('$_baseUrl/member/enrollment'),
+        headers: {'Content-Type': 'application/json'},
+        body: body,
+      );
+      if (!mounted) return;
+      if (resp.statusCode == 200 || resp.statusCode == 201) {
+        setState(() { _submitted = true; _submitting = false; });
+      } else {
+        Map<String, dynamic> data = {};
+        try { data = json.decode(resp.body) as Map<String, dynamic>; } catch (_) {}
+        throw Exception(data['error'] ?? 'HTTP ${resp.statusCode}');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      final locale = widget.locale;
+      String s(String k) => AppStrings.get(k, locale);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${s('errorPrefix')}$e'),
+        backgroundColor: Colors.red.shade700,
+      ));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final locale = widget.locale;
+    String s(String k) => AppStrings.get(k, locale);
+
+    final code  = (widget.targetPlan['planCode'] as String? ?? '').toUpperCase();
+    final planNameKey = code == 'BASIC'           ? 'planBasic'
+                      : code == 'STANDARD'        ? 'planStandard'
+                      : code == 'FUNERAL_SAVINGS' ? 'planFuneralSavings'
+                      : null;
+    final planName = planNameKey != null ? s(planNameKey) : code;
+    final premium  = widget.targetPlan['premiumAmount'];
+
+    if (_submitted) {
+      return Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.check_circle_outline, color: _green, size: 64),
+          const SizedBox(height: 16),
+          Text(s('enrollmentSent'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 24),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: _green,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10))),
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(s('ok')),
+          ),
+        ]),
+      );
+    }
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Text(s('upgradePlanTitle').replaceAll('{plan}', planName),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Text(
+          s('upgradePlanConfirm')
+              .replaceAll('{plan}', planName)
+              .replaceAll('{price}', '${premium ?? ''}'),
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+        ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _notesCtrl,
+          maxLines: 3,
+          decoration: InputDecoration(
+            labelText: s('notes'),
+            prefixIcon: const Icon(Icons.notes),
+            border:
+                OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            filled: true,
+            fillColor: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 20),
+        Row(children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: _submitting ? null : () => Navigator.of(context).pop(),
+              style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(0, 48),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10))),
+              child: Text(s('upgradePlanCancel')),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: ElevatedButton(
+              onPressed: _submitting ? null : _submit,
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: _green,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(0, 48),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10))),
+              child: _submitting
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : Text(s('upgradePlanSubmit')),
+            ),
+          ),
+        ]),
+      ]),
+    );
   }
 }
 

@@ -499,9 +499,7 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
                 decoration: BoxDecoration(
                   color: isActive
                       ? Colors.green.shade100
-                      : isPendingStatus
-                          ? Colors.amber.shade100
-                          : Colors.grey.shade200,
+                      : Colors.grey.shade200,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -509,24 +507,16 @@ class _KafaAppBar extends StatelessWidget implements PreferredSizeWidget {
                       size: 8,
                       color: isActive
                           ? Colors.green.shade700
-                          : isPendingStatus
-                              ? Colors.amber.shade700
-                              : Colors.grey.shade500),
+                          : Colors.grey.shade500),
                   const SizedBox(width: 6),
                   Text(
-                    isActive
-                        ? s('activeMember')
-                        : isPendingStatus
-                            ? s('pendingMember')
-                            : s('inactiveMember'),
+                    isActive ? s('activeMember') : s('inactiveMember'),
                     style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                         color: isActive
                             ? Colors.green.shade700
-                            : isPendingStatus
-                                ? Colors.amber.shade700
-                                : Colors.grey.shade600),
+                            : Colors.grey.shade600),
                   ),
                 ]),
               ),
@@ -1090,7 +1080,6 @@ class _DashboardTabState extends State<_DashboardTab>
       final name = (member['full_name'] as String?)?.trim() ?? s('memberFallback');
       final memberId = (member['memberId'] as String?)?.trim() ?? '';
       final isActive = member['status'] == 'Active';
-      final isPendingStatus = member['status'] == 'Pending';
       final totalPolicies = _policies.length;
       final activePolicies = _policies.where((p) {
         try {
@@ -1152,18 +1141,12 @@ class _DashboardTabState extends State<_DashboardTab>
                               color: Color(0xFF1A1A1A))),
                       const SizedBox(height: 2),
                       Text(
-                        isActive
-                            ? s('membershipActive')
-                            : isPendingStatus
-                                ? s('membershipPending')
-                                : s('membershipInactive'),
+                        isActive ? s('membershipActive') : s('membershipInactive'),
                         style: TextStyle(
                             fontSize: 13,
                             color: isActive
                                 ? Colors.green.shade700
-                                : isPendingStatus
-                                    ? Colors.amber.shade700
-                                    : Colors.grey.shade600),
+                                : Colors.grey.shade600),
                       ),
 
                       // ── No-policy inline warning + options dropdown ───────────────────
@@ -1279,8 +1262,18 @@ class _DashboardTabState extends State<_DashboardTab>
                               color: const Color(0xFF1565C0),
                               onTap: () {
                                 setState(() => _optionsOpen = false);
+                                final firstPol = _policies.isNotEmpty
+                                    ? _policies.first['policy'] as Map<String, dynamic>?
+                                    : null;
+                                final planCode = firstPol?['productCode'] as String?;
                                 Navigator.push(context, MaterialPageRoute(
-                                  builder: (_) => PlansScreen(memberId: memberId),
+                                  builder: (_) => PlansScreen(
+                                    memberId: memberId,
+                                    memberName: name,
+                                    phone: member['phone'] as String?,
+                                    email: member['email'] as String?,
+                                    currentPlanCode: planCode,
+                                  ),
                                 ));
                               },
                             ),
@@ -1523,42 +1516,83 @@ class _DashboardTabState extends State<_DashboardTab>
 
   void _showCertificateSheet(BuildContext context, Map<String, dynamic> member,
       String Function(String) s) {
+    var loading = false;
+    String? error;
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.description, color: _green, size: 48),
-          const SizedBox(height: 12),
-          Text(s('memberCertificateTitle'),
-              style:
-                  const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Text(s('downloadCertificateDesc'),
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey.shade600)),
-          const SizedBox(height: 20),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.download),
-            label: Text(s('downloadPdf')),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: _green,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(double.infinity, 48),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12))),
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                    content: Text(s('certificateComingSoon')),
-                    backgroundColor: _green),
-              );
-            },
-          ),
-        ]),
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSS) {
+          Future<void> download() async {
+            final phone = (member['phone'] as String? ?? '').trim();
+            if (phone.isEmpty) {
+              setSS(() => error = s('noPhoneNumber'));
+              return;
+            }
+            setSS(() { loading = true; error = null; });
+            try {
+              final uri = Uri.parse(
+                  '$kApiBaseUrl/retrieve$kApiEnvSuffix?phone=${Uri.encodeComponent(phone)}');
+              final resp = await http.get(uri);
+              if (resp.statusCode == 200) {
+                final body = json.decode(resp.body) as Map<String, dynamic>;
+                final docs  = body['documents'] as Map<String, dynamic>? ?? {};
+                final pdfUrl =
+                    ((docs['pdf'] as Map?)??{})['download_url'] as String? ?? '';
+                if (pdfUrl.isNotEmpty) {
+                  await launchUrl(Uri.parse(pdfUrl),
+                      mode: LaunchMode.externalApplication);
+                  setSS(() => loading = false);
+                  return;
+                }
+              }
+              setSS(() { loading = false; error = s('noCertificateLink'); });
+            } catch (_) {
+              setSS(() { loading = false; error = s('failedCertificatePrefix'); });
+            }
+          }
+
+          return Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.description, color: _green, size: 48),
+              const SizedBox(height: 12),
+              Text(s('memberCertificateTitle'),
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Text(s('downloadCertificateDesc'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey.shade600)),
+              if (error != null) ...[
+                const SizedBox(height: 12),
+                Text(error!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.red, fontSize: 13)),
+              ],
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                icon: loading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.download),
+                label: Text(s('downloadPdf')),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: _green,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 48),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12))),
+                onPressed: loading ? null : download,
+              ),
+            ]),
+          );
+        },
       ),
     );
   }
@@ -3580,7 +3614,7 @@ class _ServicesTab extends StatelessWidget {
               MaterialPageRoute(
                 builder: (_) => DeathReportScreen(
                   memberId: memberId,
-                  memberName: member['fullName'] as String? ?? '',
+                  memberName: member['full_name'] as String? ?? '',
                   policyNo: policyNo,
                 ),
               ),
@@ -3601,7 +3635,7 @@ class _ServicesTab extends StatelessWidget {
             MaterialPageRoute(
               builder: (_) => EnrollmentFormScreen(
                 memberId: memberId,
-                memberName: member['fullName'] as String? ?? '',
+                memberName: member['full_name'] as String? ?? '',
                 phone: member['phone'] as String?,
                 email: member['email'] as String?,
               ),
@@ -3833,7 +3867,6 @@ class _ProfileTabState extends State<_ProfileTab> {
         member['issuedDate'] as String? ??
         '';
     final isActive = member['status'] == 'Active';
-    final isPendingStatus = member['status'] == 'Pending';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
@@ -3862,9 +3895,7 @@ class _ProfileTabState extends State<_ProfileTab> {
               decoration: BoxDecoration(
                 color: isActive
                     ? Colors.green.shade100
-                    : isPendingStatus
-                        ? Colors.amber.shade100
-                        : Colors.grey.shade200,
+                    : Colors.grey.shade200,
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -3872,24 +3903,16 @@ class _ProfileTabState extends State<_ProfileTab> {
                     size: 8,
                     color: isActive
                         ? Colors.green.shade700
-                        : isPendingStatus
-                            ? Colors.amber.shade700
-                            : Colors.grey.shade500),
+                        : Colors.grey.shade500),
                 const SizedBox(width: 6),
                 Text(
-                  isActive
-                      ? s('activeMember')
-                      : isPendingStatus
-                          ? s('pendingMember')
-                          : s('inactiveMember'),
+                  isActive ? s('activeMember') : s('inactiveMember'),
                   style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                       color: isActive
                           ? Colors.green.shade700
-                          : isPendingStatus
-                              ? Colors.amber.shade700
-                              : Colors.grey.shade600),
+                          : Colors.grey.shade600),
                 ),
               ]),
             ),

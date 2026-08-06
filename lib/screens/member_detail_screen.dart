@@ -17,6 +17,15 @@ import '../stripe_web_helper.dart'
 import '../stripe_confirmer.dart'
     if (dart.library.html) '../stripe_confirmer_web.dart';
 
+String _methodLabel(String? raw) {
+  switch ((raw ?? '').toUpperCase()) {
+    case 'STRIPE':        return 'Stripe';
+    case 'MOBILE_MONEY':  return 'Mobile Money';
+    case 'BANK_TRANSFER': return 'Bank Transfer';
+    default:              return 'Cash';
+  }
+}
+
 class MemberDetailScreen extends StatefulWidget {
   final Member member;
   final List<Member> allMembers;
@@ -1069,8 +1078,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                               ],
                             ),
                           ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
                                 amountStr,
@@ -1079,8 +1088,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                                     fontWeight: FontWeight.w600,
                                     color: color),
                               ),
-                              if (status == 'SUCCEEDED') ...[
-                                const SizedBox(height: 4),
+                              if (status == 'SUCCEEDED' || status == 'PAID') ...[
+                                const SizedBox(width: 8),
                                 GestureDetector(
                                   onTap: () {
                                     var waPhone = _member.phone.replaceAll(RegExp(r'[^0-9]'), '');
@@ -1091,7 +1100,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                                         'Amount: $amountStr\n'
                                         'Type: ${label.isNotEmpty ? label : date}\n'
                                         'Date: $date\n'
-                                        'Method: ${(p['paymentMethod'] as String? ?? p['method'] as String? ?? '').isNotEmpty ? (p['paymentMethod'] as String? ?? p['method'] as String? ?? '') : 'CASH'}\n'
+                                        'Method: ${_methodLabel(p['paymentMethod'] as String? ?? p['method'] as String?)}\n'
                                         'Reference: $ref\n\n'
                                         'Thank you for your payment!\n\n'
                                         'KAFA — 874 Rue Ste Catherine, Léogâne, Haïti';
@@ -1525,14 +1534,16 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     try {
       final api = context.read<AuthProvider>().apiService!;
 
-      // 1. Setup link
+      // 1. Setup link — only generate if the member has an email on file
       String setupLink;
       final token = _member.setupToken;
-      if (token != null && token.isNotEmpty) {
+      if (token != null && token.isNotEmpty && _member.email.trim().isNotEmpty) {
         setupLink = '$kMemberPortalUrl?setup=$token';
-      } else {
+      } else if (_member.email.trim().isNotEmpty) {
         final (_, link) = await api.sendMemberPasswordSetupEmail(_member.memberId);
         setupLink = link ?? kMemberPortalUrl;
+      } else {
+        setupLink = kMemberPortalUrl;
       }
 
       // 2. Certificate link (JPEG for WhatsApp preview)
@@ -1544,13 +1555,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         } catch (_) {}
       }
 
-      // 3. Shorten both URLs (is.gd — clean 301 redirect, no interstitial)
-      final shortened = await Future.wait([
-        _shortenUrl(setupLink),
-        if (certLink.isNotEmpty) _shortenUrl(certLink),
-      ]);
-      setupLink = shortened[0];
-      if (certLink.isNotEmpty) certLink = shortened[1];
+      // 3. Shorten only the setup link — cert link is a presigned S3 URL that
+      // must be used as-is; routing it through the member portal domain breaks it.
+      setupLink = await _shortenUrl(setupLink);
 
       // 4. Build share receipt lists from already-loaded _shares
       final membershipShares = _shares
@@ -2224,19 +2231,23 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
   String _paymentMethod = 'CASH';
   bool _isSaving = false;
   String? _message;
-  String? _checkoutUrl;
+
+  // Local copy of shares — updated optimistically after each payment so
+  // the history section refreshes without closing the sheet.
+  late List<Map<String, dynamic>> _localShares;
 
   // Premium-tab state (policy + period to pay against).
   List<Map<String, dynamic>> _policies = [];
   Map<String, dynamic>? _selectedPolicy;
   String? _scheduleMonth;
+  String _premiumFrequency = 'monthly'; // 'monthly' | 'annual'
 
   final _amountCtrl = TextEditingController();
   final _refCtrl    = TextEditingController();
   final _phoneCtrl  = TextEditingController();
   final _bankCtrl   = TextEditingController();
 
-  bool get _hasMembershipShare => widget.initialShares.any((s) =>
+  bool get _hasMembershipShare => _localShares.any((s) =>
       (s['shareType'] as String? ?? '') == 'membership' &&
       (s['status'] as String? ?? '').toUpperCase() == 'SUCCEEDED');
 
@@ -2262,6 +2273,7 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
   @override
   void initState() {
     super.initState();
+    _localShares = List.from(widget.initialShares);
     _policies = widget.initialPolicies;
     if (_isPending) _tab = 'membership';
     _initPremiumDefaults();
@@ -2283,6 +2295,7 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
     _scheduleMonth = '${months[now.month]} ${now.year}';
+    _premiumFrequency = 'monthly';
   }
 
   @override
@@ -2298,8 +2311,8 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
     setState(() {
       _tab = tab;
       _message = null;
-      _checkoutUrl = null;
       if (tab == 'premium') {
+        _premiumFrequency = 'monthly';
         _amountCtrl.text = _selectedPolicy?['premiumAmount']?.toString() ?? '';
       } else {
         _amountCtrl.clear();
@@ -2375,12 +2388,7 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
         }
       } else {
         if (_paymentMethod == 'STRIPE') {
-          if (_checkoutUrl != null) {
-            // Link already generated — close the sheet.
-            if (mounted) Navigator.of(context).pop();
-            return;
-          }
-          await _submitShareCheckout();
+          await _submitShareStripe();
         } else {
           await _submitShareManual();
         }
@@ -2434,6 +2442,7 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
     if (mounted) {
       setState(() { _isSaving = false; _message = '✓ Card charged. ID: $paymentId'; });
       widget.onSuccess('✓ Card payment recorded. ID: $paymentId');
+      Navigator.pop(context);
     }
   }
 
@@ -2465,15 +2474,16 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
     if (mounted) {
       setState(() { _isSaving = false; _message = '✓ Recorded. Ref: $refNo'; });
       widget.onSuccess('✓ Payment recorded. Ref: $refNo');
+      Navigator.pop(context);
     }
   }
 
   // ── Shares (membership / preferred) ──────────────────────────────────────
 
-  Future<void> _submitShareCheckout() async {
+  Future<void> _submitShareStripe() async {
     final amountCents = _amountCents!;
     final res = await http.post(
-      Uri.parse('$kApiBaseUrl/member/shares/checkout-session'),
+      Uri.parse('$kApiBaseUrl${devPath('/member/shares/create-intent')}'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         'member_id':    widget.member.memberId,
@@ -2484,7 +2494,7 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
     );
 
     if (res.statusCode != 200) {
-      String msg = 'Failed to generate payment link (${res.statusCode}).';
+      String msg = 'Payment failed (${res.statusCode}).';
       try {
         final err = jsonDecode(res.body) as Map<String, dynamic>;
         msg = err['error'] as String? ?? msg;
@@ -2492,33 +2502,71 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
       throw Exception(msg);
     }
 
-    final data = jsonDecode(res.body) as Map<String, dynamic>;
-    final url  = data['checkout_url'] as String;
+    final data         = jsonDecode(res.body) as Map<String, dynamic>;
+    final clientSecret = data['client_secret'] as String;
+    final shareId      = data['share_id']      as String? ?? '';
+
+    await confirmStripePayment(clientSecret);
+
     if (mounted) {
+      final amountDollars = _amountCents! / 100.0;
       setState(() {
-        _isSaving    = false;
-        _checkoutUrl = url;
-        _message     = null;
+        _isSaving = false;
+        _message  = '✓ Payment recorded.';
+        _localShares = [
+          ..._localShares,
+          {
+            'shareType':     _tab,
+            'amount':        amountDollars,
+            'datetime':      DateTime.now().toUtc().toIso8601String(),
+            'status':        'SUCCEEDED',
+            'paymentMethod': 'STRIPE',
+            'apr':           (data['apr'] as num?)?.toDouble() ?? 0.0,
+            'shareId':       shareId,
+            'externalRef':   shareId,
+          },
+        ];
+        _amountCtrl.clear();
       });
+      widget.onSuccess('✓ Share payment recorded.');
+      Navigator.pop(context);
     }
   }
 
   Future<void> _submitShareManual() async {
-    final api = context.read<AuthProvider>().apiService!;
+    final api         = context.read<AuthProvider>().apiService!;
+    final amountCents = _amountCents!;
+    final ref         = _refCtrl.text.trim();
     final apr = await api.recordSharePayment(
       memberId:      widget.member.memberId,
       shareType:     _tab,
-      amountCents:   _amountCents!,
+      amountCents:   amountCents,
       paymentMethod: _paymentMethod,
-      externalRef:   _refCtrl.text.trim(),
+      externalRef:   ref,
     );
 
     if (mounted) {
       setState(() {
         _isSaving = false;
-        _message  = '✓ Recorded. APR: ${apr.toStringAsFixed(2)}%';
+        _message  = '✓ Recorded.';
+        _localShares = [
+          ..._localShares,
+          {
+            'shareType':     _tab,
+            'amount':        amountCents / 100.0,
+            'datetime':      DateTime.now().toUtc().toIso8601String(),
+            'status':        'SUCCEEDED',
+            'paymentMethod': _paymentMethod,
+            'apr':           apr,
+            'shareId':       ref,
+            'externalRef':   ref,
+          },
+        ];
+        _amountCtrl.clear();
+        _refCtrl.clear();
       });
       widget.onSuccess('✓ Share recorded.');
+      Navigator.pop(context);
     }
   }
 
@@ -2526,8 +2574,10 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
 
   List<Map<String, dynamic>> get _shareHistory {
     final type = _tab;
-    return widget.initialShares
+    return _localShares
         .where((s) => (s['shareType'] as String? ?? '') == type)
+        .toList()
+        .reversed
         .toList();
   }
 
@@ -2624,9 +2674,50 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text('\$${(amount ?? 0).toStringAsFixed(2)}',
-                        style: const TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.w700)),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('\$${(amount ?? 0).toStringAsFixed(2)}',
+                            style: const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w700)),
+                        if (status.toUpperCase() == 'SUCCEEDED' ||
+                            status.toUpperCase() == 'PAID') ...[
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () {
+                              final amountStr =
+                                  '\$${(amount ?? 0).toStringAsFixed(2)}';
+                              final shareLabel = isPremium
+                                  ? (period.isNotEmpty ? period : dateLabel)
+                                  : (_tab == 'preferred'
+                                      ? 'Preferred Share'
+                                      : 'Membership Share');
+                              var waPhone = widget.member.phone
+                                  .replaceAll(RegExp(r'[^0-9]'), '');
+                              if (waPhone.length == 10) waPhone = '1$waPhone';
+                              final msg =
+                                  'Hello ${widget.member.fullName}\n\n'
+                                  '*Payment Receipt*\n'
+                                  'Amount: $amountStr\n'
+                                  'Type: $shareLabel\n'
+                                  'Date: $dateLabel\n'
+                                  'Method: ${_methodLabel(tx['paymentMethod'] as String?)}\n'
+                                  'Reference: ${tx['externalRef'] as String? ?? tx['shareId'] as String? ?? ''}\n\n'
+                                  'Thank you for your payment!\n\n'
+                                  'KAFA — 874 Rue Ste Catherine, Léogâne, Haïti';
+                              final encoded = Uri.encodeComponent(msg);
+                              final url = waPhone.isNotEmpty
+                                  ? 'https://wa.me/$waPhone?text=$encoded'
+                                  : 'https://wa.me/?text=$encoded';
+                              launchUrl(Uri.parse(url),
+                                  mode: LaunchMode.externalApplication);
+                            },
+                            child: const Icon(Icons.send,
+                                size: 16, color: Color(0xFF25D366)),
+                          ),
+                        ],
+                      ],
+                    ),
                     Text(statusLabel(status),
                         style: TextStyle(
                             fontSize: 11,
@@ -2704,14 +2795,21 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
                   color: isPremium ? const Color(0xFF1A5C2A) : const Color(0xFF8B6914),
                   size: 22),
               const SizedBox(width: 10),
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(_title(isPremium),
                     style: const TextStyle(
                         fontSize: 17, fontWeight: FontWeight.w700)),
                 Text(widget.member.fullName,
                     style: TextStyle(
                         fontSize: 12, color: Colors.grey.shade500)),
-              ]),
+              ])),
+              IconButton(
+                icon: const Icon(Icons.close, size: 20),
+                onPressed: () => Navigator.pop(context),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                visualDensity: VisualDensity.compact,
+              ),
             ]),
             const SizedBox(height: 20),
 
@@ -2786,6 +2884,7 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
                   }).toList(),
                   onChanged: (pol) => setState(() {
                     _selectedPolicy = pol;
+                    _premiumFrequency = 'monthly';
                     _amountCtrl.text = pol?['premiumAmount']?.toString() ?? '';
                   }),
                 ),
@@ -2829,19 +2928,43 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
                 ),
                 const SizedBox(height: 12),
 
-                TextField(
-                  controller: _amountCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: InputDecoration(
-                    labelText: s('amountHtgLabel'),
-                    prefixIcon: const Icon(Icons.attach_money),
-                    isDense: true,
-                    filled: true,
-                    fillColor: Colors.white,
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
+                Builder(builder: (context) {
+                  final monthly = double.tryParse(
+                          _selectedPolicy?['premiumAmount']?.toString() ?? '') ??
+                      0;
+                  final annual = monthly * 12;
+                  return DropdownButtonFormField<String>(
+                    key: ValueKey(_premiumFrequency),
+                    initialValue: _premiumFrequency,
+                    decoration: InputDecoration(
+                      labelText: s('paymentFrequencyLabel'),
+                      prefixIcon: const Icon(Icons.attach_money),
+                      isDense: true,
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                    items: [
+                      DropdownMenuItem(
+                        value: 'monthly',
+                        child: Text(
+                            'Monthly (US\$${monthly.toStringAsFixed(2)})'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'annual',
+                        child: Text(
+                            'Annual (US\$${annual.toStringAsFixed(2)})'),
+                      ),
+                    ],
+                    onChanged: (v) => setState(() {
+                      _premiumFrequency = v ?? 'monthly';
+                      _amountCtrl.text = _premiumFrequency == 'annual'
+                          ? annual.toStringAsFixed(2)
+                          : monthly.toStringAsFixed(2);
+                    }),
+                  );
+                }),
               ],
             ] else if (!widget.collectMode) ...[
               // Amount (membership / preferred)
@@ -2903,7 +3026,6 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
                 ],
                 onChanged: (v) => setState(() {
                   _paymentMethod = v ?? 'CASH';
-                  _checkoutUrl = null;
                   _refCtrl.clear(); _phoneCtrl.clear(); _bankCtrl.clear();
                 }),
               ),
@@ -2961,69 +3083,13 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
                 ),
               ),
             ] else if (_paymentMethod == 'STRIPE') ...[
-              if (isPremium) ...[
-                _stripeField(s('cardNumber'), stripeCardHtmlView()),
-                const SizedBox(height: 10),
-                Row(children: [
-                  Expanded(child: _stripeField(s('expiry'), stripeExpiryHtmlView())),
-                  const SizedBox(width: 10),
-                  Expanded(child: _stripeField(s('cvc'), stripeCvcHtmlView())),
-                ]),
-              ] else if (_checkoutUrl != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.green.shade200),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(s('paymentLinkReady'),
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.green.shade700,
-                              fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 8),
-                      SelectableText(_checkoutUrl!,
-                          style: const TextStyle(
-                              fontSize: 11, color: Colors.black87)),
-                      const SizedBox(height: 8),
-                      Row(children: [
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.copy, size: 16),
-                          label: Text(s('copyLink'),
-                              style: const TextStyle(fontSize: 12)),
-                          style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 6)),
-                          onPressed: () async {
-                            await Clipboard.setData(
-                                ClipboardData(text: _checkoutUrl!));
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('Link copied'),
-                                    duration: Duration(seconds: 2)));
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.open_in_new, size: 16),
-                          label: Text(s('openLink'),
-                              style: const TextStyle(fontSize: 12)),
-                          style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 6)),
-                          onPressed: () => launchUrl(Uri.parse(_checkoutUrl!),
-                              mode: LaunchMode.externalApplication),
-                        ),
-                      ]),
-                    ],
-                  ),
-                ),
-              ],
+              _stripeField(s('cardNumber'), stripeCardHtmlView()),
+              const SizedBox(height: 10),
+              Row(children: [
+                Expanded(child: _stripeField(s('expiry'), stripeExpiryHtmlView())),
+                const SizedBox(width: 10),
+                Expanded(child: _stripeField(s('cvc'), stripeCvcHtmlView())),
+              ]),
             ] else ...[
               TextField(
                 controller: _refCtrl,
@@ -3093,19 +3159,11 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: Colors.white))
                     : Icon(
-                        !isPremium && _paymentMethod == 'STRIPE'
-                            ? (_checkoutUrl != null
-                                ? Icons.check_circle_outline
-                                : Icons.link)
+                        _paymentMethod == 'STRIPE'
+                            ? Icons.payment
                             : (isPremium ? Icons.payment : Icons.savings_outlined),
                         size: 18),
-                label: Text(
-                  !isPremium && _paymentMethod == 'STRIPE'
-                      ? (_checkoutUrl != null
-                          ? s('done')
-                          : s('generatePaymentLink'))
-                      : _title(isPremium),
-                ),
+                label: Text(_title(isPremium)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor:
                       isPremium ? const Color(0xFF1A5C2A) : const Color(0xFF8B6914),
@@ -3254,14 +3312,21 @@ class _CreatePolicySheetState extends State<_CreatePolicySheet> {
               const Icon(Icons.add_box_outlined,
                   color: Color(0xFF1A5C2A), size: 22),
               const SizedBox(width: 10),
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(s('createPolicy'),
                     style: const TextStyle(
                         fontSize: 17, fontWeight: FontWeight.w700)),
                 Text(widget.member.fullName,
                     style: TextStyle(
                         fontSize: 12, color: Colors.grey.shade500)),
-              ]),
+              ])),
+              IconButton(
+                icon: const Icon(Icons.close, size: 20),
+                onPressed: () => Navigator.pop(context),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                visualDensity: VisualDensity.compact,
+              ),
             ]),
             const SizedBox(height: 20),
 
@@ -3408,8 +3473,19 @@ class _SetupLinkShareSheetState extends State<_SetupLinkShareSheet> {
               ),
             ),
             const SizedBox(height: 20),
-            const Text('Share setup link',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Row(children: [
+              const Expanded(
+                child: Text('Share setup link',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 20),
+                onPressed: () => Navigator.pop(context),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                visualDensity: VisualDensity.compact,
+              ),
+            ]),
             const SizedBox(height: 20),
             _SetupShareOption(
               icon: Icons.chat,

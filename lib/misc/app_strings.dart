@@ -601,12 +601,13 @@ class AppStrings {
 
       // Payment Collection Form / Prospect Meta
       'paymentPeriodLabel': 'Période de Paiement',
+      'paymentFrequencyLabel': 'Fréquence',
       'amountHtgLabel': 'Montant (HTG)',
       'amountMin50Label': 'Montant (minimum 50 \$)',
       'amountMin500Label': 'Montant (minimum 500 \$)',
       'cashOption': 'Espèces',
       'bankTransferOption': 'Virement Bancaire',
-      'onlineStripeOption': 'Lien de paiement (Stripe)',
+      'onlineStripeOption': 'Stripe',
       'generatePaymentLink': 'Générer un lien de paiement',
       'paymentLinkReady': 'Lien prêt — partagez-le avec le membre :',
       'copyLink': 'Copier le lien',
@@ -1232,12 +1233,13 @@ class AppStrings {
 
       // Payment Collection Form / Prospect Meta
       'paymentPeriodLabel': 'Payment Period',
+      'paymentFrequencyLabel': 'Frequency',
       'amountHtgLabel': 'Amount (HTG)',
       'amountMin50Label': 'Amount (\$50 minimum)',
       'amountMin500Label': 'Amount (\$500 minimum)',
       'cashOption': 'Cash',
       'bankTransferOption': 'Bank Transfer',
-      'onlineStripeOption': 'Payment Link (Stripe)',
+      'onlineStripeOption': 'Stripe',
       'generatePaymentLink': 'Generate Payment Link',
       'paymentLinkReady': 'Link ready — share with the member:',
       'copyLink': 'Copy Link',
@@ -1863,12 +1865,13 @@ class AppStrings {
 
       // Payment Collection Form / Prospect Meta
       'paymentPeriodLabel': 'Peryòd Peman',
+      'paymentFrequencyLabel': 'Frekans',
       'amountHtgLabel': 'Kantite (HTG)',
       'amountMin50Label': 'Kantite (minimòm \$50)',
       'amountMin500Label': 'Kantite (minimòm \$500)',
       'cashOption': 'Kach',
       'bankTransferOption': 'Transfè Bankè',
-      'onlineStripeOption': 'Lyen Peman (Stripe)',
+      'onlineStripeOption': 'Stripe',
       'generatePaymentLink': 'Jenere yon lyen peman',
       'paymentLinkReady': 'Lyen prè — pataje avèk manm nan :',
       'copyLink': 'Kopye lyen',
@@ -2494,12 +2497,13 @@ class AppStrings {
 
       // Payment Collection Form / Prospect Meta
       'paymentPeriodLabel': 'Período de Pago',
+      'paymentFrequencyLabel': 'Frecuencia',
       'amountHtgLabel': 'Monto (HTG)',
       'amountMin50Label': 'Monto (mínimo \$50)',
       'amountMin500Label': 'Monto (mínimo \$500)',
       'cashOption': 'Efectivo',
       'bankTransferOption': 'Transferencia Bancaria',
-      'onlineStripeOption': 'Enlace de pago (Stripe)',
+      'onlineStripeOption': 'Stripe',
       'generatePaymentLink': 'Generar enlace de pago',
       'paymentLinkReady': 'Enlace listo — compártalo con el miembro:',
       'copyLink': 'Copiar enlace',
@@ -3125,12 +3129,13 @@ class AppStrings {
 
       // Payment Collection Form / Prospect Meta
       'paymentPeriodLabel': 'Período de Pagamento',
+      'paymentFrequencyLabel': 'Frequência',
       'amountHtgLabel': 'Valor (HTG)',
       'amountMin50Label': 'Valor (mínimo \$50)',
       'amountMin500Label': 'Valor (mínimo \$500)',
       'cashOption': 'Dinheiro',
       'bankTransferOption': 'Transferência Bancária',
-      'onlineStripeOption': 'Link de pagamento (Stripe)',
+      'onlineStripeOption': 'Stripe',
       'generatePaymentLink': 'Gerar link de pagamento',
       'paymentLinkReady': 'Link pronto — compartilhe com o membro:',
       'copyLink': 'Copiar link',

@@ -258,8 +258,11 @@ def lambda_handler(event, _context):
         logger.error("Webhook parse error: %s", exc)
         return _cors(400, {"error": "Bad request"})
 
-    event_type = stripe_event["type"]
-    data_obj   = stripe_event["data"]["object"]
+    # Parse raw payload as plain dict — newer Stripe SDK returns StripeObject
+    # which doesn't support .get(), so we use the already-verified JSON instead.
+    event_dict = json.loads(payload)
+    event_type = event_dict["type"]
+    data_obj   = event_dict["data"]["object"]
     intent_id  = data_obj.get("id")
 
     if event_type == "checkout.session.completed":
@@ -285,9 +288,9 @@ def lambda_handler(event, _context):
     shares_table = _dynamodb.Table(_SHARES_TABLE)
     shares_table.update_item(
         Key={"memberID": share["memberID"], "shareId": share["shareId"]},
-        UpdateExpression="SET #s = :status",
+        UpdateExpression="SET #s = :status, paymentMethod = if_not_exists(paymentMethod, :method)",
         ExpressionAttributeNames={"#s": "status"},
-        ExpressionAttributeValues={":status": status},
+        ExpressionAttributeValues={":status": status, ":method": "STRIPE"},
     )
 
     # Activate a pending member once their total membership shares reach $50.

@@ -276,6 +276,14 @@ def _route(event, context):
     if method == "POST" and resource == "/member/beneficiaries":
         return _handle_save_member_beneficiary(event)
 
+    # ── POST /member/enrollment — member applies for a plan or requests switch ─
+    if method == "POST" and resource in ("/member/enrollment", "/member-dev/enrollment"):
+        return _handle_member_enrollment(event)
+
+    # ── POST /member/death-report — member reports a death to KAFA ───────────
+    if method == "POST" and resource in ("/member/death-report", "/member-dev/death-report"):
+        return _handle_death_report(event)
+
     # ── GET /prospects — list all prospects ───────────────────────────────────
     if method == "GET" and resource == "/prospects":
         return _list_prospects()
@@ -419,7 +427,8 @@ def _handle_lookup(event: dict) -> dict:
             "certificate_id": cert.get("certificate_id"),
         })
 
-    # ── Step 5: Return public (unsigned) HTTPS links ─────────────────────────
+    # ── Step 5: Return presigned HTTPS links (7-day expiry) ──────────────────
+    member_name = confirmed.get("full_name", member_id).replace(" ", "_")
     return _resp(200, {
         "member_id":      member_id,
         "company_id":     company_id,
@@ -428,8 +437,8 @@ def _handle_lookup(event: dict) -> dict:
         "certificate_id": cert.get("certificate_id"),
         "issued_date":    cert.get("issued_date"),
         "documents": {
-            "pdf":  {"download_url": _s3_public_url(pdf_url)},
-            "jpeg": {"download_url": _s3_public_url(jpeg_url)},
+            "pdf":  {"download_url": _s3_presign(pdf_url,  expiry=604800, filename=f"KAFA_Certificate_{member_name}.pdf")},
+            "jpeg": {"download_url": _s3_presign(jpeg_url, expiry=604800, filename=f"KAFA_Certificate_{member_name}.jpeg")},
         },
     })
 
@@ -481,7 +490,7 @@ def _handle_generate_certificate(event: dict) -> dict:
 
         is_active = member.get("status") == "Active"
         if not is_active:
-            return _resp(400, {"error": "Cannot generate certificate for an inactive member"})
+            return _resp(400, {"error": "Your status must be active to generate a certificate"})
 
         # Import PDF/JPEG generation from the shared module
         from certificate_engine import generate_pdf, generate_jpeg
@@ -1378,9 +1387,10 @@ def _handle_get_member_policies(event: dict) -> dict:
         payment_history = [
             {
                 "paymentDate":   s.get("paidDate", ""),
-                "referenceNo":   s.get("SK", ""),
+                "referenceNo":   s.get("referenceNo") or s.get("externalRef") or s.get("SK", ""),
                 "amountPaid":    float(s.get("paidAmount", 0)),
-                "paymentPeriod": s.get("dueDate", ""),
+                "paymentPeriod": _due_date_to_period(s.get("dueDate", "")),
+                "paymentMethod": s.get("paymentMethod", ""),
                 "status":        s.get("status", "PENDING"),
             }
             for s in schedules if s.get("status") == "PAID"
@@ -1393,6 +1403,178 @@ def _handle_get_member_policies(event: dict) -> dict:
         })
 
     return _resp(200, {"policies": policies})
+
+
+################################################################################
+# POST /member/enrollment — member applies for a plan or requests a plan switch
+################################################################################
+
+_PLAN_LABELS = {
+    "BASIC":           "KAFA Basic (US$10/mo)",
+    "STANDARD":        "KAFA Standard (US$20/mo)",
+    "FUNERAL_SAVINGS": "KAFA Funeral Savings",
+}
+
+def _handle_member_enrollment(event: dict) -> dict:
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON body"})
+
+    member_id    = body.get("memberId",    "").strip()
+    name         = body.get("name",        "").strip()
+    phone        = body.get("phone",       "").strip()
+    email_addr   = body.get("email",       "").strip()
+    address      = body.get("address",     "").strip()
+    plan         = body.get("plan",        "").strip().upper()
+    request_type = body.get("requestType", "ENROLLMENT").strip().upper()
+    current_plan = body.get("currentPlan", "").strip()
+    notes        = body.get("notes",       "").strip()
+
+    if not member_id or not name or not plan:
+        return _resp(400, {"error": "memberId, name and plan are required"})
+
+    is_switch   = request_type == "SWITCH"
+    plan_label  = _PLAN_LABELS.get(plan, plan)
+
+    # Resolve current plan label for switch requests (may be "LIFE-BASIC" etc.)
+    current_label = ""
+    if is_switch and current_plan:
+        key = current_plan.split("-")[-1].upper()
+        current_label = _PLAN_LABELS.get(key, _PLAN_LABELS.get(current_plan.upper(), current_plan))
+
+    subject = (
+        f"[KAFA] Changement de plan — {name}"
+        if is_switch else
+        f"[KAFA] Nouvelle demande d'adhésion — {name}"
+    )
+
+    switch_row = (
+        f"<tr><td style='padding:8px;font-weight:bold;color:#555'>Plan actuel</td>"
+        f"<td style='padding:8px'>{current_label}</td></tr>"
+        if is_switch and current_label else ""
+    )
+
+    html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto">
+      <h2 style="color:#1A5C2A">
+        {"Changement de Plan" if is_switch else "Nouvelle Demande d'Adhésion"}
+      </h2>
+      <table style="width:100%;border-collapse:collapse">
+        <tr><td style="padding:8px;font-weight:bold;color:#555">Membre</td>
+            <td style="padding:8px">{name}</td></tr>
+        <tr style="background:#f9f9f9">
+            <td style="padding:8px;font-weight:bold;color:#555">ID Membre</td>
+            <td style="padding:8px">{member_id}</td></tr>
+        {switch_row}
+        <tr><td style="padding:8px;font-weight:bold;color:#555">
+              {"Nouveau plan demandé" if is_switch else "Plan demandé"}
+            </td>
+            <td style="padding:8px;color:#1A5C2A;font-weight:bold">{plan_label}</td></tr>
+        <tr style="background:#f9f9f9">
+            <td style="padding:8px;font-weight:bold;color:#555">Téléphone</td>
+            <td style="padding:8px">{phone or "—"}</td></tr>
+        <tr><td style="padding:8px;font-weight:bold;color:#555">Email</td>
+            <td style="padding:8px">{email_addr or "—"}</td></tr>
+        <tr style="background:#f9f9f9">
+            <td style="padding:8px;font-weight:bold;color:#555">Adresse</td>
+            <td style="padding:8px">{address or "—"}</td></tr>
+        <tr><td style="padding:8px;font-weight:bold;color:#555">Notes</td>
+            <td style="padding:8px">{notes or "—"}</td></tr>
+      </table>
+      <p style="margin-top:24px;color:#888;font-size:12px">
+        Soumis via le portail membre KAFA
+      </p>
+    </div>"""
+
+    try:
+        ses.send_email(
+            Source="KAFA <noreply@kafayiti.com>",
+            Destination={"ToAddresses": ["kontak@kafayiti.com"]},
+            Message={
+                "Subject": {"Data": subject},
+                "Body":    {"Html": {"Data": html}},
+            },
+        )
+        logger.info("%s request sent: member %s → plan %s", request_type, member_id, plan)
+    except Exception as exc:
+        logger.error("SES error sending enrollment: %s", exc)
+        return _resp(500, {"error": "Failed to send enrollment request"})
+
+    return _resp(200, {"message": "Request received"})
+
+
+################################################################################
+# POST /member/death-report — member (or family) submits a death notification
+################################################################################
+
+_DEATH_REPORT_EMAILS = ["kontak@kafayiti.com", "kafayiti509@gmail.com"]
+
+def _handle_death_report(event: dict) -> dict:
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON body"})
+
+    member_id      = body.get("memberId",      "").strip()
+    member_name    = body.get("memberName",    "").strip()
+    policy_no      = body.get("policyNo",      "").strip()
+    date_of_death  = body.get("dateOfDeath",   "").strip()
+    declarant_name = body.get("declarantName", "").strip()
+    declarant_phone= body.get("declarantPhone","").strip()
+    relationship   = body.get("relationship",  "").strip()
+    notes          = body.get("notes",         "").strip()
+
+    if not member_id or not date_of_death or not declarant_name:
+        return _resp(400, {"error": "memberId, dateOfDeath and declarantName are required"})
+
+    subject = f"[KAFA] Déclaration de décès — {member_name or member_id}"
+    html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto">
+      <h2 style="color:#B71C1C">Déclaration de Décès</h2>
+      <table style="width:100%;border-collapse:collapse">
+        <tr><td style="padding:8px;font-weight:bold;color:#555">Assuré</td>
+            <td style="padding:8px">{member_name}</td></tr>
+        <tr style="background:#f9f9f9">
+            <td style="padding:8px;font-weight:bold;color:#555">Numéro de police</td>
+            <td style="padding:8px">{policy_no or '—'}</td></tr>
+        <tr><td style="padding:8px;font-weight:bold;color:#555">Date du décès</td>
+            <td style="padding:8px">{date_of_death}</td></tr>
+        <tr style="background:#f9f9f9">
+            <td style="padding:8px;font-weight:bold;color:#555">Déclarant</td>
+            <td style="padding:8px">{declarant_name}</td></tr>
+        <tr><td style="padding:8px;font-weight:bold;color:#555">Téléphone déclarant</td>
+            <td style="padding:8px">{declarant_phone or '—'}</td></tr>
+        <tr style="background:#f9f9f9">
+            <td style="padding:8px;font-weight:bold;color:#555">Relation</td>
+            <td style="padding:8px">{relationship or '—'}</td></tr>
+        <tr><td style="padding:8px;font-weight:bold;color:#555">Notes</td>
+            <td style="padding:8px">{notes or '—'}</td></tr>
+      </table>
+      <p style="margin-top:24px;color:#888;font-size:12px">
+        Soumis via le portail membre KAFA · ID membre: {member_id}
+      </p>
+    </div>"""
+
+    try:
+        if ENVIRONMENT == "dev":
+            logger.info("DEV: death report not emailed — %s on %s by %s",
+                        member_name, date_of_death, declarant_name)
+        else:
+            ses.send_email(
+                Source="KAFA <noreply@kafayiti.com>",
+                Destination={"ToAddresses": _DEATH_REPORT_EMAILS},
+                Message={
+                    "Subject": {"Data": subject},
+                    "Body":    {"Html": {"Data": html}},
+                },
+            )
+            logger.info("Death report sent for member %s (policy %s)", member_id, policy_no)
+    except Exception as exc:
+        logger.error("SES error sending death report: %s", exc)
+        return _resp(500, {"error": "Failed to send death report notification"})
+
+    return _resp(200, {"message": "Death report received"})
 
 
 ################################################################################
@@ -1449,6 +1631,18 @@ def _parse_period_due_date(period: str, fallback: str) -> str:
         except ValueError:
             pass
     return fallback
+
+
+_MONTH_NUM_TO_NAME = {v: k for k, v in _MONTH_NAMES.items()}
+
+
+def _due_date_to_period(due_date: str) -> str:
+    """'2026-10-01' or '2026-10-31' -> 'October 2026'. Returns raw string on error."""
+    try:
+        y, m, _ = due_date.split("-")
+        return f"{_MONTH_NUM_TO_NAME[int(m)]} {y}"
+    except Exception:
+        return due_date
 
 
 def _set_payment_notification(

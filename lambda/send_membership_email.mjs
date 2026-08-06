@@ -8,6 +8,7 @@ const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({ region: "us-east
 const TABLE         = process.env.PROSPECTS_TABLE    ?? "kopera-prospect";
 const NOTIFY_EMAIL  = process.env.NOTIFY_EMAIL       ?? "kafayiti509@gmail.com";
 const ADMIN_PORTAL  = process.env.ADMIN_PORTAL       ?? "https://admin.kafayiti.com";
+const ENV_LABEL     = process.env.ENVIRONMENT        ? `[${process.env.ENVIRONMENT.toUpperCase()}] ` : "";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -24,7 +25,8 @@ const row = (label, value) =>
     : "";
 
 export const handler = async (event) => {
-  if (event.httpMethod === "OPTIONS") {
+  const method = event.requestContext?.http?.method ?? event.httpMethod;
+  if (method === "OPTIONS") {
     return { statusCode: 200, headers: CORS, body: "" };
   }
 
@@ -152,8 +154,9 @@ export const handler = async (event) => {
         </p>
       </div>`;
 
-    const subject = `Nouvelle Demande d'Adhésion — ${d.lastName ?? ""} ${d.firstName ?? ""}`.trim();
-    for (const recipient of ["kontak@kafayiti.com", NOTIFY_EMAIL]) {
+    const subject = `${ENV_LABEL}Nouvelle Demande d'Adhésion — ${d.lastName ?? ""} ${d.firstName ?? ""}`.trim();
+    const recipients = ENV_LABEL ? [NOTIFY_EMAIL] : ["kontak@kafayiti.com", NOTIFY_EMAIL];
+    for (const recipient of recipients) {
       await ses.send(
         new SendEmailCommand({
           Source: "KAFA Membership <noreply@kafayiti.com>",

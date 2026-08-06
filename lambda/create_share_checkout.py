@@ -37,10 +37,9 @@ _SSM_PARAM = os.environ.get("STRIPE_SECRET_KEY_SSM_PARAM", "/kafa/stripe/secret_
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY") or \
     _ssm.get_parameter(Name=_SSM_PARAM, WithDecryption=True)["Parameter"]["Value"]
 
-MEMBER_PORTAL_URL     = os.environ.get("MEMBER_PORTAL_URL", "https://member.kafayiti.com")
-MEMBERSHIP_MIN_CENTS  = 5_000
-MEMBERSHIP_STEP_CENTS = 5_000
-PREFERRED_MIN_CENTS   = 50_000
+MEMBER_PORTAL_URL    = os.environ.get("MEMBER_PORTAL_URL", "https://member.kafayiti.com")
+MEMBERSHIP_MIN_CENTS = 5_000
+PREFERRED_MIN_CENTS  = 50_000
 PENDING_REASON        = "Did not pay membership share"
 
 
@@ -76,8 +75,8 @@ def lambda_handler(event, _context):
         return _cors(404, {"error": "Payment failed"})
 
     if share_type == "membership":
-        if amount_cents < MEMBERSHIP_MIN_CENTS or amount_cents % MEMBERSHIP_STEP_CENTS != 0:
-            return _cors(400, {"error": "Membership shares require a $50 minimum, in multiples of $50."})
+        if amount_cents < MEMBERSHIP_MIN_CENTS:
+            return _cors(400, {"error": "Membership shares require a $50 minimum."})
     else:
         is_pending = member.get("status") == "Pending" and member.get("reason") == PENDING_REASON
         if is_pending:

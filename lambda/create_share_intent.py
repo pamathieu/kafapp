@@ -149,6 +149,7 @@ def lambda_handler(event, _context):
             "share_type":            share_type,
             "APR":                   Decimal(str(apr)),
             "status":                "PENDING",
+            "paymentMethod":         "STRIPE",
             "stripePaymentIntentId": intent.id,
         })
     except Exception as exc:
