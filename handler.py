@@ -1262,18 +1262,19 @@ def _handle_request_password_reset(event: dict) -> dict:
         return _resp(400, {"error": "identifier (member ID, email, or phone) required"})
 
     if expired_token:
-        # Scoped recovery from an expired setup/reset link: only the exact
-        # email or phone already on file for the member that link belonged
-        # to is accepted — prevents someone else's expired link being used
-        # to request a reset for a different member's account.
+        # Scoped recovery from an expired setup/reset link: if the token is
+        # still tied to a specific member, only the exact email or phone
+        # already on file for *that* member is accepted — prevents someone
+        # else's expired link being used to request a reset for a different
+        # member's account. If the token has already been superseded (no
+        # longer on any record), there's no specific member left to protect
+        # against cross-account use, so fall back to the normal self-service
+        # lookup instead of dead-ending the request.
         member = _find_member_by_setup_token(expired_token)
-        if not member:
-            # The token itself is no longer on any member's record — it was
-            # superseded by a later setup/resend, not just expired. There's
-            # no one left to verify the identifier against.
-            return _resp(410, {"error": "This link is no longer valid. Please contact an administrator for a new setup link."})
-        if not _identifier_matches_member(identifier, member):
+        if member and not _identifier_matches_member(identifier, member):
             return _resp(404, {"error": "That email or phone doesn't match our records for this link."})
+        if not member:
+            member = _find_member_by_identifier(identifier)
     else:
         member = _find_member_by_identifier(identifier)
 
