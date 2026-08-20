@@ -120,6 +120,17 @@
   </script>
 </head>
 <body>
+  <script>
+    // Auto-reload when a new service worker takes control (new deployment detected).
+    // hadController is false on first-ever visit, so we only reload on updates.
+    if ('serviceWorker' in navigator) {
+      var hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (hadController) window.location.reload();
+        hadController = true;
+      });
+    }
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

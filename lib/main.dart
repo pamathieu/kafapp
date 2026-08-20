@@ -8,6 +8,7 @@ import 'screens/login_screen.dart';
 import 'screens/member_login_screen.dart';
 import 'screens/member_dashboard_screen.dart';
 import 'screens/set_password_screen.dart';
+import 'screens/reset_password_screen.dart';
 import 'screens/admin_dashboard_screen.dart';
 import 'services/session_service.dart';
 
@@ -62,7 +63,10 @@ class KAFAMemberApp extends StatelessWidget {
     Widget home;
     if (_portal == 'member') {
       final setupToken = kIsWeb ? Uri.base.queryParameters['setup'] : null;
-      if (setupToken != null && setupToken.isNotEmpty) {
+      final resetToken = kIsWeb ? Uri.base.queryParameters['reset'] : null;
+      if (resetToken != null && resetToken.isNotEmpty) {
+        home = ResetPasswordScreen(token: resetToken);
+      } else if (setupToken != null && setupToken.isNotEmpty) {
         // Setup links always take priority over any stored session.
         home = SetPasswordScreen(token: setupToken);
       } else if (memberSession != null) {

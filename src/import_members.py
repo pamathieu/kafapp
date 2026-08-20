@@ -33,7 +33,10 @@ COLUMNS = [
     "phone",          # H
     "issued_date",    # I  (DOM — Date of Membership)
     "companyId",      # J
+    "email",          # K (optional — defaults to placeholder if absent)
 ]
+
+PLACEHOLDER_EMAIL = "noemail@kafayiti.com"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -59,6 +62,9 @@ def build_item(row: tuple) -> dict | None:
     # Primary key must be present
     if not item.get("memberId") or not item.get("companyId"):
         return None
+
+    if not item.get("email"):
+        item["email"] = PLACEHOLDER_EMAIL
 
     return item
 
