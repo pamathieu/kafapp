@@ -1059,7 +1059,14 @@ def _handle_member_login(event: dict) -> dict:
             return _resp(401, {"error": "Invalid setup link."})
         expiry_str = member.get("setupTokenExpiry", "")
         if not expiry_str or datetime.fromisoformat(expiry_str) < datetime.now(timezone.utc):
-            return _resp(410, {"error": "This setup link has expired. Request a new one from the login screen."})
+            # Resolve who this link was for *now*, while the token still
+            # traces back to them, so the frontend can scope any later
+            # "request new password" call to this exact member even after
+            # this token itself gets rotated away by that request.
+            return _resp(410, {
+                "error": "This setup link has expired. Request a new one from the login screen.",
+                "memberId": member["memberId"],
+            })
         return _resp(200, {"valid": True})
 
     # ── Password setup / reset flow ───────────────────────────────────────────
@@ -1255,26 +1262,29 @@ def _handle_request_password_reset(event: dict) -> dict:
     except json.JSONDecodeError:
         return _resp(400, {"error": "Invalid JSON"})
 
-    identifier    = body.get("identifier", "").strip()
-    delivery      = body.get("delivery", "email")   # "email" | "whatsapp"
-    expired_token = body.get("expiredToken", "").strip()
+    identifier      = body.get("identifier", "").strip()
+    delivery        = body.get("delivery", "email")   # "email" | "whatsapp"
+    from_link       = bool(body.get("fromExpiredLink"))
+    scoped_member_id = body.get("memberId", "").strip()
     if not identifier:
         return _resp(400, {"error": "identifier (member ID, email, or phone) required"})
 
-    if expired_token:
-        # Scoped recovery from an expired setup/reset link: if the token is
-        # still tied to a specific member, only the exact email or phone
-        # already on file for *that* member is accepted — prevents someone
-        # else's expired link being used to request a reset for a different
-        # member's account. If the token has already been superseded (no
-        # longer on any record), there's no specific member left to protect
-        # against cross-account use, so fall back to the normal self-service
-        # lookup instead of dead-ending the request.
-        member = _find_member_by_setup_token(expired_token)
-        if member and not _identifier_matches_member(identifier, member):
-            return _resp(404, {"error": "That email or phone doesn't match our records for this link."})
+    if from_link:
+        # Scoped recovery from an expired setup/reset link. scoped_member_id
+        # was resolved by the frontend at page-load time (while the link's
+        # token still traced back to its owner) and is stable even after
+        # that token gets rotated away by a later successful request here —
+        # unlike matching on the token itself, which would otherwise let a
+        # dead/rotated token silently fall through to an unscoped lookup.
+        # Only the exact email or phone on file for that specific member is
+        # accepted; if no member could ever be resolved for this link,
+        # there's nothing to scope to and the request is rejected outright
+        # rather than falling back to an open lookup.
+        member = _db_get_member(scoped_member_id, "KAFA-001") if scoped_member_id else None
         if not member:
-            member = _find_member_by_identifier(identifier)
+            return _resp(410, {"error": "This link is no longer valid. Please contact an administrator for a new setup link."})
+        if not _identifier_matches_member(identifier, member):
+            return _resp(404, {"error": "That email or phone doesn't match our records for this link."})
     else:
         member = _find_member_by_identifier(identifier)
 

@@ -9,12 +9,18 @@ import '../services/dev_env.dart';
 
 String get _resetUrl => '$kApiBaseUrl${devPath('/member/request-password-reset')}';
 
-/// Shows the "request a new setup link" dialog. When [expiredToken] is
-/// given (i.e. this was reached from an expired setup/reset link), the
-/// entered email or phone is verified against that specific member's
-/// record on the backend — it won't accept a different member's email or
-/// phone, even if valid for someone else.
-void showRequestNewPasswordDialog(BuildContext context, {String? expiredToken}) {
+/// Shows the "request a new setup link" dialog. When [fromExpiredLink] is
+/// true (i.e. this was reached from an expired setup/reset link), the
+/// entered email or phone is verified against [scopedMemberId] — the
+/// member that link was resolved to belong to at page-load time — on the
+/// backend. It won't accept a different member's email or phone, even if
+/// valid for someone else, and won't fall back to an open lookup if
+/// [scopedMemberId] is null (the link's owner couldn't be resolved at all).
+void showRequestNewPasswordDialog(
+  BuildContext context, {
+  bool fromExpiredLink = false,
+  String? scopedMemberId,
+}) {
   final locale = context.read<LanguageProvider>().locale;
   String s(String key) => AppStrings.get(key, locale);
   final identifierCtrl = TextEditingController();
@@ -40,8 +46,9 @@ void showRequestNewPasswordDialog(BuildContext context, {String? expiredToken}) 
               body: jsonEncode({
                 'identifier': id,
                 'delivery': delivery,
-                if (expiredToken != null && expiredToken.isNotEmpty)
-                  'expiredToken': expiredToken,
+                if (fromExpiredLink) 'fromExpiredLink': true,
+                if (scopedMemberId != null && scopedMemberId.isNotEmpty)
+                  'memberId': scopedMemberId,
               }),
             );
             final data = jsonDecode(res.body) as Map<String, dynamic>;

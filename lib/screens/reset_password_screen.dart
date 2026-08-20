@@ -28,6 +28,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
   bool _checkingLink = true;
   bool _linkBlocked  = false;
+  // Resolved while the (possibly expired) token still traced back to its
+  // owner, so "request new password" stays scoped to this member even
+  // after that token itself gets rotated away by a later request.
+  String? _linkOwnerMemberId;
 
   static String get _loginUrl => '$kApiBaseUrl${devPath('/member/login')}';
 
@@ -46,9 +50,11 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       );
       if (res.statusCode == 410 || res.statusCode == 401) {
         if (!mounted) return;
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
         setState(() {
           _checkingLink = false;
           _linkBlocked  = true;
+          _linkOwnerMemberId = data['memberId'] as String?;
         });
         return;
       }
@@ -228,7 +234,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                             ),
                             onPressed: () => showRequestNewPasswordDialog(
                               context,
-                              expiredToken: widget.token,
+                              fromExpiredLink: true,
+                              scopedMemberId: _linkOwnerMemberId,
                             ),
                             child: Text(s('requestNewPasswordBtn')),
                           ),
