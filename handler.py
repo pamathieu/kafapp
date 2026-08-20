@@ -1267,7 +1267,12 @@ def _handle_request_password_reset(event: dict) -> dict:
         # to is accepted — prevents someone else's expired link being used
         # to request a reset for a different member's account.
         member = _find_member_by_setup_token(expired_token)
-        if not member or not _identifier_matches_member(identifier, member):
+        if not member:
+            # The token itself is no longer on any member's record — it was
+            # superseded by a later setup/resend, not just expired. There's
+            # no one left to verify the identifier against.
+            return _resp(410, {"error": "This link is no longer valid. Please contact an administrator for a new setup link."})
+        if not _identifier_matches_member(identifier, member):
             return _resp(404, {"error": "That email or phone doesn't match our records for this link."})
     else:
         member = _find_member_by_identifier(identifier)
