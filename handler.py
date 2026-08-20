@@ -328,13 +328,18 @@ def _make_short_link(url: str, base_url: str | None = None) -> str:
 
 def _make_setup_link(member: dict, reset: bool = False) -> str:
     """Generate a 24-hour setup token for *member*, persist it, and return the full URL.
-    Uses ?reset= for member-initiated resets and ?setup= for admin-initiated first-time setup."""
+    Uses ?reset= for member-initiated resets and ?setup= for admin-initiated first-time setup.
+    Also records the token in setupTokenHistory (never removed) so that an
+    old link — even after its token has been rotated away by a later
+    request — can still be traced back to the right member forever, instead
+    of becoming permanently unrecoverable once it's no longer the *current*
+    token on file."""
     token  = secrets.token_urlsafe(7)   # 10 URL-safe chars
     expiry = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
     dynamodb.Table(MEMBERS_TABLE).update_item(
         Key={"memberId": member["memberId"], "companyId": member.get("companyId", "KAFA-001")},
-        UpdateExpression="SET setupToken = :t, setupTokenExpiry = :e",
-        ExpressionAttributeValues={":t": token, ":e": expiry},
+        UpdateExpression="SET setupToken = :t, setupTokenExpiry = :e ADD setupTokenHistory :h",
+        ExpressionAttributeValues={":t": token, ":e": expiry, ":h": {token}},
     )
     param = "reset" if reset else "setup"
     return f"{MEMBER_PORTAL_URL}?{param}={token}"
@@ -1023,8 +1028,14 @@ def _handle_update_member_v2(event: dict) -> dict:
 ################################################################################
 
 def _find_member_by_setup_token(setup_token: str) -> dict | None:
+    """Find the member this token belongs to — either as their current
+    setupToken, or anywhere in their setupTokenHistory (older, rotated-away
+    tokens), so an old link can still be traced back to its rightful owner."""
     table = dynamodb.Table(MEMBERS_TABLE)
-    scan_kwargs = {"FilterExpression": Attr("setupToken").eq(setup_token)}
+    scan_kwargs = {
+        "FilterExpression": Attr("setupToken").eq(setup_token)
+        | Attr("setupTokenHistory").contains(setup_token)
+    }
     items = []
     while True:
         resp = table.scan(**scan_kwargs)
