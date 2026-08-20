@@ -10,22 +10,21 @@ import '../widgets/reset_password_dialog.dart';
 import 'member_dashboard_screen.dart';
 import 'member_login_screen.dart';
 
-class SetPasswordScreen extends StatefulWidget {
+class ResetPasswordScreen extends StatefulWidget {
   final String token;
-  const SetPasswordScreen({super.key, required this.token});
+  const ResetPasswordScreen({super.key, required this.token});
 
   @override
-  State<SetPasswordScreen> createState() => _SetPasswordScreenState();
+  State<ResetPasswordScreen> createState() => _ResetPasswordScreenState();
 }
 
-class _SetPasswordScreenState extends State<SetPasswordScreen> {
+class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl  = TextEditingController();
-  bool   _loading     = false;
-  bool   _obscure1    = true;
-  bool   _obscure2    = true;
+  bool   _loading  = false;
+  bool   _obscure1 = true;
+  bool   _obscure2 = true;
   String? _error;
-  bool   _success     = false;
 
   bool _checkingLink = true;
   bool _linkBlocked  = false;
@@ -71,6 +70,7 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
   Future<void> _submit() async {
     final locale = context.read<LanguageProvider>().locale;
     String s(String key) => AppStrings.get(key, locale);
+
     final password = _passwordCtrl.text.trim();
     final confirm  = _confirmCtrl.text.trim();
 
@@ -105,27 +105,17 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
           MaterialPageRoute(builder: (_) => MemberDashboardScreen(member: member)),
         );
         return;
-      } else if (res.statusCode == 410) {
-        setState(() {
-          _loading = false;
-          _error = s('setupLinkExpired');
-        });
-      } else if (res.statusCode == 401) {
-        setState(() {
-          _loading = false;
-          _error = s('invalidSetupLink');
-        });
-      } else {
-        setState(() {
-          _loading = false;
-          _error = data['error'] ?? s('somethingWentWrong');
-        });
       }
+
+      String msg;
+      switch (res.statusCode) {
+        case 410: msg = s('setupLinkExpired'); break;
+        case 401: msg = s('invalidSetupLink'); break;
+        default:  msg = data['error'] as String? ?? s('somethingWentWrong');
+      }
+      setState(() { _loading = false; _error = msg; });
     } catch (_) {
-      setState(() {
-        _loading = false;
-        _error = s('connectionErrorCheckInternet');
-      });
+      setState(() { _loading = false; _error = s('connectionErrorCheckInternet'); });
     }
   }
 
@@ -246,41 +236,6 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
                       ],
                     ),
                   ),
-                ] else if (_success) ...[
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Column(
-                      children: [
-                        const Icon(Icons.check_circle, color: Color(0xFF1A5C2A), size: 56),
-                        const SizedBox(height: 16),
-                        Text(s('passwordCreatedTitle'),
-                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold,
-                                color: Color(0xFF1A5C2A))),
-                        const SizedBox(height: 8),
-                        Text(s('accountReadyLogin'),
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: Colors.black54)),
-                        const SizedBox(height: 24),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: () async {
-                              await SessionService.clearSession();
-                              if (!context.mounted) return;
-                              Navigator.of(context).pushReplacement(
-                                MaterialPageRoute(builder: (_) => const MemberLoginScreen()),
-                              );
-                            },
-                            child: Text(s('goToLogin')),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 ] else ...[
                   Container(
                     padding: const EdgeInsets.all(24),
@@ -291,9 +246,15 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(s('createYourPassword'),
-                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold,
-                                color: Color(0xFF1A5C2A))),
+                        Row(children: [
+                          const Icon(Icons.lock_reset_outlined,
+                              color: Color(0xFF1A5C2A), size: 24),
+                          const SizedBox(width: 10),
+                          Text(s('resetYourPassword'),
+                              style: const TextStyle(fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1A5C2A))),
+                        ]),
                         const SizedBox(height: 24),
 
                         TextField(
@@ -301,8 +262,11 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
                           obscureText: _obscure1,
                           decoration: InputDecoration(
                             labelText: s('newPassword'),
+                            prefixIcon: const Icon(Icons.lock_outline),
                             suffixIcon: IconButton(
-                              icon: Icon(_obscure1 ? Icons.visibility : Icons.visibility_off),
+                              icon: Icon(_obscure1
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined),
                               onPressed: () => setState(() => _obscure1 = !_obscure1),
                             ),
                           ),
@@ -314,8 +278,11 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
                           obscureText: _obscure2,
                           decoration: InputDecoration(
                             labelText: s('confirmPassword'),
+                            prefixIcon: const Icon(Icons.lock_outline),
                             suffixIcon: IconButton(
-                              icon: Icon(_obscure2 ? Icons.visibility : Icons.visibility_off),
+                              icon: Icon(_obscure2
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined),
                               onPressed: () => setState(() => _obscure2 = !_obscure2),
                             ),
                           ),
@@ -324,21 +291,50 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
 
                         if (_error != null) ...[
                           const SizedBox(height: 12),
-                          Text(_error!,
-                              style: const TextStyle(color: Colors.red, fontSize: 13)),
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.red.shade200),
+                            ),
+                            child: Row(children: [
+                              Icon(Icons.error_outline,
+                                  color: Colors.red.shade700, size: 16),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(_error!,
+                                    style: TextStyle(
+                                        color: Colors.red.shade700, fontSize: 13)),
+                              ),
+                            ]),
+                          ),
                         ],
 
                         const SizedBox(height: 24),
                         SizedBox(
                           width: double.infinity,
-                          child: ElevatedButton(
+                          child: ElevatedButton.icon(
                             onPressed: _loading ? null : _submit,
-                            child: _loading
-                                ? const SizedBox(width: 20, height: 20,
+                            icon: _loading
+                                ? const SizedBox(width: 18, height: 18,
                                     child: CircularProgressIndicator(
                                         strokeWidth: 2, color: Colors.white))
-                                : Text(s('createPasswordBtn'),
-                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                : const Icon(Icons.lock_reset_outlined),
+                            label: Text(s('resetPasswordBtn'),
+                                style: const TextStyle(
+                                    fontSize: 16, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Center(
+                          child: TextButton(
+                            onPressed: () => Navigator.of(context).pushReplacement(
+                              MaterialPageRoute(
+                                  builder: (_) => const MemberLoginScreen()),
+                            ),
+                            child: Text(s('goToLogin'),
+                                style: const TextStyle(color: Color(0xFF1A5C2A))),
                           ),
                         ),
                       ],

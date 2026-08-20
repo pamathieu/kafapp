@@ -6,8 +6,8 @@ import '../providers/language_provider.dart';
 import '../misc/app_strings.dart';
 import '../services/session_service.dart';
 import '../services/dev_env.dart';
+import '../widgets/reset_password_dialog.dart';
 import 'member_dashboard_screen.dart';
-import 'set_password_screen.dart';
 
 class MemberLoginScreen extends StatefulWidget {
   const MemberLoginScreen({super.key});
@@ -289,7 +289,7 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
                         Align(
                           alignment: Alignment.centerRight,
                           child: TextButton(
-                            onPressed: () => _showSetupDialog(context),
+                            onPressed: () => showRequestNewPasswordDialog(context),
                             style: TextButton.styleFrom(
                               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -338,7 +338,7 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
 
                         const SizedBox(height: 16),
                         TextButton(
-                          onPressed: () => _showSetupDialog(context),
+                          onPressed: () => showRequestNewPasswordDialog(context),
                           child: Text(
                             s('firstTimeSetupPassword'),
                             style: const TextStyle(fontSize: 13, color: Colors.grey),
@@ -351,111 +351,6 @@ class _MemberLoginScreenState extends State<MemberLoginScreen> {
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  static const _resetUrl = '$kApiBaseUrl/member/request-password-reset';
-
-  void _showSetupDialog(BuildContext context) {
-    final locale = context.read<LanguageProvider>().locale;
-    String s(String key) => AppStrings.get(key, locale);
-    final identifierCtrl = TextEditingController();
-    bool sending = false;
-    String? dialogError;
-    bool sent = false;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          title: Text(s('setupYourPassword')),
-          content: sent
-              ? Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.mark_email_read_outlined, size: 48, color: Color(0xFF1A5C2A)),
-                    const SizedBox(height: 12),
-                    Text(
-                      s('checkEmailSetupLink'),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                  ],
-                )
-              : Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      s('enterIdToReceiveLink'),
-                      style: const TextStyle(fontSize: 13, color: Colors.grey),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: identifierCtrl,
-                      autofocus: true,
-                      decoration: InputDecoration(
-                        labelText: s('memberIdEmailPhone'),
-                        prefixIcon: const Icon(Icons.person_outline),
-                      ),
-                    ),
-                    if (dialogError != null) ...[
-                      const SizedBox(height: 8),
-                      Text(dialogError!, style: const TextStyle(color: Colors.red, fontSize: 13)),
-                    ],
-                  ],
-                ),
-          actions: sent
-              ? [
-                  FilledButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: Text(s('done')),
-                  ),
-                ]
-              : [
-                  TextButton(
-                    onPressed: sending ? null : () => Navigator.pop(ctx),
-                    child: Text(s('cancel')),
-                  ),
-                  FilledButton(
-                    onPressed: sending
-                        ? null
-                        : () async {
-                            final id = identifierCtrl.text.trim();
-                            if (id.isEmpty) return;
-                            setDialogState(() { sending = true; dialogError = null; });
-                            try {
-                              final res = await http.post(
-                                Uri.parse(_resetUrl),
-                                headers: {'Content-Type': 'application/json'},
-                                body: jsonEncode({'identifier': id}),
-                              );
-                              final data = jsonDecode(res.body) as Map<String, dynamic>;
-                              if (res.statusCode == 200) {
-                                setDialogState(() { sending = false; sent = true; });
-                              } else {
-                                setDialogState(() {
-                                  sending = false;
-                                  dialogError = data['error'] ?? s('somethingWentWrong');
-                                });
-                              }
-                            } catch (_) {
-                              setDialogState(() {
-                                sending = false;
-                                dialogError = s('connectionError');
-                              });
-                            }
-                          },
-                    child: sending
-                        ? const SizedBox(width: 16, height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : Text(s('sendLinkBtn')),
-                  ),
-                ],
         ),
       ),
     );

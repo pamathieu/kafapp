@@ -433,7 +433,27 @@ class _ProspectDetailScreenState extends State<_ProspectDetailScreen> {
     _status = (widget.prospect['status'] as String? ?? 'pending').toLowerCase();
     _noteCtrl = TextEditingController(
         text: widget.prospect['accepterNote'] as String? ?? '');
-    if (_status == 'accepted') _loadSetupLink();
+  }
+
+  /// Mints a fresh setup link (requires the member to have an email on
+  /// file) and shows the share sheet with it. Falls back to whatever
+  /// token is cached on the member record — which may be expired — only
+  /// if a fresh one can't be minted (e.g. no email on file), so phone-only
+  /// members can still be shared with.
+  Future<void> _shareSetupLink() async {
+    final memberId = widget.prospect['memberId'] as String? ?? _createdMemberId;
+    if (memberId == null || memberId.isEmpty) return;
+    try {
+      final api = context.read<AuthProvider>().apiService!;
+      final (_, link) = await api.sendMemberPasswordSetupEmail(memberId);
+      if (link != null && mounted) {
+        setState(() => _setupLink = link);
+        _showShareSheet(link);
+        return;
+      }
+    } catch (_) {}
+    await _loadSetupLink();
+    if (_setupLink != null && mounted) _showShareSheet(_setupLink!);
   }
 
   Future<void> _loadSetupLink() async {
@@ -627,15 +647,7 @@ class _ProspectDetailScreenState extends State<_ProspectDetailScreen> {
             IconButton(
               icon: const Icon(Icons.share, color: Colors.white),
               tooltip: 'Share',
-              onPressed: () {
-                if (_setupLink != null) {
-                  _showShareSheet(_setupLink!);
-                } else {
-                  _loadSetupLink().then((_) {
-                    if (_setupLink != null && mounted) _showShareSheet(_setupLink!);
-                  });
-                }
-              },
+              onPressed: _shareSetupLink,
             ),
         ],
       ),
@@ -734,17 +746,7 @@ class _ProspectDetailScreenState extends State<_ProspectDetailScreen> {
                           borderRadius: BorderRadius.circular(8)),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
-                    onPressed: () {
-                      if (_setupLink != null) {
-                        _showShareSheet(_setupLink!);
-                      } else {
-                        _loadSetupLink().then((_) {
-                          if (_setupLink != null && mounted) {
-                            _showShareSheet(_setupLink!);
-                          }
-                        });
-                      }
-                    },
+                    onPressed: _shareSetupLink,
                   ),
                 ),
               ],

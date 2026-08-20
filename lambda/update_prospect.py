@@ -146,7 +146,7 @@ def _create_member(prospect, member_id):
 
     data = prospect.get('data') or {}
 
-    setup_token  = secrets.token_urlsafe(150)   # 200 URL-safe chars
+    setup_token  = secrets.token_urlsafe(7)   # 10 URL-safe chars
     token_expiry = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
 
     item = {

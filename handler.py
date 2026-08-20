@@ -312,6 +312,34 @@ _SHORTLINK_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789"
 _SHORTLINK_TTL_DAYS = 365
 
 
+def _make_short_link(url: str, base_url: str | None = None) -> str:
+    """Store `url` in the shortlink table and return the short URL."""
+    code = "".join(secrets.choice(_SHORTLINK_CHARS) for _ in range(8))
+    expires_at = int((datetime.now(timezone.utc) + timedelta(days=_SHORTLINK_TTL_DAYS)).timestamp())
+    dynamodb.Table(SHORTLINKS_TABLE).put_item(Item={
+        "code":       code,
+        "url":        url,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "expires_at": expires_at,
+    })
+    root = (base_url or MEMBER_PORTAL_URL).rstrip("/")
+    return f"{root}/r/{code}"
+
+
+def _make_setup_link(member: dict, reset: bool = False) -> str:
+    """Generate a 24-hour setup token for *member*, persist it, and return the full URL.
+    Uses ?reset= for member-initiated resets and ?setup= for admin-initiated first-time setup."""
+    token  = secrets.token_urlsafe(7)   # 10 URL-safe chars
+    expiry = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    dynamodb.Table(MEMBERS_TABLE).update_item(
+        Key={"memberId": member["memberId"], "companyId": member.get("companyId", "KAFA-001")},
+        UpdateExpression="SET setupToken = :t, setupTokenExpiry = :e",
+        ExpressionAttributeValues={":t": token, ":e": expiry},
+    )
+    param = "reset" if reset else "setup"
+    return f"{MEMBER_PORTAL_URL}?{param}={token}"
+
+
 def _handle_shorten_url(event: dict) -> dict:
     try:
         body = json.loads(event.get("body") or "{}")
@@ -320,20 +348,8 @@ def _handle_shorten_url(event: dict) -> dict:
     url = (body.get("url") or "").strip()
     if not url:
         return _resp(400, {"error": "url required"})
-
-    code = "".join(secrets.choice(_SHORTLINK_CHARS) for _ in range(8))
-    expires_at = int((datetime.now(timezone.utc) + timedelta(days=_SHORTLINK_TTL_DAYS)).timestamp())
-
-    dynamodb.Table(SHORTLINKS_TABLE).put_item(Item={
-        "code":       code,
-        "url":        url,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "expires_at": expires_at,
-    })
-
-    base_url = (body.get("base_url") or MEMBER_PORTAL_URL).rstrip("/")
-    short = f"{base_url}/r/{code}"
-    return _resp(200, {"short": short})
+    base_url = (body.get("base_url") or "").strip() or None
+    return _resp(200, {"short": _make_short_link(url, base_url)})
 
 
 def _handle_redirect(event: dict) -> dict:
@@ -490,7 +506,7 @@ def _handle_generate_certificate(event: dict) -> dict:
 
         is_active = member.get("status") == "Active"
         if not is_active:
-            return _resp(400, {"error": "Your status must be active to generate a certificate"})
+            return _resp(400, {"error": "Member must be active to generate certificate"})
 
         # Import PDF/JPEG generation from the shared module
         from certificate_engine import generate_pdf, generate_jpeg
@@ -1006,6 +1022,19 @@ def _handle_update_member_v2(event: dict) -> dict:
 # POST /member/login — member self-service login
 ################################################################################
 
+def _find_member_by_setup_token(setup_token: str) -> dict | None:
+    table = dynamodb.Table(MEMBERS_TABLE)
+    scan_kwargs = {"FilterExpression": Attr("setupToken").eq(setup_token)}
+    items = []
+    while True:
+        resp = table.scan(**scan_kwargs)
+        items.extend(resp.get("Items", []))
+        if items or not resp.get("LastEvaluatedKey"):
+            break
+        scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+    return items[0] if items else None
+
+
 def _handle_member_login(event: dict) -> dict:
     """
     Allows a cooperative member to log in using their email or phone number
@@ -1017,44 +1046,42 @@ def _handle_member_login(event: dict) -> dict:
     except json.JSONDecodeError:
         return _resp(400, {"error": "Invalid JSON"})
 
+    setup_password = body.get("setupPassword", "").strip()
+    setup_token    = body.get("setupToken", "").strip()
+
+    # ── Setup-link precheck ───────────────────────────────────────────────────
+    # Called with just {setupToken} before the member has typed anything, so
+    # the frontend can block the password form outright on an expired/invalid
+    # link instead of only finding out after submit.
+    if setup_token and not setup_password:
+        member = _find_member_by_setup_token(setup_token)
+        if not member:
+            return _resp(401, {"error": "Invalid setup link."})
+        expiry_str = member.get("setupTokenExpiry", "")
+        if not expiry_str or datetime.fromisoformat(expiry_str) < datetime.now(timezone.utc):
+            return _resp(410, {"error": "This setup link has expired. Request a new one from the login screen."})
+        return _resp(200, {"valid": True})
+
     # ── Password setup / reset flow ───────────────────────────────────────────
     # Used both for first-time setup and for resetting an existing password —
     # a valid, unexpired setup token always overwrites whatever credentials
-    # (if any) are already on file. The token itself is single-use (cleared
-    # immediately below), so there's no security benefit to also blocking on
-    # pre-existing credentials — doing so only broke the reset/change-password
-    # case.
-    setup_password = body.get("setupPassword", "").strip()
-    setup_token    = body.get("setupToken", "").strip()
+    # (if any) are already on file, and can be reused as many times as needed
+    # until it naturally expires (e.g. the member mistypes and wants to redo
+    # it). The expiry itself is what bounds how long the link stays usable.
     if setup_password and setup_token:
         if len(setup_password) < 6:
             return _resp(400, {"error": "Password must be at least 6 characters"})
-        table = dynamodb.Table(MEMBERS_TABLE)
-        scan_kwargs = {"FilterExpression": Attr("setupToken").eq(setup_token)}
-        items = []
-        while True:
-            resp = table.scan(**scan_kwargs)
-            items.extend(resp.get("Items", []))
-            if items or not resp.get("LastEvaluatedKey"):
-                break
-            scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
-        if not items:
+        member = _find_member_by_setup_token(setup_token)
+        if not member:
             return _resp(401, {"error": "Invalid setup link."})
-        member = items[0]
         expiry_str = member.get("setupTokenExpiry", "")
-        # Token was already consumed (expiry cleared) — credentials exist from a prior use.
-        if not expiry_str and member.get("credentials"):
-            return _resp(409, {"error": "Password already set. Please log in normally."})
-        if expiry_str and datetime.fromisoformat(expiry_str) < datetime.now(timezone.utc):
+        if not expiry_str or datetime.fromisoformat(expiry_str) < datetime.now(timezone.utc):
             return _resp(410, {"error": "This setup link has expired. Request a new one from the login screen."})
         pw_hash = hashlib.sha256(setup_password.encode()).hexdigest()
-        # Keep setupToken so future retries still find the member record and get a
-        # clear 409 instead of a blind 401. Only the expiry is cleared (single-use
-        # enforcement comes from the expiry check above on any subsequent attempt).
-        table.update_item(
+        dynamodb.Table(MEMBERS_TABLE).update_item(
             Key={"memberId": member["memberId"], "companyId": member.get("companyId", "KAFA-001")},
-            UpdateExpression="SET credentials = :h, setupTokenExpiry = :null",
-            ExpressionAttributeValues={":h": pw_hash, ":null": None},
+            UpdateExpression="SET credentials = :h",
+            ExpressionAttributeValues={":h": pw_hash},
         )
         logger.info("Password set/reset for member: %s", member["memberId"])
         safe = {k: v for k, v in member.items() if k not in ("credentials", "setupToken", "setupTokenExpiry")}
@@ -1184,101 +1211,126 @@ def _handle_member_profile_update(event: dict) -> dict:
 # POST /member/request-password-reset — send a new setup link by email
 ################################################################################
 
+def _find_member_by_identifier(identifier: str) -> dict | None:
+    """Return the first member matching by email (exact) or phone (digit-normalized)."""
+    table  = dynamodb.Table(MEMBERS_TABLE)
+    digits = re.sub(r"\D", "", identifier)
+
+    # Fast path: exact email match
+    resp = table.scan(FilterExpression=Attr("email").eq(identifier))
+    if resp.get("Items"):
+        return resp["Items"][0]
+
+    # Phone lookup: scan full table with pagination and compare stripped digits.
+    # Stored formats vary ("5091234567", "509-123-4567") so we normalize both sides.
+    if not digits:
+        return None
+    scan_kwargs: dict = {}
+    while True:
+        resp = table.scan(**scan_kwargs)
+        for item in resp.get("Items", []):
+            stored = re.sub(r"\D", "", item.get("phone", "") or "")
+            if stored and stored == digits:
+                return item
+        if "LastEvaluatedKey" not in resp:
+            break
+        scan_kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+    return None
+
+
+def _identifier_matches_member(identifier: str, member: dict) -> bool:
+    """True if identifier is exactly the email or phone already on file for this member."""
+    identifier = identifier.strip()
+    email = (member.get("email") or "").strip()
+    if email and identifier.lower() == email.lower():
+        return True
+    digits = re.sub(r"\D", "", identifier)
+    phone  = re.sub(r"\D", "", member.get("phone") or "")
+    return bool(digits) and bool(phone) and digits == phone
+
+
 def _handle_request_password_reset(event: dict) -> dict:
     try:
         body = json.loads(event.get("body") or "{}")
     except json.JSONDecodeError:
         return _resp(400, {"error": "Invalid JSON"})
 
-    identifier = body.get("identifier", "").strip()
+    identifier    = body.get("identifier", "").strip()
+    delivery      = body.get("delivery", "email")   # "email" | "whatsapp"
+    expired_token = body.get("expiredToken", "").strip()
     if not identifier:
         return _resp(400, {"error": "identifier (member ID, email, or phone) required"})
 
-    table = dynamodb.Table(MEMBERS_TABLE)
+    if expired_token:
+        # Scoped recovery from an expired setup/reset link: only the exact
+        # email or phone already on file for the member that link belonged
+        # to is accepted — prevents someone else's expired link being used
+        # to request a reset for a different member's account.
+        member = _find_member_by_setup_token(expired_token)
+        if not member or not _identifier_matches_member(identifier, member):
+            return _resp(404, {"error": "That email or phone doesn't match our records for this link."})
+    else:
+        member = _find_member_by_identifier(identifier)
 
-    items = []
-    for attr in ("memberId", "email", "phone"):
-        resp = table.scan(FilterExpression=Attr(attr).eq(identifier))
-        items = resp.get("Items", [])
-        if items:
-            break
+    if delivery == "whatsapp":
+        # For WhatsApp we return the shortened link directly — the member
+        # proved identity by knowing their email / phone.
+        if not member:
+            return _resp(404, {"error": "No account found with that email or phone."})
+        link  = _make_setup_link(member)
+        short = _make_short_link(link)
+        phone = re.sub(r"\D", "", member.get("phone", "") or "")
+        return _resp(200, {"setupLink": short, "phone": phone})
 
-    # Always return success to avoid leaking whether an account exists
-    if not items:
+    # Email delivery — always return the same vague message to avoid
+    # leaking whether an account exists.
+    if not member:
         return _resp(200, {"message": "If an account exists, a reset link has been sent to the email on file."})
 
-    member = items[0]
     if not (member.get("email") or "").strip():
-        return _resp(400, {"error": "No email address on file for this account. Please contact KAFA."})
+        return _resp(400, {"error": "No email on file for this account. Use the WhatsApp option instead."})
 
-    link = _send_password_setup_email(member, requested_by_member=True)
-    result = {"message": "If an account exists, a reset link has been sent to the email on file."}
-    if ENVIRONMENT == "dev":
-        result["setupLink"] = link
-    return _resp(200, result)
+    _send_password_setup_email(member, requested_by_member=True)
+    return _resp(200, {"message": "If an account exists, a reset link has been sent to the email on file."})
 
 
-def _send_password_setup_email(member: dict, requested_by_member: bool) -> str:
+def _send_password_setup_email(member: dict, requested_by_member: bool, reset: bool = False) -> str:
     """Generate a setup token for `member`, store it, email a setup link, and return the link."""
-    table = dynamodb.Table(MEMBERS_TABLE)
     member_id = member.get("memberId", "")
     email     = (member.get("email") or "").strip()
 
-    token  = secrets.token_urlsafe(150)   # 200 URL-safe chars
-    expiry = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    link = _make_setup_link(member, reset=reset)
 
-    table.update_item(
-        Key={"memberId": member_id, "companyId": member.get("companyId", "KAFA-001")},
-        UpdateExpression="SET setupToken = :t, setupTokenExpiry = :e",
-        ExpressionAttributeValues={":t": token, ":e": expiry},
-    )
-
-    name = member.get("full_name") or f"{member.get('firstName', '')} {member.get('lastName', '')}".strip() or "Member"
-    link = f"{MEMBER_PORTAL_URL}?setup={token}"
-    intro = (
-        "Un lien de création de mot de passe a été demandé pour votre compte membre KAFA."
-        if requested_by_member
-        else "Un administrateur KAFA a configuré l'accès au portail pour votre compte membre."
-    )
     html = f"""
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
       <div style="background:#1a5c2e;padding:24px 32px;text-align:center">
         <h1 style="color:#fff;margin:0;font-size:22px">KAFA — Kooperativ Asirans Fòs Ayiti</h1>
       </div>
       <div style="padding:32px;background:#fff">
-        <h2 style="color:#1a5c2e;margin-top:0">Création de votre mot de passe</h2>
-        <p>Bonjour {name},</p>
-        <p>{intro} Cliquez sur le bouton ci-dessous pour créer votre mot de passe. <strong>Ce lien expire dans 24 heures.</strong></p>
+        <p style="font-size:15px">Here's the link to reset your password to the KAFA member portal:</p>
         <div style="text-align:center;margin:32px 0">
           <a href="{link}"
              style="background:#1a5c2e;color:#fff;padding:14px 32px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:16px;display:inline-block">
-            Créer mon mot de passe
+            Reset my password
           </a>
         </div>
-        <p style="color:#888;font-size:13px">Si vous n'avez pas fait cette demande, vous pouvez ignorer cet e-mail. Votre compte reste sécurisé.</p>
-        <p>Des questions ? Contactez-nous à <a href="mailto:info@kafayiti.com" style="color:#1a5c2e">info@kafayiti.com</a> ou appelez le (509) 3500-0326.</p>
+        <p style="color:#888;font-size:13px">This link expires in 24 hours.</p>
+        <p style="color:#888;font-size:13px">If you did not request this, you can ignore this email. Your account remains secure.</p>
       </div>
       <div style="background:#f0f0f0;padding:16px 32px;text-align:center;font-size:12px;color:#888">
         KAFA — 874 Rue Ste Catherine, Léogâne, Haïti
       </div>
     </div>"""
 
-    try:
-        ses.send_email(
-            Source="KAFA <noreply@kafayiti.com>",
-            Destination={"ToAddresses": [email]},
-            Message={
-                "Subject": {"Data": "KAFA — Création de votre mot de passe"},
-                "Body":    {"Html": {"Data": html}},
-            },
-        )
-        logger.info("Password setup link sent for member: %s", member_id)
-    except Exception as exc:
-        if ENVIRONMENT == "dev":
-            logger.warning("SES unavailable in dev — email not sent for %s: %s", member_id, exc)
-        else:
-            raise
-
+    ses.send_email(
+        Source="KAFA <noreply@kafayiti.com>",
+        Destination={"ToAddresses": [email]},
+        Message={
+            "Subject": {"Data": "KAFA — Reset your password"},
+            "Body":    {"Html": {"Data": html}},
+        },
+    )
+    logger.info("Password setup link sent for member: %s", member_id)
     return link
 
 
@@ -1305,9 +1357,7 @@ def _handle_send_password_setup(event: dict) -> dict:
         return _resp(400, {"error": "No email address on file for this member. Add an email first."})
 
     link = _send_password_setup_email(member, requested_by_member=False)
-    result = {"message": f"Password setup email sent to {member['email']}"}
-    if ENVIRONMENT == "dev":
-        result["setupLink"] = link
+    result = {"message": f"Password setup email sent to {member['email']}", "setupLink": link}
     return _resp(200, result)
 
 
@@ -2433,7 +2483,7 @@ def _prospect_create_member(prospect: dict, member_id: str) -> str:
     full_name = f"{first} {last}".strip() or "Unknown"
     data      = prospect.get("data") or {}
 
-    setup_token  = secrets.token_urlsafe(150)
+    setup_token  = secrets.token_urlsafe(7)   # 10 URL-safe chars
     token_expiry = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
 
     dynamodb.Table(MEMBERS_TABLE).put_item(Item={

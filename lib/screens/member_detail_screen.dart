@@ -469,7 +469,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     } catch (e) {
       setState(() {
         _isGenerating = false;
-        _generateError = s('failedGenerateCertificate');
+        _generateError = e.toString().replaceFirst('Exception: ', '');
       });
     }
   }
@@ -530,6 +530,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         });
         return;
       }
+      final shortCertUrl = await _shortenUrl(jpegUrl);
       setState(() => _isDownloading = false);
 
       var waPhone = phone.replaceAll(RegExp(r'[^0-9]'), '');
@@ -538,8 +539,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       final message =
           'Hello ${_member.fullName} 👋\n\n'
           'Here is your KAFA membership certificate:\n'
-          '$jpegUrl\n\n'
-          'KAFA — 874 Rue Ste Catherine, Léogâne, Haïti';
+          '$shortCertUrl\n\n'
+          'KAFA - 874 Rue Ste Catherine, Leogane, Haiti';
       final encoded = Uri.encodeComponent(message);
       final waUrl = waPhone.isNotEmpty
           ? 'https://wa.me/$waPhone?text=$encoded'
@@ -1103,7 +1104,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                                         'Method: ${_methodLabel(p['paymentMethod'] as String? ?? p['method'] as String?)}\n'
                                         'Reference: $ref\n\n'
                                         'Thank you for your payment!\n\n'
-                                        'KAFA — 874 Rue Ste Catherine, Léogâne, Haïti';
+                                        'KAFA - 874 Rue Ste Catherine, Leogane, Haiti';
                                     final encoded = Uri.encodeComponent(msg);
                                     final url = waPhone.isNotEmpty
                                         ? 'https://wa.me/$waPhone?text=$encoded'
@@ -1479,23 +1480,23 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     buf.writeln('Welcome to KAFA!');
     buf.writeln();
 
-    buf.writeln('🔐 *Set your password:*');
+    buf.writeln('*Set your password:*');
     buf.writeln(setupLink);
     buf.writeln();
 
     if (certLink.isNotEmpty) {
-      buf.writeln('📄 *Your certificate:*');
+      buf.writeln('*Your certificate:*');
       buf.writeln(certLink);
       buf.writeln();
     }
 
-    buf.writeln('💳 *Payment Receipts*');
+    buf.writeln('*Payment Receipts*');
 
     // Membership share — always included (even at $0)
     final membershipTotal = membershipShares.fold<double>(
         0, (sum, s) => sum + ((s['amount'] as num?) ?? 0).toDouble());
     buf.writeln();
-    buf.writeln('✅ *Membership Share*');
+    buf.writeln('*Membership Share*');
     buf.writeln('Amount: US\$${membershipTotal.toStringAsFixed(2)}');
     if (membershipShares.isNotEmpty) {
       final dt = membershipShares.first['datetime'] as String? ?? '';
@@ -1512,7 +1513,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           0, (sum, s) => sum + ((s['amount'] as num?) ?? 0).toDouble());
       final apr = (preferredShares.first['apr'] as num?)?.toDouble() ?? 0;
       buf.writeln();
-      buf.write('✅ *Preferred Share');
+      buf.write('*Preferred Share');
       if (apr > 0) buf.write(' (APR ${apr.toStringAsFixed(0)}%)');
       buf.writeln('*');
       buf.writeln('Amount: US\$${preferredTotal.toStringAsFixed(2)}');
@@ -1524,8 +1525,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       if (ref2.isNotEmpty) buf.writeln('Ref: $ref2');
     }
 
-    buf.writeln();
-    buf.write('KAFA — 874 Rue Ste Catherine, Léogâne, Haïti');
     return buf.toString();
   }
 
@@ -1534,12 +1533,10 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     try {
       final api = context.read<AuthProvider>().apiService!;
 
-      // 1. Setup link — only generate if the member has an email on file
+      // 1. Setup link — always mint a fresh one (the cached setupToken on the
+      // member record may already be expired) if the member has an email on file.
       String setupLink;
-      final token = _member.setupToken;
-      if (token != null && token.isNotEmpty && _member.email.trim().isNotEmpty) {
-        setupLink = '$kMemberPortalUrl?setup=$token';
-      } else if (_member.email.trim().isNotEmpty) {
+      if (_member.email.trim().isNotEmpty) {
         final (_, link) = await api.sendMemberPasswordSetupEmail(_member.memberId);
         setupLink = link ?? kMemberPortalUrl;
       } else {
@@ -1555,9 +1552,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         } catch (_) {}
       }
 
-      // 3. Shorten only the setup link — cert link is a presigned S3 URL that
-      // must be used as-is; routing it through the member portal domain breaks it.
+      // 3. Shorten both links for compact WhatsApp messages.
       setupLink = await _shortenUrl(setupLink);
+      if (certLink.isNotEmpty) certLink = await _shortenUrl(certLink);
 
       // 4. Build share receipt lists from already-loaded _shares
       final membershipShares = _shares
@@ -1594,26 +1591,23 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   }
 
   Future<void> _showSetupLinkSheet() async {
+    // Always mint a fresh token — the cached setupToken on the member record
+    // may already be expired.
     String setupLink;
-    final token = _member.setupToken;
-    if (token != null && token.isNotEmpty) {
-      setupLink = '$kMemberPortalUrl?setup=$token';
-    } else {
-      setState(() { _isSavingPassword = true; _passwordMessage = null; });
-      try {
-        final api = context.read<AuthProvider>().apiService!;
-        final (_, link) = await api.sendMemberPasswordSetupEmail(_member.memberId);
-        setState(() => _isSavingPassword = false);
-        if (link == null || !mounted) return;
-        setupLink = link;
-      } catch (e) {
-        setState(() {
-          _isSavingPassword = false;
-          debugPrint('[MemberDetail] setup link error: $e');
-          _passwordMessage = 'Something went wrong. Please try again.';
-        });
-        return;
-      }
+    setState(() { _isSavingPassword = true; _passwordMessage = null; });
+    try {
+      final api = context.read<AuthProvider>().apiService!;
+      final (_, link) = await api.sendMemberPasswordSetupEmail(_member.memberId);
+      setState(() => _isSavingPassword = false);
+      if (link == null || !mounted) return;
+      setupLink = link;
+    } catch (e) {
+      setState(() {
+        _isSavingPassword = false;
+        debugPrint('[MemberDetail] setup link error: $e');
+        _passwordMessage = 'Something went wrong. Please try again.';
+      });
+      return;
     }
     if (!mounted) return;
     showModalBottomSheet(
@@ -1642,7 +1636,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         '📧 kontak@kafayiti.com\n'
         '📞 (509) 3500-0326 / (509) 4439-8595\n'
         '🌐 kafayiti.com\n\n'
-        'KAFA — 874 Rue Ste Catherine, Léogâne, Haïti';
+        'KAFA - 874 Rue Ste Catherine, Leogane, Haiti';
 
     final encoded = Uri.encodeComponent(message);
     return phone.isNotEmpty
@@ -2376,6 +2370,37 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
       return;
     }
 
+    // Require explicit confirmation before charging in Pay mode.
+    if (!widget.collectMode) {
+      final amount = _amountCtrl.text.trim();
+      final typeLabel = _tab == 'premium'
+          ? 'premium'
+          : _tab == 'preferred'
+              ? 'preferred share'
+              : 'membership share';
+      final confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Confirm Payment'),
+          content: Text(
+            'Charge \$$amount for $typeLabel?\n\nMethod: ${_methodLabel(_paymentMethod)}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Confirm'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+
     setState(() { _isSaving = true; _message = null; });
 
     try {
@@ -2442,7 +2467,6 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
     if (mounted) {
       setState(() { _isSaving = false; _message = '✓ Card charged. ID: $paymentId'; });
       widget.onSuccess('✓ Card payment recorded. ID: $paymentId');
-      Navigator.pop(context);
     }
   }
 
@@ -2474,7 +2498,6 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
     if (mounted) {
       setState(() { _isSaving = false; _message = '✓ Recorded. Ref: $refNo'; });
       widget.onSuccess('✓ Payment recorded. Ref: $refNo');
-      Navigator.pop(context);
     }
   }
 
@@ -2529,7 +2552,6 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
         _amountCtrl.clear();
       });
       widget.onSuccess('✓ Share payment recorded.');
-      Navigator.pop(context);
     }
   }
 
@@ -2566,7 +2588,6 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
         _refCtrl.clear();
       });
       widget.onSuccess('✓ Share recorded.');
-      Navigator.pop(context);
     }
   }
 
@@ -2704,7 +2725,7 @@ class _CollectShareSheetState extends State<_CollectShareSheet> {
                                   'Method: ${_methodLabel(tx['paymentMethod'] as String?)}\n'
                                   'Reference: ${tx['externalRef'] as String? ?? tx['shareId'] as String? ?? ''}\n\n'
                                   'Thank you for your payment!\n\n'
-                                  'KAFA — 874 Rue Ste Catherine, Léogâne, Haïti';
+                                  'KAFA - 874 Rue Ste Catherine, Leogane, Haiti';
                               final encoded = Uri.encodeComponent(msg);
                               final url = waPhone.isNotEmpty
                                   ? 'https://wa.me/$waPhone?text=$encoded'
