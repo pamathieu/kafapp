@@ -308,9 +308,11 @@ resource "aws_iam_role_policy" "lambda_dynamodb" {
         aws_dynamodb_table.kopera-admin.arn,
         aws_dynamodb_table.kopera-localities.arn,
         aws_dynamodb_table.kopera-life-insurance.arn,
+        aws_dynamodb_table.kafa-prospect.arn,
         "${aws_dynamodb_table.kopera-company.arn}/index/*",
         "${aws_dynamodb_table.kopera-member.arn}/index/*",
         "${aws_dynamodb_table.kopera-life-insurance.arn}/index/*",
+        "${aws_dynamodb_table.kafa-prospect.arn}/index/*",
       ]
     }]
   })
@@ -3079,59 +3081,12 @@ resource "aws_iam_role_policy" "lambda_payment_policy" {
   })
 }
 
-# ── create_payment_intent Lambda ──────────────────────────────────────────────
-
-resource "aws_lambda_function" "create_payment_intent" {
-  function_name = "${local.prefix}-create-payment-intent"
-  description   = "Creates a Stripe PaymentIntent and writes a PENDING record to DynamoDB"
-
-  s3_bucket = aws_s3_bucket.kopera-asset.id
-  s3_key    = "lambda/payment.zip"
-
-  runtime     = "python3.12"
-  handler     = "create_payment_intent.lambda_handler"
-  role        = aws_iam_role.lambda_payment_exec.arn
-  timeout     = 30
-  memory_size = 256
-
-  environment {
-    variables = {
-      LIFE_INSURANCE_TABLE = aws_dynamodb_table.kopera-life-insurance.name
-      STRIPE_SECRET_KEY    = var.stripe_secret_key
-    }
-  }
-}
-
 resource "aws_lambda_permission" "create_payment_intent_apigw" {
   statement_id  = "AllowAPIGatewayInvokePaymentIntent"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.create_payment_intent.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
-}
-
-# ── stripe_webhook Lambda ─────────────────────────────────────────────────────
-
-resource "aws_lambda_function" "stripe_webhook" {
-  function_name = "${local.prefix}-stripe-webhook"
-  description   = "Receives Stripe webhook events and updates DynamoDB payment status"
-
-  s3_bucket = aws_s3_bucket.kopera-asset.id
-  s3_key    = "lambda/payment.zip"
-
-  runtime     = "python3.12"
-  handler     = "stripe_webhook.lambda_handler"
-  role        = aws_iam_role.lambda_payment_exec.arn
-  timeout     = 30
-  memory_size = 256
-
-  environment {
-    variables = {
-      LIFE_INSURANCE_TABLE = aws_dynamodb_table.kopera-life-insurance.name
-      STRIPE_SECRET_KEY    = var.stripe_secret_key
-      KAFA_WEBHOOK_SECRET  = var.stripe_webhook_secret
-    }
-  }
 }
 
 resource "aws_lambda_permission" "stripe_webhook_apigw" {
@@ -3194,50 +3149,6 @@ resource "aws_api_gateway_integration" "webhook_lambda" {
   uri                     = aws_lambda_function.stripe_webhook.invoke_arn
 }
 
-# ── CORS OPTIONS for /payments/create-intent ──────────────────────────────────
-
-resource "aws_api_gateway_method" "create_intent_options" {
-  rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.payments_create_intent.id
-  http_method   = "OPTIONS"
-  authorization = "NONE"
-}
-
-resource "aws_api_gateway_integration" "create_intent_options" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.payments_create_intent.id
-  http_method = aws_api_gateway_method.create_intent_options.http_method
-  type        = "MOCK"
-  request_templates = {
-    "application/json" = "{\"statusCode\": 200}"
-  }
-}
-
-resource "aws_api_gateway_method_response" "create_intent_options_200" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.payments_create_intent.id
-  http_method = aws_api_gateway_method.create_intent_options.http_method
-  status_code = "200"
-  response_parameters = {
-    "method.response.header.Access-Control-Allow-Headers" = true
-    "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin"  = true
-  }
-}
-
-resource "aws_api_gateway_integration_response" "create_intent_options" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.payments_create_intent.id
-  http_method = aws_api_gateway_method.create_intent_options.http_method
-  status_code = aws_api_gateway_method_response.create_intent_options_200.status_code
-  response_parameters = {
-    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin"  = "'https://member.kafayiti.com'"
-  }
-  depends_on = [aws_api_gateway_integration.create_intent_options]
-}
-
 ################################################################################
 # Outputs — kopera-life-insurance table
 ################################################################################
@@ -3260,67 +3171,6 @@ output "life_insurance_stream_arn" {
 output "api_gateway_base_url" {
   description = "Base URL for the KAFA API Gateway — pass as --dart-define=API_BASE_URL=<value>"
   value       = "https://${aws_api_gateway_rest_api.main.id}.execute-api.${var.aws_region}.amazonaws.com/${var.environment}"
-}
-
-################################################################################
-# get_policy Lambda  — GET /policies/{policyId}?memberId=...
-################################################################################
-
-resource "aws_lambda_function" "get_policy" {
-  function_name = "${local.prefix}-get-policy"
-  description   = "Returns full policy detail for the member portal PolicyDetailScreen"
-
-  s3_bucket = aws_s3_bucket.kopera-asset.id
-  s3_key    = "lambda/payment.zip"
-
-  runtime     = "python3.12"
-  handler     = "get_policy.handler"
-  role        = aws_iam_role.lambda_exec.arn
-  timeout     = 10
-  memory_size = 256
-
-  environment {
-    variables = {
-      INSURANCE_TABLE = aws_dynamodb_table.kopera-life-insurance.name
-      MEMBER_TABLE    = aws_dynamodb_table.kopera-member.name
-    }
-  }
-}
-
-resource "aws_api_gateway_resource" "policies" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
-  path_part   = "policies"
-}
-
-resource "aws_api_gateway_resource" "policy_item" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_resource.policies.id
-  path_part   = "{policyId}"
-}
-
-resource "aws_api_gateway_method" "get_policy" {
-  rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.policy_item.id
-  http_method   = "GET"
-  authorization = "NONE"
-}
-
-resource "aws_api_gateway_integration" "get_policy" {
-  rest_api_id             = aws_api_gateway_rest_api.main.id
-  resource_id             = aws_api_gateway_resource.policy_item.id
-  http_method             = aws_api_gateway_method.get_policy.http_method
-  integration_http_method = "POST"
-  type                    = "AWS_PROXY"
-  uri                     = aws_lambda_function.get_policy.invoke_arn
-}
-
-resource "aws_lambda_permission" "get_policy_apigw" {
-  statement_id  = "AllowAPIGWGetPolicy"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.get_policy.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
 }
 
 ################################################################################

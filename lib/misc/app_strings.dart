@@ -314,6 +314,7 @@ class AppStrings {
 
       // No-policy banner
       'contactKafaForAuth': "Vous n'avez pas encore de contrat avec KAFA. Veuillez nous contacter",
+      'viewOptions': 'Voir les options',
 
       // Beneficiaries
       'beneficiaries': 'Bénéficiaires',
@@ -951,6 +952,7 @@ class AppStrings {
 
       // No-policy banner
       'contactKafaForAuth': 'You do not have a contract with KAFA yet. Please contact us',
+      'viewOptions': 'View Options',
 
       // Beneficiaries
       'beneficiaries': 'Beneficiaries',
@@ -1588,6 +1590,7 @@ class AppStrings {
 
       // No-policy banner
       'contactKafaForAuth': "Ou pa gen yon kontra ak KAFA toujou. Tanpri kontakte nou",
+      'viewOptions': 'Wè opsyon yo',
 
       // Beneficiaries
       'beneficiaries': 'Benefisyè',
@@ -2225,6 +2228,7 @@ class AppStrings {
 
       // No-policy banner
       'contactKafaForAuth': "Aún no tiene un contrato con KAFA. Por favor contáctenos",
+      'viewOptions': 'Ver opciones',
 
       // Beneficiaries
       'beneficiaries': 'Beneficiarios',
@@ -2862,6 +2866,7 @@ class AppStrings {
 
       // No-policy banner
       'contactKafaForAuth': "Você ainda não tem um contrato com a KAFA. Por favor entre em contato conosco",
+      'viewOptions': 'Ver opções',
 
       // Beneficiaries
       'beneficiaries': 'Beneficiários',
