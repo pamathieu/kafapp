@@ -69,6 +69,10 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   List<Map<String, dynamic>> _shares = [];
   bool _loadingShares = false;
 
+  // Savings state
+  double _savingsBalance = 0;
+  List<Map<String, dynamic>> _savingsDeposits = [];
+
   // Payment state (policies cache for sheet)
   List<Map<String, dynamic>> _memberPolicies = [];
 
@@ -92,6 +96,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     _loadMemberPolicies();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadPaymentHistory());
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadShares());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadSavingsAccount());
 
     // Silently re-fetch policies + payment history so updates made elsewhere
     // (e.g. a payment collected, a policy created) show up without a manual reload.
@@ -99,6 +104,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       _loadMemberPolicies();
       _loadPaymentHistory();
       _loadShares();
+      _loadSavingsAccount();
     });
   }
 
@@ -193,6 +199,21 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     }
   }
 
+  Future<void> _loadSavingsAccount() async {
+    try {
+      final api = context.read<AuthProvider>().apiService!;
+      final data = await api.getSavingsAccount(_member.memberId);
+      if (mounted) {
+        setState(() {
+          _savingsBalance  = (data['balance'] as num?)?.toDouble() ?? 0;
+          _savingsDeposits = List<Map<String, dynamic>>.from(data['deposits'] ?? []);
+        });
+      }
+    } catch (_) {
+      // Leave prior balance/history in place on failure.
+    }
+  }
+
   @override
   void dispose() {
     _refreshTimer?.cancel();
@@ -252,6 +273,25 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             }
             if (attempt < 19) await Future.delayed(const Duration(seconds: 1));
           }
+        },
+      ),
+    );
+  }
+
+  Future<void> _showSavingsSheet() async {
+    await _loadSavingsAccount();
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _SavingsSheet(
+        member: _member,
+        initialBalance: _savingsBalance,
+        initialDeposits: _savingsDeposits,
+        onSuccess: (msg) {
+          setState(() => _successMessage = msg);
+          _loadSavingsAccount();
         },
       ),
     );
@@ -699,7 +739,14 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                                   _showCollectShareSheet(collectMode: true),
                             ),
                           ),
-                          const SizedBox(width: 12),
+                        ],
+                      ),
+
+                    if (!_isEditing) const SizedBox(height: 12),
+
+                    if (!_isEditing)
+                      Row(
+                        children: [
                           Expanded(
                             child: ElevatedButton.icon(
                               icon: const Icon(Icons.savings_outlined),
@@ -715,6 +762,23 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                               ),
                               onPressed: () =>
                                   _showCollectShareSheet(collectMode: false),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.account_balance_wallet_outlined),
+                              label: Text(s('viewSavings')),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF00695C),
+                                side: const BorderSide(color: Color(0xFF00695C)),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                                textStyle: const TextStyle(
+                                    fontSize: 15, fontWeight: FontWeight.w600),
+                              ),
+                              onPressed: _showSavingsSheet,
                             ),
                           ),
                         ],
@@ -3569,6 +3633,485 @@ class _SetupShareOption extends StatelessWidget {
           Text(label,
               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
         ]),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  View Savings sheet — admin views a member's savings balance/history and
+//  records a manual deposit (cash, MonCash, bank transfer). No Stripe option
+//  here — Stripe deposits are member-initiated via the Accounts tab.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SavingsSheet extends StatefulWidget {
+  final Member member;
+  final double initialBalance;
+  final List<Map<String, dynamic>> initialDeposits;
+  final void Function(String) onSuccess;
+
+  const _SavingsSheet({
+    required this.member,
+    required this.initialBalance,
+    required this.initialDeposits,
+    required this.onSuccess,
+  });
+
+  @override
+  State<_SavingsSheet> createState() => _SavingsSheetState();
+}
+
+class _SavingsSheetState extends State<_SavingsSheet> {
+  String _paymentMethod = 'CASH';
+  bool _isSaving = false;
+  String? _message;
+  late List<Map<String, dynamic>> _localDeposits;
+
+  final _amountCtrl = TextEditingController();
+  final _refCtrl    = TextEditingController();
+  final _phoneCtrl  = TextEditingController();
+  final _bankCtrl   = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _localDeposits = List<Map<String, dynamic>>.from(widget.initialDeposits);
+    if (kIsWeb) {
+      const pk = String.fromEnvironment('STRIPE_KEY', defaultValue: '');
+      if (pk.isNotEmpty && !pk.contains('REPLACE_ME')) {
+        registerStripeCardViewFactory(pk);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _amountCtrl.dispose();
+    _refCtrl.dispose();
+    _phoneCtrl.dispose();
+    _bankCtrl.dispose();
+    super.dispose();
+  }
+
+  int? get _amountCents {
+    final dollars = double.tryParse(_amountCtrl.text.trim());
+    if (dollars == null) return null;
+    return (dollars * 100).round();
+  }
+
+  Future<void> _submit() async {
+    final locale = context.read<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
+    final cents = _amountCents;
+    if (cents == null || cents < 100) {
+      setState(() => _message = s('savingsMinDepositError'));
+      return;
+    }
+
+    setState(() { _isSaving = true; _message = null; });
+
+    try {
+      if (_paymentMethod == 'STRIPE') {
+        await _submitStripe(cents);
+      } else {
+        await _submitManual(cents);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSaving = false;
+        _message = e.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
+  Future<void> _submitManual(int cents) async {
+    final locale = context.read<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
+
+    String externalRef = _refCtrl.text.trim();
+    if (_paymentMethod == 'MOBILE_MONEY' && _phoneCtrl.text.trim().isNotEmpty) {
+      externalRef = '${_phoneCtrl.text.trim()} · $externalRef';
+    } else if (_paymentMethod == 'BANK_TRANSFER' && _bankCtrl.text.trim().isNotEmpty) {
+      externalRef = '${_bankCtrl.text.trim()} · $externalRef';
+    }
+
+    final api = context.read<AuthProvider>().apiService!;
+    final depositId = await api.recordSavingsDeposit(
+      memberId: widget.member.memberId,
+      amountCents: cents,
+      paymentMethod: _paymentMethod,
+      externalRef: externalRef,
+    );
+    if (!mounted) return;
+    setState(() {
+      _isSaving = false;
+      _message = '✓ ${s('savingsDepositRecorded')}';
+      _localDeposits = [
+        {
+          'depositId':     depositId,
+          'amount':        cents / 100.0,
+          'datetime':      DateTime.now().toUtc().toIso8601String(),
+          'status':        'SUCCEEDED',
+          'paymentMethod': _paymentMethod,
+          'externalRef':   externalRef,
+        },
+        ..._localDeposits,
+      ];
+      _amountCtrl.clear();
+      _refCtrl.clear();
+      _phoneCtrl.clear();
+      _bankCtrl.clear();
+    });
+    widget.onSuccess('✓ ${s('savingsDepositRecorded')}');
+  }
+
+  Future<void> _submitStripe(int cents) async {
+    final locale = context.read<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
+
+    final res = await http.post(
+      Uri.parse('$kApiBaseUrl${devPath('/member/savings/create-intent')}'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'member_id':    widget.member.memberId,
+        'company_id':   widget.member.companyId,
+        'amount_cents': cents,
+      }),
+    );
+
+    if (res.statusCode != 200) {
+      String msg = 'Payment failed (${res.statusCode}).';
+      try {
+        final err = jsonDecode(res.body) as Map<String, dynamic>;
+        msg = err['error'] as String? ?? msg;
+      } catch (_) {}
+      throw Exception(msg);
+    }
+
+    final data         = jsonDecode(res.body) as Map<String, dynamic>;
+    final clientSecret = data['client_secret'] as String;
+    final depositId    = data['deposit_id']    as String? ?? '';
+
+    await confirmStripePayment(clientSecret);
+
+    if (!mounted) return;
+    setState(() {
+      _isSaving = false;
+      _message = '✓ ${s('savingsDepositRecorded')}';
+      _localDeposits = [
+        {
+          'depositId':     depositId,
+          'amount':        cents / 100.0,
+          'datetime':      DateTime.now().toUtc().toIso8601String(),
+          'status':        'SUCCEEDED',
+          'paymentMethod': 'STRIPE',
+        },
+        ..._localDeposits,
+      ];
+      _amountCtrl.clear();
+    });
+    widget.onSuccess('✓ ${s('savingsDepositRecorded')}');
+  }
+
+  double get _balance => _localDeposits
+      .where((d) => (d['status'] as String? ?? '').toUpperCase() == 'SUCCEEDED')
+      .fold<double>(0, (sum, d) => sum + ((d['amount'] as num?)?.toDouble() ?? 0));
+
+  String _friendlyDate(String iso) {
+    try {
+      final dt = DateTime.parse(iso);
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
+    } catch (_) {
+      return iso.length >= 10 ? iso.substring(0, 10) : iso;
+    }
+  }
+
+  Widget _stripeField(String label, Widget field) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w500)),
+        const SizedBox(height: 4),
+        Container(
+          height: 48,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade400),
+          ),
+          child: MouseRegion(cursor: SystemMouseCursors.text, child: field),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final locale = context.read<LanguageProvider>().locale;
+    String s(String key) => AppStrings.get(key, locale);
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFFF9F9F9),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + bottomInset),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            Row(children: [
+              const Icon(Icons.account_balance_wallet_outlined,
+                  color: Color(0xFF00695C), size: 22),
+              const SizedBox(width: 10),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(s('savingsSheetTitle'),
+                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                Text(widget.member.fullName,
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+              ])),
+              IconButton(
+                icon: const Icon(Icons.close, size: 20),
+                onPressed: () => Navigator.pop(context),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                visualDensity: VisualDensity.compact,
+              ),
+            ]),
+            const SizedBox(height: 16),
+
+            // Balance
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF00695C).withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(s('savingsBalanceLabel'),
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Text('\$${_balance.toStringAsFixed(2)}',
+                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: Color(0xFF00695C))),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Amount
+            TextField(
+              controller: _amountCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                labelText: s('depositAmountHint'),
+                prefixText: '\$ ',
+                isDense: true,
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // Payment method
+            DropdownButtonFormField<String>(
+              value: _paymentMethod,
+              decoration: InputDecoration(
+                labelText: s('paymentMethodLabel'),
+                prefixIcon: const Icon(Icons.payment),
+                isDense: true,
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              items: [
+                DropdownMenuItem(value: 'CASH', child: Text('💵  ${s('cashOption')}')),
+                const DropdownMenuItem(value: 'MOBILE_MONEY', child: Text('📱  MonCash')),
+                DropdownMenuItem(value: 'BANK_TRANSFER', child: Text('🏦  ${s('bankTransferOption')}')),
+                DropdownMenuItem(value: 'STRIPE', child: Text('💳  ${s('onlineStripeOption')}')),
+              ],
+              onChanged: (v) => setState(() {
+                _paymentMethod = v ?? 'CASH';
+                _refCtrl.clear(); _phoneCtrl.clear(); _bankCtrl.clear();
+              }),
+            ),
+
+            const SizedBox(height: 12),
+
+            if (_paymentMethod == 'STRIPE') ...[
+              _stripeField(s('cardNumber'), stripeCardHtmlView()),
+              const SizedBox(height: 10),
+              Row(children: [
+                Expanded(child: _stripeField(s('expiry'), stripeExpiryHtmlView())),
+                const SizedBox(width: 10),
+                Expanded(child: _stripeField(s('cvc'), stripeCvcHtmlView())),
+              ]),
+            ] else if (_paymentMethod == 'MOBILE_MONEY') ...[
+              TextField(
+                controller: _phoneCtrl,
+                keyboardType: TextInputType.phone,
+                decoration: InputDecoration(
+                  labelText: s('monCashPhoneLabel'),
+                  prefixIcon: const Icon(Icons.phone_android),
+                  hintText: '509-XXXX-XXXX',
+                  isDense: true,
+                  filled: true, fillColor: Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _refCtrl,
+                decoration: InputDecoration(
+                  labelText: s('monCashTransactionIdLabel'),
+                  prefixIcon: const Icon(Icons.tag),
+                  hintText: 'MC-XXXXXXXX',
+                  isDense: true,
+                  filled: true, fillColor: Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ] else if (_paymentMethod == 'BANK_TRANSFER') ...[
+              TextField(
+                controller: _bankCtrl,
+                decoration: InputDecoration(
+                  labelText: s('bankNameLabel'),
+                  prefixIcon: const Icon(Icons.account_balance),
+                  hintText: s('bankNameHint'),
+                  isDense: true,
+                  filled: true, fillColor: Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _refCtrl,
+                decoration: InputDecoration(
+                  labelText: s('transferReferenceLabel'),
+                  prefixIcon: const Icon(Icons.tag),
+                  hintText: 'BNK-XXXXXXXXXX',
+                  isDense: true,
+                  filled: true, fillColor: Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ] else ...[
+              TextField(
+                controller: _refCtrl,
+                decoration: InputDecoration(
+                  labelText: s('receiptNumberOptionalLabel'),
+                  prefixIcon: const Icon(Icons.receipt),
+                  hintText: s('autoGenerateHint'),
+                  isDense: true,
+                  filled: true, fillColor: Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 16),
+
+            // Transaction history
+            Text(s('depositHistoryLabel'),
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            if (_localDeposits.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(s('savingsHistoryEmpty'),
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
+              )
+            else
+              ..._localDeposits.take(5).map((d) {
+                final amount = (d['amount'] as num?)?.toDouble() ?? 0;
+                final status = (d['status'] as String? ?? '').toUpperCase();
+                final method = d['paymentMethod'] as String? ?? '';
+                final datetime = d['datetime'] as String? ?? '';
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      Icon(
+                        status == 'SUCCEEDED' ? Icons.check_circle : Icons.hourglass_top,
+                        size: 16,
+                        color: status == 'SUCCEEDED' ? const Color(0xFF00695C) : Colors.orange.shade700,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text('\$${amount.toStringAsFixed(2)} · $method · ${_friendlyDate(datetime)}',
+                            style: const TextStyle(fontSize: 12.5)),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+
+            if (_message != null) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _message!.startsWith('✓') ? Colors.green.shade50 : Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: _message!.startsWith('✓') ? Colors.green.shade200 : Colors.red.shade200,
+                  ),
+                ),
+                child: Text(_message!,
+                    style: TextStyle(
+                        fontSize: 13,
+                        color: _message!.startsWith('✓') ? Colors.green.shade700 : Colors.red)),
+              ),
+            ],
+
+            const SizedBox(height: 20),
+
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.savings_outlined, size: 18),
+                label: Text(s('depositButtonLabel')),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00695C),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                ),
+                onPressed: _isSaving ? null : _submit,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

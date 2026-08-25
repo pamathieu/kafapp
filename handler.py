@@ -81,6 +81,7 @@ ADMIN_TABLE      = os.environ.get("ADMIN_TABLE", "kopera-admin")
 LIFE_INSURANCE_TABLE_NAME = os.environ.get("LIFE_INSURANCE_TABLE", "kopera-life-insurance")
 LOCALITIES_TABLE = os.environ.get("LOCALITIES_TABLE", "kopera-localities")
 SHARES_TABLE      = os.environ.get("SHARES_TABLE", "kopera-share")
+SAVINGS_TABLE     = os.environ.get("SAVINGS_TABLE", "kopera-savings")
 PROSPECTS_TABLE   = os.environ.get("PROSPECTS_TABLE", "kopera-prospect")
 SHORTLINKS_TABLE  = os.environ.get("SHORTLINKS_TABLE", "kopera-shortlink")
 MEMBER_PORTAL_URL = os.environ.get("MEMBER_PORTAL_URL", "https://member.kafayiti.com")
@@ -263,6 +264,14 @@ def _route(event, context):
     # ── POST /member/shares/manual — admin records a manual share purchase ────
     if method == "POST" and resource == "/member/shares/manual":
         return _handle_record_member_share(event)
+
+    # ── GET /member/savings — fetch a member's savings balance + history ──────
+    if method == "GET" and resource == "/member/savings":
+        return _handle_get_member_savings(event)
+
+    # ── POST /member/savings/manual — admin records a manual savings deposit ──
+    if method == "POST" and resource == "/member/savings/manual":
+        return _handle_record_member_savings_deposit(event)
 
     # ── POST /member/acknowledge-payment — member dismisses the notification ──
     if method == "POST" and resource == "/member/acknowledge-payment":
@@ -2025,6 +2034,97 @@ def _handle_record_member_share(event: dict) -> dict:
     logger.info("Admin recorded %s share %s for member %s (%s)",
                 share_type, share_id, member_id, method)
     return _resp(201, {"message": "Share recorded", "shareId": share_id, "apr": float(apr)})
+
+
+################################################################################
+# GET /member/savings — fetch a member's savings balance + deposit history
+################################################################################
+
+def _handle_get_member_savings(event: dict) -> dict:
+    member_id = (event.get("queryStringParameters") or {}).get("memberId", "").strip()
+    if not member_id:
+        return _resp(400, {"error": "memberId required"})
+
+    from boto3.dynamodb.conditions import Key as _Key
+
+    savings_table = dynamodb.Table(SAVINGS_TABLE)
+    resp = savings_table.query(
+        KeyConditionExpression=_Key("memberID").eq(member_id),
+        ScanIndexForward=False,  # newest first (depositId is time-ordered)
+    )
+    deposits = [
+        {
+            "depositId":     d.get("depositId", ""),
+            "amount":        float(d.get("amount", 0)),
+            "datetime":      d.get("datetime", ""),
+            "status":        d.get("status", "PENDING"),
+            "paymentMethod": d.get("paymentMethod", ""),
+            "externalRef":   d.get("externalRef", ""),
+        }
+        for d in resp.get("Items", [])
+    ]
+    balance = sum(x["amount"] for x in deposits if x["status"] == "SUCCEEDED")
+    return _resp(200, {"balance": balance, "deposits": deposits})
+
+
+################################################################################
+# POST /member/savings/manual — admin records a manual savings deposit (cash,
+# MonCash, bank transfer). Stripe card deposits go through
+# /member/savings/create-intent instead — this route is only for non-Stripe.
+################################################################################
+
+_SAVINGS_MIN_CENTS = 100  # $1 minimum per deposit
+
+
+def _handle_record_member_savings_deposit(event: dict) -> dict:
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _resp(400, {"error": "Invalid JSON"})
+
+    member_id    = body.get("member_id", "").strip()
+    company_id   = body.get("company_id", "KAFA-001").strip()
+    method       = (body.get("payment_method") or "CASH").strip().upper()
+    external_ref = body.get("external_ref", "").strip()
+
+    try:
+        amount_cents = int(round(float(body.get("amount_cents"))))
+    except (TypeError, ValueError):
+        return _resp(400, {"error": "amount_cents is required"})
+
+    if not member_id:
+        return _resp(400, {"error": "member_id required"})
+    if amount_cents < _SAVINGS_MIN_CENTS:
+        return _resp(400, {"error": "Minimum deposit is $1."})
+
+    member = _db_get_member(member_id, company_id)
+    if not member:
+        return _resp(404, {"error": "Member not found"})
+
+    now = datetime.now(timezone.utc).isoformat()
+    deposit_id = f"DEPOSIT#{now}#{secrets.token_hex(4)}"
+
+    dynamodb.Table(SAVINGS_TABLE).put_item(Item={
+        "memberID":      member_id,
+        "depositId":     deposit_id,
+        "companyId":     company_id,
+        "amount":        Decimal(str(amount_cents / 100)),
+        "datetime":      now,
+        "status":        "SUCCEEDED",
+        "paymentMethod": method,
+        "externalRef":   external_ref,
+        "recordedBy":    "admin",
+    })
+
+    _set_payment_notification(
+        member_id, company_id,
+        amount=amount_cents / 100, ref_no=deposit_id, method=method,
+        item_label="Savings Deposit",
+    )
+
+    logger.info("Admin recorded savings deposit %s for member %s (%s)",
+                deposit_id, member_id, method)
+    return _resp(201, {"message": "Deposit recorded", "depositId": deposit_id})
 
 
 ################################################################################

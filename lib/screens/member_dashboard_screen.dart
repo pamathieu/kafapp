@@ -8,6 +8,7 @@ import '../misc/app_strings.dart';
 import '../services/session_service.dart';
 import 'member_login_screen.dart';
 import 'policy_screen.dart';
+import 'savings_screen.dart';
 import 'plans_screen.dart';
 import 'funeral_services_screen.dart';
 import 'documents_screen.dart';
@@ -110,9 +111,11 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
     final tabs = [
       _DashboardTab(
         member: _member,
-        onGoPolicies: () => _goTab(1),
+        onGoPolicies: () => _goTab(2),
+        onGoSavings: () => _goTab(1),
         onOpenChat: () => _chatPanelKey.currentState?.expand(),
       ),
+      SavingsScreen(member: _member, embedded: true),
       PolicyScreen(member: _member, embedded: true),
       _ServicesTab(member: _member, locale: locale),
       _ProfileTab(member: _member, locale: locale, onLogout: handleLogout),
@@ -123,6 +126,10 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
           icon: const Icon(Icons.home_outlined),
           activeIcon: const Icon(Icons.home),
           label: s('navDashboard')),
+      BottomNavigationBarItem(
+          icon: const Icon(Icons.savings_outlined),
+          activeIcon: const Icon(Icons.savings),
+          label: s('navAccounts')),
       BottomNavigationBarItem(
           icon: const Icon(Icons.policy_outlined),
           activeIcon: const Icon(Icons.policy),
@@ -518,11 +525,13 @@ class _AlertsBellButton extends StatelessWidget {
 class _DashboardTab extends StatefulWidget {
   final Map<String, dynamic> member;
   final VoidCallback onGoPolicies;
+  final VoidCallback onGoSavings;
   final VoidCallback onOpenChat;
 
   const _DashboardTab({
     required this.member,
     required this.onGoPolicies,
+    required this.onGoSavings,
     required this.onOpenChat,
   });
 
@@ -868,6 +877,15 @@ class _DashboardTabState extends State<_DashboardTab>
                               isLast: false,
                               onTap: () =>
                                   _showCertificateSheet(context, member, s),
+                            ),
+                            _QuickAction(
+                              icon: Icons.savings,
+                              label: s('kafaSavingsAction'),
+                              subtitle: s('kafaSavingsActionSub'),
+                              color: const Color(0xFF00695C),
+                              isFirst: false,
+                              isLast: false,
+                              onTap: widget.onGoSavings,
                             ),
                             if (_policies.isNotEmpty)
                               _QuickAction(

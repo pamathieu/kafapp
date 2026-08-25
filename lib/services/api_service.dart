@@ -348,6 +348,40 @@ class ApiService {
     throw Exception('Failed to load shares: ${response.statusCode}');
   }
 
+  /// GET /member/savings?memberId= — fetch a member's savings balance + deposit history (SigV4)
+  Future<Map<String, dynamic>> getSavingsAccount(String memberId) async {
+    final uri     = Uri.parse('$_baseUrl/member$_apiEnvSuffix/savings?memberId=${Uri.encodeComponent(memberId)}');
+    final headers = _signRequest(method: 'GET', uri: uri, body: '');
+    final response = await http.get(uri, headers: headers);
+    if (response.statusCode == 200) {
+      return json.decode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to load savings: ${response.statusCode}');
+  }
+
+  /// POST /member/savings/manual — admin records a non-Stripe savings deposit
+  /// (cash, MonCash, bank transfer). Returns the new deposit's id.
+  Future<String> recordSavingsDeposit({
+    required String memberId,
+    required int amountCents,
+    required String paymentMethod,
+    String externalRef = '',
+  }) async {
+    final uri  = Uri.parse('$_baseUrl/member$_apiEnvSuffix/savings/manual');
+    final body = json.encode({
+      'member_id':      memberId,
+      'company_id':     _companyId,
+      'amount_cents':   amountCents,
+      'payment_method': paymentMethod,
+      'external_ref':   externalRef,
+    });
+    final response = await http.post(uri,
+        headers: {'Content-Type': 'application/json'}, body: body);
+    final data = json.decode(response.body);
+    if (response.statusCode == 201) return data['depositId'] as String;
+    throw Exception(data['error'] ?? 'Deposit recording failed');
+  }
+
   /// POST /members/policies/create — admin creates a policy for a member (SigV4)
   Future<Map<String, dynamic>> createMemberPolicy({
     required String memberId,
