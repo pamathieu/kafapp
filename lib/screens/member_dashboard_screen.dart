@@ -128,7 +128,6 @@ class _MemberDashboardScreenState extends State<MemberDashboardScreen> {
           label: s('navDashboard')),
       BottomNavigationBarItem(
           icon: const Icon(Icons.savings_outlined),
-          activeIcon: const Icon(Icons.savings),
           label: s('navAccounts')),
       BottomNavigationBarItem(
           icon: const Icon(Icons.policy_outlined),
@@ -879,7 +878,7 @@ class _DashboardTabState extends State<_DashboardTab>
                                   _showCertificateSheet(context, member, s),
                             ),
                             _QuickAction(
-                              icon: Icons.savings,
+                              icon: Icons.savings_outlined,
                               label: s('kafaSavingsAction'),
                               subtitle: s('kafaSavingsActionSub'),
                               color: const Color(0xFF00695C),
